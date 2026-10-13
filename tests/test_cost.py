@@ -212,3 +212,20 @@ async def test_changed_file_is_answered_with_a_diff_not_the_whole_file(tmp_path)
         # after a diff the file counts as fully known again
         r = await reg.invoke("read_file", {"path": "big.txt"}, tmp_path, a.session.hook_system)
         assert "unchanged" in r.output
+
+
+async def test_hung_subagent_is_cut_off_at_its_timeout(tmp_path, monkeypatch):
+    import asyncio
+    from client.llm_client import LLMClient
+    from tools.base import ToolInvocation
+    from tools.subagents import SubagentDefinition, SubagentTool
+
+    async def hang(self, *a, **k):
+        await asyncio.sleep(30)
+        yield
+
+    monkeypatch.setattr(LLMClient, "chat_completion", hang)
+    cfg = Config(cwd=tmp_path, approval=ApprovalPolicy.AUTO)
+    tool = SubagentTool(cfg, SubagentDefinition("t", "d", "p", ["read_file"], timeout_seconds=0.5))
+    r = await asyncio.wait_for(tool.execute(ToolInvocation(cwd=tmp_path, params={"goal": "x"})), 5)
+    assert "timed out" in r.output

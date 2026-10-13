@@ -24,6 +24,7 @@ class SubagentDefinition:
     role: str = "default"
 
 
+MAX_REPORT_CHARS = 6000  # a sub-agent's answer lands in the parent's context for the rest of the run
 READONLY_TOOLS = {"read_file", "grep", "search", "outline", "git", "glob", "list_dir", "use_skill", "graph", "web_search", "web_fetch"}
 _SEMAPHORES: "weakref.WeakKeyDictionary[asyncio.AbstractEventLoop, dict[int, asyncio.Semaphore]]" = weakref.WeakKeyDictionary()  # keyed by the loop itself: id() of a dead loop can be reused
 
@@ -71,6 +72,7 @@ class SubagentTool(Tool):
         config_dict["auto_review"] = False
         config_dict["subagents"] = []  # no recursive delegation
         config_dict["enable_parallel_tasks"] = False
+        config_dict["mcp_servers"] = {}  # starting every MCP server per sub-agent costs seconds and the task is local
         config_dict["auto_verify"] = False  # the parent run verifies the final tree
         config_dict["verify_commands"] = []
         if self.definition.allowed_tools:
@@ -104,35 +106,38 @@ class SubagentTool(Tool):
         try:
             async with _agent_slots(self.config.max_parallel_agents), Agent(subagent_config) as agent:
                 report({"kind": "start", "goal": params.goal})
-                deadline = (
-                    asyncio.get_event_loop().time() + self.definition.timeout_seconds
-                )
 
-                async for event in agent.run(prompt):
-                    if asyncio.get_event_loop().time() > deadline:
-                        terminate_response = "timeout"
-                        final_response = "Sub-agent timed out"
-                        break
+                async def drive() -> None:
+                    nonlocal final_response, error, terminate_response
+                    async for event in agent.run(prompt):
+                        if event.type == AgentEventType.TOOL_CALL_START:
+                            tool_calls.append(event.data.get("name"))
+                            report({"kind": "tool", "name": event.data.get("name"), "args": event.data.get("arguments", {})})
+                        elif event.type == AgentEventType.TEXT_COMPLETE:
+                            final_response = event.data.get("content")
+                        elif event.type == AgentEventType.AGENT_END:
+                            if final_response is None:
+                                final_response = event.data.get("response")
+                        elif event.type == AgentEventType.AGENT_ERROR:
+                            terminate_response = "error"
+                            error = event.data.get("error", "Unknown")
+                            final_response = f"Sub-agent error: {error}"
+                            return
 
-                    if event.type == AgentEventType.TOOL_CALL_START:
-                        tool_calls.append(event.data.get("name"))
-                        report({"kind": "tool", "name": event.data.get("name"), "args": event.data.get("arguments", {})})
-                    elif event.type == AgentEventType.TEXT_COMPLETE:
-                        final_response = event.data.get("content")
-                    elif event.type == AgentEventType.AGENT_END:
-                        if final_response is None:
-                            final_response = event.data.get("response")
-                    elif event.type == AgentEventType.AGENT_ERROR:
-                        terminate_response = "error"
-                        error = event.data.get("error", "Unknown")
-                        final_response = f"Sub-agent error: {error}"
-                        break
+                # wait_for cuts a hung model call or tool too; checking the clock between events could not
+                try:
+                    await asyncio.wait_for(drive(), self.definition.timeout_seconds)
+                except asyncio.TimeoutError:
+                    terminate_response = "timeout"
+                    final_response = final_response or f"Sub-agent timed out after {self.definition.timeout_seconds:.0f}s"
         except Exception as e:
             terminate_response = "error"
             error = f"{type(e).__name__}: {e}"  # some exceptions (timeouts) have an empty message
             final_response = f"Sub-agent failed: {error}"
 
         report({"kind": "done", "ok": not error})
+        if final_response and len(final_response) > MAX_REPORT_CHARS:
+            final_response = final_response[:MAX_REPORT_CHARS] + "\n... [report cut; ask for a narrower answer]"
         result = f"""Sub-agent '{self.definition.name}' completed. 
         Termination: {terminate_response}
         Tools called: {', '.join(tool_calls) if tool_calls else 'None'}
