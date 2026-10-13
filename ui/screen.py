@@ -368,6 +368,13 @@ class Screen:
             cells.append(f"\x1b[38;2;{r};{g};{b}m{'━' if glow > 0.05 else '─'}")
         return "".join(cells) + "\x1b[0m"
 
+    def _totals(self, kind: str, items) -> list[tuple[str, str]]:
+        """WRITTEN gets the grand total of lines added and removed next to its count."""
+        if kind != "write" or not items:
+            return []
+        adds, dels = sum(v[0] for _, v in items), sum(v[1] for _, v in items)
+        return [("", "  "), (f"fg:{MINT}", f"+{adds}"), (f"fg:{CORAL}", f" −{dels}")]
+
     def _section(self, kind: str):
         t = self.tui
         win = self.sections[("read", "write", "cmd").index(kind)]
@@ -378,7 +385,7 @@ class Screen:
             "write": ("WRITTEN", AMBER, list(t.written.items())),
             "cmd": ("COMMANDS", LAVENDER, t.commands),
         }[kind]
-        out: list[tuple[str, str]] = [("", " "), (f"bold fg:#14161f bg:{color}", f" {title} "), (f"bold fg:{color}", f" {len(items)}\n")]
+        out: list[tuple[str, str]] = [("", " "), (f"bold fg:#14161f bg:{color}", f" {title} "), (f"bold fg:{color}", f" {len(items)}"), *self._totals(kind, items), ("", "\n")]
         if not items:
             hint = {"read": "files the agent opens", "write": "edits show up with a +/− bar", "cmd": "builds, tests and scripts"}[kind]
             out.append((f"fg:{MUTED} italic", f"\n   {hint}"))
@@ -403,12 +410,15 @@ class Screen:
             elif kind == "write":
                 path, (adds, dels, new) = it
                 total = max(1, adds + dels)
-                cells = min(8, max(1, round(math.log2(total + 1) * 1.4)))  # bar length grows slowly with change size
+                cells = min(6, max(1, round(math.log2(total + 1) * 1.2)))  # bar length grows slowly with change size
                 a_c = round(cells * adds / total) if dels else cells
-                bar = [(f"fg:{MINT}{glow}", "█" * a_c), (f"fg:{CORAL}{glow}", "█" * (cells - a_c))]
-                stat = " new" if new else ""
-                head, _, name = _clip(path, width - 2 - cells - len(stat) - 2).rpartition("/")
-                out += [(f"fg:{ACCENT}{glow}" if fresh else f"fg:{MUTED}", " ●" if fresh else "  "), (f"fg:{MUTED}{glow}", (head + "/" if head else "")), (f"bold fg:{FG}{glow}", name), (f"fg:{AMBER}", stat + " "), *bar, ("", nl)]
+                nums = [(f"fg:{MINT}{glow}", f"+{adds}" if adds else ""), (f"fg:{CORAL}{glow}", f" −{dels}" if dels else "")]
+                numw = len(nums[0][1]) + len(nums[1][1])
+                tag = " new" if new else ""
+                head, _, name = _clip(path, width - 2 - numw - cells - len(tag) - 2).rpartition("/")
+                out += [(f"fg:{ACCENT}{glow}" if fresh else f"fg:{MUTED}", " ●" if fresh else "  "), (f"fg:{MUTED}{glow}", (head + "/" if head else "")),
+                        (f"bold fg:{FG}{glow}", name), (f"fg:{AMBER}", tag + " "), *nums, ("", " "),
+                        (f"fg:{MINT}{glow}", "█" * a_c), (f"fg:{CORAL}{glow}", "█" * (cells - a_c)), ("", nl)]
             else:
                 cmd, ok = it
                 out += [(f"fg:{MINT if ok else CORAL} bold{glow}", " ✓ " if ok else " ✗ "), (f"fg:{FG}{glow}", _clip(cmd.replace("\n", " "), width - 3) + nl)]
