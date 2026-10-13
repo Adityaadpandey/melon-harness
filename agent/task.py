@@ -70,6 +70,7 @@ class TaskState:
     history: list[tuple[float, str, str]] = field(default_factory=list)
     verification: list[dict] = field(default_factory=list)  # one entry per check run
     review: dict | None = None  # {verdict, findings} from the independent reviewer
+    grounding: dict | None = None  # {checked, unverified[]}: file references in the final answer vs the real tree
     started: float = field(default_factory=time.monotonic)
 
     def __post_init__(self) -> None:
@@ -110,4 +111,5 @@ class TaskState:
             "changed_files": self.changed_files,
             "checks": self.verification,
             "review": self.review,
+            "grounding": self.grounding,
         }

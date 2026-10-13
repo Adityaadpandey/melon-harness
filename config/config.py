@@ -163,6 +163,8 @@ class Config(BaseModel):
     model_role: str = "default"  # which routing chain this agent's own calls use
     auto_review: bool = False  # independent reviewer pass over the real diff before finishing
     max_reviews: int = 1
+    check_references: bool = True  # verify file:line citations in the final answer against the tree
+    require_read_before_edit: bool = True  # editing a file the agent never read is refused
     auto_verify: bool = True
     max_repairs: int = 2
     verify_timeout_sec: int = 600

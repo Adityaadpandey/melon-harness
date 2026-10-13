@@ -3,6 +3,7 @@ import asyncio
 import json
 from typing import AsyncGenerator, Awaitable, Callable
 from agent.events import AgentEvent, AgentEventType
+from agent.grounding import correction_prompt, verify_references
 from agent.review import review_changes
 from agent.session import Session
 from agent.skills import match_skills
@@ -59,6 +60,7 @@ class Agent:
         final_response: str | None = None
         nudged = False
         reviews = 0
+        grounded_once = False
 
         while True:
             self._failed = False
@@ -70,6 +72,16 @@ class Agent:
             if self._failed:
                 task.transition(TaskStatus.FAILED, "agent loop aborted")
                 break
+
+            if final_response and self.config.check_references:
+                n_refs, problems = await verify_references(final_response, self.config.cwd)
+                task.grounding = {"checked": n_refs, "unverified": [f"{p.ref} ({p.why})" for p in problems]}
+                self.session.tracer.emit("grounding", task=task.id, checked=n_refs, unverified=len(problems))
+                if problems and not grounded_once:
+                    grounded_once = True
+                    yield AgentEvent.notice(f"{len(problems)} cited reference(s) could not be verified; asking for a correction")
+                    self.session.context_manager.add_user_message(correction_prompt(problems))
+                    continue
 
             task.changed_files = changed_since(before, await snapshot(self.config.cwd))
             checks = select_checks(self.config, task.changed_files)

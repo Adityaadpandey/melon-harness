@@ -15,10 +15,12 @@ logger = logging.getLogger(__name__)
 class ToolRegistry:
     tracer = None  # set by Session; tool timing/outcome go to the trace
     epoch = 0
+    _read_state: dict = {}
 
     def __init__(self, config: Config):
         self._tools: dict[str, Tool] = {}
         self._mcp_tools: dict[str, Tool] = {}
+        self._read_state: dict[str, tuple[int, int]] = {}  # path -> (mtime_ns, size) when last seen by the agent
         self.config = config
 
     @property
@@ -73,7 +75,8 @@ class ToolRegistry:
         import time
 
         started = time.perf_counter()
-        result = await self._invoke(name, params, cwd, hook_system, approval_manager)
+        result = self._unread_edit_error(name, params, cwd) or await self._invoke(name, params, cwd, hook_system, approval_manager)
+        self._note_file_state(name, params, cwd, result)
         self._cap_output(result)
         if self.tracer:
             self.tracer.emit(
@@ -83,6 +86,47 @@ class ToolRegistry:
                 error=(result.error or "")[:200] if not result.success else None,
             )
         return result
+
+    def _target(self, params: dict[str, Any], cwd: Path) -> Path | None:
+        from utils.paths import resolve_path
+
+        raw = params.get("path")
+        return resolve_path(cwd, raw) if isinstance(raw, str) else None
+
+    @staticmethod
+    def _stamp(p: Path) -> tuple[int, int] | None:
+        try:
+            st = p.stat()
+            return (st.st_mtime_ns, st.st_size)
+        except OSError:
+            return None
+
+    def _unread_edit_error(self, name: str, params: dict[str, Any], cwd: Path) -> ToolResult | None:
+        """Editing from memory is how wrong edits happen. An existing file must have been
+        read (and be unchanged since) before edit/write_file may touch it."""
+        if not self.config.require_read_before_edit or name not in {"edit", "write_file"}:
+            return None
+        path = self._target(params, cwd)
+        if path is None or not path.is_file():
+            return None  # creating a new file needs no prior read
+        seen = self._read_state.get(str(path))
+        if seen is None:
+            return ToolResult.error_result(
+                f"Read {params['path']} with read_file before editing it, so the change is based on its real contents.",
+                metadata={"tool_name": name, "needs_read": True},
+            )
+        if seen != self._stamp(path):
+            return ToolResult.error_result(
+                f"{params['path']} changed on disk since you read it. Re-read it before editing.",
+                metadata={"tool_name": name, "needs_read": True},
+            )
+        return None
+
+    def _note_file_state(self, name: str, params: dict[str, Any], cwd: Path, result: ToolResult) -> None:
+        if name in {"read_file", "edit", "write_file"} and result.success:
+            path = self._target(params, cwd)
+            if path is not None and (stamp := self._stamp(path)):
+                self._read_state[str(path)] = stamp  # after our own write we know the content too
 
     def _cap_output(self, result: ToolResult) -> None:
         """One tool result must never be able to eat the context: keep the head
