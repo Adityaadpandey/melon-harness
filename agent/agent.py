@@ -173,7 +173,7 @@ class Agent:
                 reviews += 1
                 yield AgentEvent.notice("Independent review of the diff...")
                 t_review = time.monotonic()
-                res = await review_changes(self.config, message, task.changed_files, task.verification)
+                res = await review_changes(self.config, message, task.changed_files, task.verification, final_response or "")
                 self._review_sec += time.monotonic() - t_review
                 task.review = {"verdict": res.verdict, "findings": res.findings}
                 self.session.tracer.emit("review", task=task.id, verdict=res.verdict, findings=res.findings[:1500])

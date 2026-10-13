@@ -21,10 +21,13 @@ FILES CHANGED: {files}
 
 AUTOMATED CHECKS: {checks}
 
+THE AUTHOR'S EXPLANATION OF THE CHANGE:
+{claims}
+
 DIFF:
 {diff}
 
-Review for: requirements the request asked for but the diff misses; logic errors; broken callers or contracts
+First test the author's explanation: for each factual claim about why the old code failed ("X collapses", "Y is never called"), read the code and say whether it is true. A fix built on a claim the code contradicts, such as handling something existing code already handles, is a defect. Then review for: requirements the request asked for but the diff misses; logic errors; broken callers or contracts
 (read the callers with your tools before claiming a break); security, authorization and tenant-scoping problems;
 concurrency/idempotency problems; missing handling of edge cases; violations of the project rules you were given.
 Only report problems you can point to in the code. No style nitpicks, no speculation, no generic praise.
@@ -75,7 +78,7 @@ def parse_verdict(text: str) -> ReviewResult:
     return ReviewResult(m.group(1).upper(), m.group(2).strip())
 
 
-async def review_changes(config, request: str, files: list[str], checks: list[dict]) -> ReviewResult:
+async def review_changes(config, request: str, files: list[str], checks: list[dict], claims: str = "") -> ReviewResult:
     from agent.agent import Agent
     from agent.events import AgentEventType
     from config.config import Config
@@ -90,7 +93,7 @@ async def review_changes(config, request: str, files: list[str], checks: list[di
         "approval": "never",  # small diffs get 8 turns: a look, not an expedition
     })
     summary = ", ".join(f"{c['command']}={'ok' if c['ok'] else 'FAILED'}" for c in checks) or "none ran"
-    prompt = REVIEW_PROMPT.format(request=request[:3000], files=", ".join(files[:30]), checks=summary, diff=diff)
+    prompt = REVIEW_PROMPT.format(request=request[:3000], files=", ".join(files[:30]), checks=summary, claims=(claims or "(none given)")[:2500], diff=diff)
     texts: list[str] = []
     error = ""
     try:

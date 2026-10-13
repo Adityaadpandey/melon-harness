@@ -1,4 +1,5 @@
 import asyncio
+import re
 import json
 import os
 import signal
@@ -272,6 +273,10 @@ class CLI:
         console.print(f"  [{style}]Result: {report['status']}[/{style}]  files changed: {len(report['changed_files'])}  repairs: {report['repairs']}")
         for c in report["checks"]:
             console.print(f"    [{'success' if c['ok'] else 'error'}]{'✓' if c['ok'] else '✗'}[/] {c['command']} ({c['seconds']}s)")
+        if report["status"] == "verified" and report["checks"] and not any(
+            re.search(r"test|spec|pytest|vitest|jest|playwright", c["command"]) for c in report["checks"]
+        ):
+            console.print("[dim]    These checks (types/lint) don't exercise the changed behaviour, so \"verified\" does not mean the bug is fixed.[/dim]")
         rv = report.get("review")
         if rv:
             console.print(f"    review: {rv['verdict']}" + ("" if rv["verdict"] == "PASS" else f" (see findings above)"))
