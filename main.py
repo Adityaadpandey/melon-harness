@@ -1,6 +1,7 @@
 import asyncio
 import json
 import signal
+import time
 from pathlib import Path
 import sys
 import click
@@ -13,7 +14,7 @@ from config.config import ApprovalPolicy, Config
 from config.loader import load_config
 from config.loader import get_data_dir
 from ui.prompt import COMMANDS, InputSession, expand_mentions
-from ui.tui import TUI, get_console
+from ui.tui import TUI, context_bar, get_console
 from utils.cost import summarize_usage
 
 console = get_console()
@@ -91,7 +92,7 @@ class CLI:
             used = sess.context_manager._latest_usage.total_tokens
             window = sess.client.registry.get(self.config.model_name).context_length
             if used:
-                parts.append(f"ctx {100 * used / window:.0f}%")
+                parts.append("ctx " + context_bar(100 * used / window))
             u = summarize_usage(sess.tracer.events, self.config.pricing)
             if u["calls"]:
                 parts.append(f"{u['prompt_tokens'] / 1000:.0f}k in ({u['cache_hit_pct']:.0f}% cached) · {u['completion_tokens'] / 1000:.1f}k out")
@@ -122,7 +123,6 @@ class CLI:
 
             while True:
                 try:
-                    console.print()
                     user_input = (await inputs.read()).strip()
                     if not user_input:
                         continue
@@ -133,6 +133,7 @@ class CLI:
                     if user_input.startswith("!"):
                         await self._run_bang(user_input)
                         continue
+                    self.tui.echo_user(user_input)
                     text, attached = expand_mentions(user_input, self.config.cwd, self.config.forbidden_paths)
                     if attached:
                         console.print(f"[dim]  attached: {', '.join(attached)}[/dim]")
@@ -152,15 +153,14 @@ class CLI:
             loop.add_signal_handler(signal.SIGINT, task.cancel)
         except (NotImplementedError, RuntimeError):
             pass
-        self.tui.start_spinner("Thinking")
         try:
             await task
         except asyncio.CancelledError:
-            self.tui.stop_spinner()
+            self.tui.end_turn()
             console.print("\n[warning]Interrupted[/warning]")
             self.agent.session.context_manager.repair_orphans()  # providers reject unanswered tool calls
         finally:
-            self.tui.stop_spinner()
+            self.tui.end_turn()
             try:
                 loop.remove_signal_handler(signal.SIGINT)
             except (NotImplementedError, RuntimeError, ValueError):
@@ -195,29 +195,28 @@ class CLI:
             )
             console.print("[dim]  (output added to the conversation)[/dim]")
 
-    def _print_report(self, report: dict | None) -> None:
+    def _print_report(self, report: dict | None, elapsed: float = 0.0) -> None:
         if not report:
             return
         u = report.get("usage") or {}
-        if u.get("calls"):
-            cost = f"  est ${u['est_cost_usd']}" if u.get("est_cost_usd") is not None else ""
-            console.print(
-                f"\n[dim]usage: {u['calls']} calls, {u['prompt_tokens']:,} in "
-                f"({u['cache_hit_pct']}% cached), {u['completion_tokens']:,} out{cost}[/dim]"
-            )
-            w = u.get("cache_waste") or {}
-            if w.get("misses"):
-                console.print(f"[dim]cache misses: {w['missed_tokens']:,} tokens re-billed ({', '.join(w['reasons'])})[/dim]")
+        self.tui.turn_summary(elapsed, u, report)
+        w = u.get("cache_waste") or {}
+        if w.get("misses"):
+            console.print(f"[dim]    cache misses: {w['missed_tokens']:,} tokens re-billed ({', '.join(w['reasons'])})[/dim]")
+        g = report.get("grounding") or {}
+        if g.get("unverified"):
+            console.print(f"[warning]  ⚠ {len(g['unverified'])} cited reference(s) could not be verified: {'; '.join(g['unverified'][:4])}[/warning]")
         if report["status"] == "done_no_changes":
             return
         style = {"verified": "success", "unverified": "warning"}.get(report["status"], "error")
-        console.print(f"\n[{style}]Result: {report['status']}[/{style}]  "
-                      f"files changed: {len(report['changed_files'])}  repairs: {report['repairs']}")
+        console.print(f"  [{style}]Result: {report['status']}[/{style}]  files changed: {len(report['changed_files'])}  repairs: {report['repairs']}")
         for c in report["checks"]:
-            mark = "ok" if c["ok"] else "FAILED"
-            console.print(f"  [{mark}] {c['command']} ({c['seconds']}s)")
+            console.print(f"    [{'success' if c['ok'] else 'error'}]{'✓' if c['ok'] else '✗'}[/] {c['command']} ({c['seconds']}s)")
+        rv = report.get("review")
+        if rv:
+            console.print(f"    review: {rv['verdict']}" + ("" if rv["verdict"] == "PASS" else f" (see findings above)"))
         if report["status"] == "unverified":
-            console.print("  [dim]No verification commands found; changes were not tested.[/dim]")
+            console.print("    [dim]No verification commands found; changes were not tested.[/dim]")
 
     def _get_tool_kind(self, tool_name: str) -> str | None:
         tool_kind = None
@@ -228,56 +227,41 @@ class CLI:
         if not self.agent:
             return None
 
-        assistant_streaming = False
         final_response: str | None = None
-
-        async for event in self.agent.run(message):
-            if event.type == AgentEventType.TEXT_DELTA:
-                content = event.data.get("content", "")
-                if not assistant_streaming:
-                    self.tui.begin_assistant()
-                    assistant_streaming = True
-                self.tui.stream_assistant_delta(content)
-            elif event.type == AgentEventType.TEXT_COMPLETE:
-                final_response = event.data.get("content")
-                if assistant_streaming:
-                    self.tui.end_assistant()
-                    assistant_streaming = False
-            elif event.type == AgentEventType.AGENT_END:
-                self.tui.stop_spinner()
-                self.last_report = event.data.get("report")
-                self._print_report(self.last_report)
-            elif event.type == AgentEventType.NOTICE:
-                self.tui.notice(event.data.get("message", ""))
-                self.tui.start_spinner("Working")
-            elif event.type == AgentEventType.AGENT_ERROR:
-                self.tui.error(event.data.get("error", "Unknown error"))
-            elif event.type == AgentEventType.TOOL_CALL_START:
-                tool_name = event.data.get("name", "unknown")
-                tool_kind = self._get_tool_kind(tool_name)
-                self.tui.tool_call_start(
-                    event.data.get("call_id", ""),
-                    tool_name,
-                    tool_kind,
-                    event.data.get("arguments", {}),
-                )
-            elif event.type == AgentEventType.TOOL_CALL_COMPLETE:
-                tool_name = event.data.get("name", "unknown")
-                tool_kind = self._get_tool_kind(tool_name)
-                self.tui.tool_call_complete(
-                    event.data.get("call_id", ""),
-                    tool_name,
-                    tool_kind,
-                    event.data.get("success", False),
-                    event.data.get("output", ""),
-                    event.data.get("error"),
-                    event.data.get("metadata"),
-                    event.data.get("diff"),
-                    event.data.get("truncated", False),
-                    event.data.get("exit_code"),
-                )
-                self.tui.start_spinner("Thinking")
-
+        started = time.monotonic()
+        reg = self.agent.session.tool_registry
+        reg.progress = self.tui.agent_progress  # live sub-agent status
+        self.tui.start_turn()
+        try:
+            async for event in self.agent.run(message):
+                t = event.type
+                if t == AgentEventType.TEXT_DELTA:
+                    self.tui.assistant_delta(event.data.get("content", ""))
+                elif t == AgentEventType.TEXT_COMPLETE:
+                    final_response = event.data.get("content")
+                    self.tui.assistant_flush()
+                elif t == AgentEventType.NOTICE:
+                    self.tui.notice(event.data.get("message", ""))
+                elif t == AgentEventType.AGENT_ERROR:
+                    self.tui.error(event.data.get("error", "Unknown error"))
+                elif t == AgentEventType.TOOL_CALL_START:
+                    name = event.data.get("name", "unknown")
+                    self.tui.tool_call_start(event.data.get("call_id", ""), name, self._get_tool_kind(name), event.data.get("arguments", {}))
+                elif t == AgentEventType.TOOL_CALL_COMPLETE:
+                    name = event.data.get("name", "unknown")
+                    self.tui.tool_call_complete(
+                        event.data.get("call_id", ""), name, self._get_tool_kind(name), event.data.get("success", False),
+                        event.data.get("output", ""), event.data.get("error"), event.data.get("metadata"),
+                        event.data.get("diff"), event.data.get("truncated", False), event.data.get("exit_code"),
+                    )
+                    todos = reg.get("todos")
+                    if todos is not None and name == "todos":
+                        self.tui.set_todos(todos.snapshot())
+                elif t == AgentEventType.AGENT_END:
+                    self.last_report = event.data.get("report")
+        finally:
+            self.tui.end_turn()
+        self._print_report(self.last_report, time.monotonic() - started)
         return final_response
 
     async def _handle_command(self, command: str) -> bool:
@@ -292,9 +276,9 @@ class CLI:
         elif command == "/help":
             self.tui.show_help()
         elif cmd_name == "/compact":
-            self.tui.start_spinner("Compacting")
+            self.tui.start_turn("Compacting")
             ok = await self.agent._compact()
-            self.tui.stop_spinner()
+            self.tui.end_turn()
             console.print("[success]Context compacted[/success]" if ok else "[dim]Nothing to compact yet[/dim]")
         elif cmd_name == "/cost":
             u = summarize_usage(self.agent.session.tracer.events, self.config.pricing)
@@ -310,8 +294,7 @@ class CLI:
             if not self.agent.session.skills:
                 console.print("[dim]  no skills loaded[/dim]")
         elif cmd_name == "/expand":
-            self.tui.expand = not self.tui.expand
-            console.print(f"[dim]  longer tool output: {'on' if self.tui.expand else 'off'}[/dim]")
+            self.tui.show_result(int(cmd_args) if cmd_args.strip().isdigit() else 1)
         elif command == "/clear":
             self.agent.session.context_manager.clear()
             self.agent.session.loop_detector.clear()

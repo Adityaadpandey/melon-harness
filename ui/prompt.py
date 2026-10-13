@@ -29,7 +29,7 @@ COMMANDS = {
     "/tools": "list available tools",
     "/skills": "list project playbooks",
     "/mcp": "MCP server status",
-    "/expand": "toggle longer tool output",
+    "/expand": "show the full output of the last tool call (/expand 2 for the one before)",
     "/save": "save this session",
     "/sessions": "list saved sessions",
     "/resume": "resume a saved session (give its ID)",
@@ -74,34 +74,113 @@ class MewCompleter(Completer):
 
 
 class InputSession:
+    """A framed input box: grows with the text, completes / commands and @files,
+    walks history with Up/Down, Alt+Enter for a newline, with a status footer."""
+
     def __init__(self, cwd: Path, forbidden: list[str], models: Callable[[], list[str]],
-                 toolbar: Callable[[], str], history_file: Path | None = None):
+                 toolbar: Callable[[], str], history_file: Path | None = None, input=None, output=None):
+        from prompt_toolkit.application import Application
+        from prompt_toolkit.filters import Condition
+        from prompt_toolkit.layout import Float, FloatContainer, HSplit, Layout, Window
+        from prompt_toolkit.layout.controls import FormattedTextControl
+        from prompt_toolkit.layout.dimension import Dimension
+        from prompt_toolkit.layout.menus import CompletionsMenu
+        from prompt_toolkit.widgets import Frame, TextArea
+        from prompt_toolkit.widgets.base import Border
+
+        # rounded corners, like the rest of the UI
+        Border.TOP_LEFT, Border.TOP_RIGHT, Border.BOTTOM_LEFT, Border.BOTTOM_RIGHT = "╭", "╮", "╰", "╯"
+
+        try:
+            if history_file:
+                history_file.parent.mkdir(parents=True, exist_ok=True)
+            history = FileHistory(str(history_file)) if history_file else InMemoryHistory()
+        except OSError:
+            history = InMemoryHistory()
+
+        self._toolbar = toolbar
+        self.area = TextArea(
+            prompt=[("class:prompt", "❯ ")], multiline=True, wrap_lines=True, history=history,
+            completer=ThreadedCompleter(MewCompleter(cwd, forbidden, models)), complete_while_typing=True,
+            height=lambda: Dimension(min=1, max=12, preferred=max(1, self.area.document.line_count)),
+        )
         kb = KeyBindings()
+        buf = self.area.buffer
+
+        @kb.add("enter")
+        def _enter(event):
+            cs = buf.complete_state
+            if cs and cs.current_completion:  # a highlighted suggestion: take it instead of submitting
+                buf.apply_completion(cs.current_completion)
+                return
+            if buf.text.strip():
+                buf.append_to_history()
+            event.app.exit(result=buf.text)
 
         @kb.add("escape", "enter")  # Alt+Enter
         @kb.add("c-j")
         def _newline(event):
-            event.current_buffer.insert_text("\n")
+            buf.insert_text("\n")
 
-        try:
-            history = FileHistory(str(history_file)) if history_file else InMemoryHistory()
-            if history_file:
-                history_file.parent.mkdir(parents=True, exist_ok=True)
-        except OSError:
-            history = InMemoryHistory()
-        self._toolbar = toolbar
-        self.session = PromptSession(
-            history=history,
-            completer=ThreadedCompleter(MewCompleter(cwd, forbidden, models)),
-            complete_while_typing=True,
-            key_bindings=kb,
-            bottom_toolbar=lambda: self._toolbar(),
-            style=Style.from_dict({"prompt": f"{ACCENT} bold", "bottom-toolbar": "noreverse #7f7f7f", "bottom-toolbar.text": "noreverse #7f7f7f"}),
-            enable_history_search=True,
+        @kb.add("tab")
+        def _tab(event):
+            if buf.complete_state:
+                buf.complete_next()
+            else:
+                buf.start_completion(select_first=True)
+
+        @kb.add("s-tab")
+        def _stab(event):
+            if buf.complete_state:
+                buf.complete_previous()
+
+        @kb.add("up")
+        def _up(event):
+            if buf.complete_state:
+                buf.complete_previous()
+            elif buf.document.cursor_position_row == 0:
+                buf.history_backward()
+            else:
+                buf.cursor_up()
+
+        @kb.add("down")
+        def _down(event):
+            if buf.complete_state:
+                buf.complete_next()
+            elif buf.document.cursor_position_row >= buf.document.line_count - 1:
+                buf.history_forward()
+            else:
+                buf.cursor_down()
+
+        @kb.add("c-c")
+        def _ctrl_c(event):
+            if buf.text:
+                buf.reset()  # first Ctrl+C clears the line, like a shell
+            else:
+                event.app.exit(exception=KeyboardInterrupt)
+
+        @kb.add("c-d")
+        def _ctrl_d(event):
+            if not buf.text:
+                event.app.exit(exception=EOFError)
+
+        footer = Window(FormattedTextControl(lambda: [("class:toolbar", " " + self._toolbar())]), height=1)
+        root = FloatContainer(
+            content=HSplit([Frame(self.area, style="class:frame"), footer]),
+            floats=[Float(xcursor=True, ycursor=True, content=CompletionsMenu(max_height=8, scroll_offset=1))],
+        )
+        self.app = Application(
+            layout=Layout(root, focused_element=self.area), key_bindings=kb, erase_when_done=True,
+            style=Style.from_dict({
+                "prompt": f"{ACCENT} bold", "frame.border": "#5f5f5f", "toolbar": "#7f7f7f",
+                "completion-menu.completion": "bg:#262626 #bbbbbb", "completion-menu.completion.current": f"bg:{ACCENT} #000000",
+            }),
+            input=input, output=output,
         )
 
     async def read(self) -> str:
-        return await self.session.prompt_async([("class:prompt", "❯ ")])
+        self.area.buffer.reset()
+        return await self.app.run_async()
 
 
 async def ask_choice(console, question: str, options: list[str], *, input=None, output=None) -> int:

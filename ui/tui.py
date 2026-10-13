@@ -5,12 +5,17 @@ from __future__ import annotations
 
 import re
 import time
+from collections import deque
 from pathlib import Path
 from typing import Any
 
 from rich import box
 from rich.console import Console, Group
+from rich.live import Live
+from rich.padding import Padding
+from rich.table import Table
 from rich.markdown import Markdown
+from rich.syntax import Syntax
 from rich.panel import Panel
 from rich.text import Text
 from rich.theme import Theme
@@ -176,73 +181,208 @@ def summarize_result(name: str, success: bool, output: str, error: str | None, m
     return (lines[0] if lines else "Done"), lines[1:] + ([f"… +{more} lines"] if more else [])
 
 
-# ------------------------------------------------------------------------- UI
+# ------------------------------------------------------------ streaming text
+
+_CONTINUES_BLOCK = re.compile(r"^(\s|[-*+]\s|\d+[.)]\s|>|\|)")
+
+
+def split_blocks(buf: str) -> tuple[str, str]:
+    """(finished markdown blocks, unfinished tail). A block ends at a blank line outside a code
+    fence, unless the next line continues a list, quote, table or indented block, so numbered
+    lists and fenced code never get cut in half while text is still streaming."""
+    lines = buf.split("\n")
+    in_fence, has_content, cut, pos = False, False, 0, 0
+    for i, line in enumerate(lines[:-1]):  # the last element is a partial line
+        pos += len(line) + 1
+        if line.lstrip().startswith("```"):
+            in_fence = not in_fence
+            has_content = True
+        elif in_fence:
+            continue
+        elif line.strip():
+            has_content = True
+        elif has_content:
+            nxt = next((ln for ln in lines[i + 1:] if ln.strip() or ln == lines[-1]), None)
+            if nxt is None or not nxt:
+                continue  # nothing after the blank line yet: wait
+            if not _CONTINUES_BLOCK.match(nxt):
+                cut, has_content = pos, False
+    return buf[:cut], buf[cut:]
+
+
+def context_bar(pct: float, width: int = 10) -> str:
+    filled = max(0, min(width, round(pct / 100 * width)))
+    return "▰" * filled + "▱" * (width - filled) + f" {pct:.0f}%"
+
+
+SPIN = "⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏"
+TIPS = [
+    "@path attaches a file · Tab completes",
+    "!git status runs a command and shows it to the model",
+    "/compact frees context when a long session slows down",
+    "/cost shows tokens, cache hits and why a cache missed",
+    "Alt+Enter inserts a newline",
+    "Several read-only sub-agents in one turn run in parallel",
+]
+
 
 class TUI:
     def __init__(self, config: Config, console: Console | None = None) -> None:
         self.console = console or get_console()
         self.config = config
         self.cwd = config.cwd
-        self._assistant_open = False
         self._calls: dict[str, tuple[str, dict[str, Any]]] = {}
         self._header_done = False  # an approval prompt already printed the call's header
-        self._status = None
-        self.expand = False  # /expand toggles longer tool output
+        self.expand = False
+        # live turn state
+        self.live: Live | None = None
+        self._turn_active = False
+        self._turn_started = 0.0
+        self._buf = ""
+        self._first_block = True
+        self._out_chars = 0
+        self._phase = "Thinking"
+        self.todos: list[tuple[str, bool]] = []
+        self.agents: dict[str, dict[str, Any]] = {}
+        self.results: deque = deque(maxlen=30)  # full tool results for /expand
 
-    # -- spinner -------------------------------------------------------
+    # -- live region -----------------------------------------------------
+    def _live_ok(self) -> bool:
+        return self.console.is_terminal and not getattr(self.console, "record", False)
+
+    def _renderable(self):
+        rows: list[Any] = []
+        if self._buf.strip():
+            tail = self._buf if self._buf.count("\n") < 14 else "…\n" + "\n".join(self._buf.split("\n")[-12:])
+            rows.append(self._assistant_grid(tail, self._first_block))
+        elapsed = int(time.monotonic() - self._turn_started)
+        frame = SPIN[int(time.monotonic() * 10) % len(SPIN)]
+        tokens = f" · ↓ ~{self._out_chars / 4000:.1f}k tokens" if self._out_chars > 400 else ""
+        rows.append(Text.assemble((f"{frame} ", ACCENT), (f"{self._phase}…", ACCENT), (f"  ({elapsed}s{tokens} · ctrl+c to interrupt)", "dim")))
+        for a in self.agents.values():
+            rows.append(Text(f"  ⎿ {a['agent']} · {a['last']} · {int(time.monotonic() - a['started'])}s", style="dim"))
+        if self.todos:
+            rows.append(Text("  Tasks", style="dim"))
+            for content, done in self.todos[:8]:
+                rows.append(Text(f"   {'☒' if done else '☐'} {content[:90]}", style="dim strike" if done else "default"))
+        return Group(*rows)
+
+    def _start_live(self) -> None:
+        if self._live_ok() and self.live is None:
+            self.live = Live(get_renderable=self._renderable, console=self.console, refresh_per_second=12, transient=True)
+            self.live.start()
+
+    def _stop_live(self) -> None:
+        if self.live is not None:
+            self.live.stop()
+            self.live = None
+
+    def start_turn(self, phase: str = "Thinking") -> None:
+        self._turn_active = True
+        self._turn_started = time.monotonic()
+        self._out_chars, self._buf, self._first_block, self._phase = 0, "", True, phase
+        self._start_live()
+
+    def end_turn(self) -> None:
+        self.assistant_flush()
+        self._turn_active = False
+        self._stop_live()
+        self.agents.clear()
+
+    def pause(self) -> None:
+        """Stop the live region while something else needs the terminal (approval prompt)."""
+        self._stop_live()
+
+    def resume(self) -> None:
+        if self._turn_active:
+            self._start_live()
+
+    def set_phase(self, phase: str) -> None:
+        self._phase = phase
+
+    # kept for callers that start/stop a bare spinner (e.g. /compact)
     def start_spinner(self, label: str = "Working") -> None:
-        if self._status is not None:
-            return
-        self._status = self.console.status(
-            Text.assemble((f"{label}…", ACCENT), ("  (ctrl+c to interrupt)", "dim")),
-            spinner="dots", spinner_style=ACCENT,
-        )
-        self._status.start()
+        self._phase = label
+        if not self._turn_active:
+            self._turn_started = time.monotonic()
+            self._turn_active = True
+        self._start_live()
 
     def stop_spinner(self) -> None:
-        if self._status is not None:
-            self._status.stop()
-            self._status = None
+        if self._turn_active and self.live is not None and not self._buf:
+            pass  # the live region persists for the turn; end_turn() closes it
 
     # -- transcript ----------------------------------------------------
     def print_welcome(self, title: str, lines: list[str]) -> None:
+        import random
+
         body = Text()
         body.append("✻ ", style=ACCENT)
         body.append(f"Welcome to {title}\n\n", style="bold")
         for ln in lines:
             body.append(f"  {ln}\n", style="dim")
+        body.append(f"\n  tip: {random.choice(TIPS)}", style="dim italic")
         self.console.print(Panel(body, border_style=ACCENT, box=box.ROUNDED, padding=(0, 2), expand=False))
 
-    def begin_assistant(self) -> None:
-        self.stop_spinner()
+    def echo_user(self, text: str) -> None:
+        first, *rest = text.strip().split("\n")
+        shown = first + (f"  (+{len(rest)} lines)" if rest else "")
+        self.console.print(Padding(Text.assemble(("❯ ", f"bold {ACCENT}"), (shown[:300], "default")), (0, 1), style="on #262626"))
+
+    def _assistant_grid(self, md: str, first: bool):
+        grid = Table.grid(padding=(0, 1))
+        grid.add_column(width=1)
+        grid.add_column(ratio=1)
+        grid.add_row(Text("⏺" if first else " ", style=ACCENT), Markdown(md.rstrip(), code_theme="monokai"))
+        return grid
+
+    def _print_block(self, md: str) -> None:
+        if not md.strip():
+            return
         self.console.print()
-        self.console.print(Text("⏺ ", style=ACCENT), end="")
-        self._assistant_open = True
+        self.console.print(self._assistant_grid(md, self._first_block))
+        self._first_block = False
 
-    def stream_assistant_delta(self, content: str) -> None:
-        self.console.print(content, end="", markup=False, soft_wrap=True)
+    def assistant_delta(self, content: str) -> None:
+        self._buf += content
+        self._out_chars += len(content)
+        self._phase = "Writing"
+        done, rest = split_blocks(self._buf)
+        if done:
+            self._print_block(done)
+            self._buf = rest
 
-    def end_assistant(self) -> None:
-        if self._assistant_open:
-            self.console.print()
-        self._assistant_open = False
+    def assistant_flush(self) -> None:
+        if self._buf.strip():
+            self._print_block(self._buf)
+        self._buf = ""
+        self._first_block = True  # the next piece of text (after a tool call) starts a new message
 
     def notice(self, message: str) -> None:
-        self.stop_spinner()
         self.console.print(Text(f"  ✻ {message}", style="dim italic"))
 
     def error(self, message: str) -> None:
-        self.stop_spinner()
+        self.assistant_flush()
         self.console.print(Text(f"\n✗ {message}", style="error"))
+
+    def set_todos(self, todos: list[tuple[str, bool]]) -> None:
+        self.todos = todos
+
+    def agent_progress(self, call_id: str, info: dict[str, Any]) -> None:
+        kind = info.get("kind")
+        if kind == "start":
+            self.agents[call_id] = {"agent": info["agent"], "last": "starting", "started": time.monotonic()}
+        elif kind == "tool" and call_id in self.agents:
+            self.agents[call_id]["last"] = tool_label(info.get("name", ""), info.get("args", {}), self.cwd)
+        elif kind == "done":
+            self.agents.pop(call_id, None)
 
     def tool_call_start(self, call_id: str, name: str, tool_kind: str | None, arguments: dict[str, Any]) -> None:
         """Only remembers the call. The header is printed together with its result
         (or with the approval prompt), so parallel calls never interleave."""
+        self.assistant_flush()
         self._calls[call_id] = (name, arguments)
-        if self._assistant_open:
-            self.end_assistant()
-        self.stop_spinner()
-        self.start_spinner(f"Running {tool_label(name, arguments, self.cwd)}")
+        self._phase = f"Running {tool_label(name, arguments, self.cwd)}" if len(self._calls) == 1 else f"Running {len(self._calls)} tools"
 
     def _print_header(self, name: str, args: dict[str, Any]) -> None:
         self.console.print()
@@ -252,12 +392,13 @@ class TUI:
                            error: str | None, metadata: dict[str, Any] | None, diff: str | None,
                            truncated: bool, exit_code: int | None) -> None:
         args = self._calls.pop(call_id, (name, {}))[1]
-        self.stop_spinner()
+        self._phase = "Thinking"
         if self._header_done:
             self._header_done = False
         else:
             self._print_header(name, args)
         md = metadata or {}
+        self.results.append({"label": tool_label(name, args, self.cwd), "success": success, "output": output, "error": error, "diff": diff})
         summary, preview = summarize_result(name, success, output, error, md, exit_code, args)
         style = "error" if not success else "dim"
         if name in {"edit", "write_file"} and success and diff:
@@ -274,33 +415,58 @@ class TUI:
         for ln in preview[: 60 if self.expand else None]:
             self.console.print(Text(f"     {ln[:200]}", style="dim"))
 
+    def show_result(self, n: int = 1) -> None:
+        """/expand [n]: print the full output of the n-th most recent tool call."""
+        if not self.results or n < 1 or n > len(self.results):
+            self.console.print("[dim]  no such tool result[/dim]")
+            return
+        r = list(self.results)[-n]
+        if r["diff"]:
+            body: Any = render_diff(r["diff"], 1000)[0]
+        else:
+            text = (r["error"] or "") + ("\n" if r["error"] and r["output"] else "") + (r["output"] or "")
+            lines = text.splitlines()
+            body = Syntax("\n".join(lines[:300]) + (f"\n… +{len(lines) - 300} lines" if len(lines) > 300 else ""), "text", word_wrap=True, theme="monokai")
+        self.console.print(Panel(body, title=Text(r["label"], style="bold"), title_align="left", border_style="border", box=box.ROUNDED))
+
+    def turn_summary(self, elapsed: float, usage: dict | None, report: dict | None) -> None:
+        bits = [f"{elapsed:.0f}s"]
+        if usage and usage.get("calls"):
+            bits += [f"{usage['calls']} calls", f"{usage['prompt_tokens'] / 1000:.1f}k in ({usage['cache_hit_pct']:.0f}% cached)", f"{usage['completion_tokens'] / 1000:.1f}k out"]
+            if usage.get("est_cost_usd") is not None:
+                bits.append(f"${usage['est_cost_usd']}")
+        self.console.print(Text("  ✻ " + " · ".join(bits), style="dim"))
+
     # -- approval ------------------------------------------------------
     async def confirm(self, confirmation: ToolConfirmation) -> Decision:
         from ui.prompt import ask_choice, read_line
 
-        self.stop_spinner()
-        if confirmation.command:
-            parts: list[Any] = [Text(f"$ {confirmation.command}", style="warning")]
-            title, q = "Run command", "Do you want to run this command?"
-            always = "Yes, and don't ask again for this kind of command this session"
-        elif confirmation.diff:
-            parts = [render_diff(confirmation.diff.to_diff(), 40)[0]]
-            title, q = confirmation.description, "Do you want to make this edit?"
-            always = "Yes, and don't ask again for edits this session"
-        else:
-            parts = [Text(confirmation.description)]
-            title, q, always = confirmation.tool_name, "Do you want to proceed?", "Yes, and don't ask again this session"
-        self._print_header(confirmation.tool_name, confirmation.params)
-        self._header_done = True
-        self.console.print(Panel(Group(*parts), title=Text(title, style="bold"), title_align="left",
-                                 border_style=ACCENT, box=box.ROUNDED, padding=(0, 1)))
-        choice = await ask_choice(self.console, q, ["Yes", always, "No, and tell me what to do differently"])
-        if choice == 0:
-            return Decision(True)
-        if choice == 1:
-            return Decision(True, always=True)
-        feedback = await read_line("What should I do instead? (Enter to skip) ")
-        return Decision(False, feedback=f"The user said: {feedback}" if feedback else None)
+        self.pause()
+        try:
+            if confirmation.command:
+                parts: list[Any] = [Text(f"$ {confirmation.command}", style="warning")]
+                title, q = "Run command", "Do you want to run this command?"
+                always = "Yes, and don't ask again for this kind of command this session"
+            elif confirmation.diff:
+                parts = [render_diff(confirmation.diff.to_diff(), 40)[0]]
+                title, q = confirmation.description, "Do you want to make this edit?"
+                always = "Yes, and don't ask again for edits this session"
+            else:
+                parts = [Text(confirmation.description)]
+                title, q, always = confirmation.tool_name, "Do you want to proceed?", "Yes, and don't ask again this session"
+            self._print_header(confirmation.tool_name, confirmation.params)
+            self._header_done = True
+            self.console.print(Panel(Group(*parts), title=Text(title.split("\n")[0], style="bold"), title_align="left",
+                                     border_style=ACCENT, box=box.ROUNDED, padding=(0, 1)))
+            choice = await ask_choice(self.console, q, ["Yes", always, "No, and tell me what to do differently"])
+            if choice == 0:
+                return Decision(True)
+            if choice == 1:
+                return Decision(True, always=True)
+            feedback = await read_line("What should I do instead? (Enter to skip) ")
+            return Decision(False, feedback=f"The user said: {feedback}" if feedback else None)
+        finally:
+            self.resume()
 
     handle_confirmation = confirm
 
