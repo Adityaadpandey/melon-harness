@@ -57,6 +57,13 @@ class Agent:
             )
         else:
             message_for_model = message
+        scout = await self._scout(message)
+        if scout:
+            yield AgentEvent.notice("Scout finished; starting from its findings")
+            message_for_model += (
+                "\n\n---\nScout report (a cheaper read-only agent already searched; start from it, do not "
+                "repeat its searches, and confirm any line you rely on before editing):\n" + scout
+            )
         self.session.context_manager.add_user_message(message_for_model)
 
         self._escalated = False
@@ -351,6 +358,20 @@ class Agent:
                 self.session.tool_registry.epoch += 1
         self._failed = True
         yield AgentEvent.agent_error(f"Maximum turns ({max_turns}) reached")
+
+    async def _scout(self, message: str) -> str:
+        """Search in a throwaway read-only context so the main (pricier, ever-growing)
+        context starts from findings instead of 30 grep results."""
+        reg = self.session.tool_registry
+        if not (self.config.auto_scout and self.config.model_role == "default" and reg.get("subagent_investigator")):
+            return ""
+        if len(message) < 80 or classify(message)[0] == "fast":
+            return ""
+        self.session.tracer.emit("scout", goal=message[:200])
+        res = await reg.invoke(
+            "subagent_investigator", {"goal": message}, self.config.cwd, self.session.hook_system, self.session.approval_manager
+        )
+        return (res.output or "")[:6000] if res.success else ""
 
     def _role(self, task: TaskState) -> str:
         """Routing role for the next model call: a fixed role for sub-agents and

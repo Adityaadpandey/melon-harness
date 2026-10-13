@@ -165,6 +165,7 @@ class Config(BaseModel):
     model_pinned: bool = False  # set by -m or /model: the user chose, so never auto-route away from it
     max_parallel_agents: int = 4  # concurrent sub-agents / workers
     enable_parallel_tasks: bool = True  # expose the parallel_tasks tool (off inside workers and sub-agents)
+    auto_scout: bool = True  # non-trivial requests get a cheap read-only investigator pass first (if the profile defines one)
     auto_review: bool = False  # independent reviewer pass over the real diff before finishing
     max_reviews: int = 1
     check_references: bool = True  # verify file:line citations in the final answer against the tree

@@ -120,3 +120,29 @@ def test_cache_waste_resets_after_compaction_and_providers_without_caching():
     ev = [_call(0, "m", 50_000, 1), _call(5, "m", 60_000, 50_000), {"event": "compaction"}, _call(10, "m", 8_000, 0)]
     assert cache_waste(ev, {})["misses"] == 0
     assert cache_waste([_call(0, "n", 9_000, 0), _call(5, "n", 9_500, 0)], {})["misses"] == 0
+
+
+async def test_scout_findings_start_the_main_context(tmp_path):
+    from tools.base import Tool, ToolKind, ToolResult
+    from pydantic import BaseModel
+
+    class P(BaseModel):
+        goal: str
+
+    class FakeScout(Tool):
+        name = "subagent_investigator"
+        description = "scout"
+        kind = ToolKind.READ
+        schema = P
+
+        async def execute(self, invocation):
+            return ToolResult.success_result("route -> svc.ts:42")
+
+    cfg = Config(cwd=tmp_path, approval=ApprovalPolicy.AUTO, auto_verify=False)
+    async with Agent(cfg) as a:
+        a.session.tool_registry.register(FakeScout(cfg))
+        a.session.client = ScriptedClient([text("done"), text("ok")])
+        long_task = "Investigate why the event description loses blank lines when a section exists " * 2
+        [e async for e in a.run(long_task)]
+        assert "route -> svc.ts:42" in a.session.client.requests[0][-1]["content"]
+        [e async for e in a.run("fix typo")]  # short request: no scout
