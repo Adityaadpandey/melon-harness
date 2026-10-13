@@ -127,8 +127,8 @@ class SubagentTool(Tool):
                         break
         except Exception as e:
             terminate_response = "error"
-            error = str(e)
-            final_response = f"Sub-agent failed: {e}"
+            error = f"{type(e).__name__}: {e}"  # some exceptions (timeouts) have an empty message
+            final_response = f"Sub-agent failed: {error}"
 
         report({"kind": "done", "ok": not error})
         result = f"""Sub-agent '{self.definition.name}' completed. 

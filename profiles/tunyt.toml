@@ -82,6 +82,7 @@ allowed_tools = ["read_file", "grep", "search", "outline", "git", "glob", "list_
 goal_prompt = """You map code for an engineer who is about to change it. Read-only.
 - Start with `search` (ranked files for plain-words queries), then the `graph` tool (find / callers / callees / path / community). graphify-out/GRAPH_REPORT.md is ~190KB: never read it whole.
 - Trace the real path from entry point to storage; list callers of anything that might change; find an existing implementation of the same pattern (docs/skills/tunyt-performance.md names exemplars).
+- Budget: at most 12 tool calls in total, several per turn when independent; stop as soon as one file:line explains the question and a second source agrees.
 - Answer in under 25 lines: the path with file:line at each hop, callers, the exemplar to copy, and anything surprising (cache keys, queues, transactions, tenant scoping). State what you did not check."""
 
 [[subagents]]
