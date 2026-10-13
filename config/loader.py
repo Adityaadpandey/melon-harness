@@ -2,8 +2,18 @@ from pathlib import Path
 from typing import Any
 
 from dotenv import load_dotenv
-from platformdirs import user_config_dir, user_data_dir
-import tomli
+try:
+    from platformdirs import user_config_dir, user_data_dir
+except ModuleNotFoundError:
+    def user_config_dir(appname: str) -> str:
+        return str(Path.home() / ".config" / appname)
+
+    def user_data_dir(appname: str) -> str:
+        return str(Path.home() / ".local" / "share" / appname)
+try:
+    import tomllib as tomli
+except ModuleNotFoundError:
+    import tomli
 
 from config.config import Config
 from config.trust import GATED_KEYS, is_trusted, trust

@@ -4,8 +4,6 @@ import os
 from pathlib import Path
 from typing import Any
 from config.config import MCPServerConfig
-from fastmcp import Client
-from fastmcp.client.transports import SSETransport, StdioTransport
 
 
 class MCPServerStatus(str, Enum):
@@ -35,7 +33,7 @@ class MCPClient:
         self.config = config
         self.cwd = cwd
         self.status = MCPServerStatus.DISCONNECTED
-        self._client: Client | None = None
+        self._client: Any | None = None
 
         self._tools: dict[str, MCPToolInfo] = dict()
 
@@ -43,10 +41,12 @@ class MCPClient:
     def tools(self) -> list[MCPToolInfo]:
         return list(self._tools.values())
 
-    def _create_transport(self) -> StdioTransport | SSETransport:
+    def _create_transport(self) -> Any:
         if self.config.command:
             env = os.environ.copy()
             env.update(self.config.env)
+
+            from fastmcp.client.transports import StdioTransport
 
             return StdioTransport(
                 command=self.config.command,
@@ -56,6 +56,8 @@ class MCPClient:
                 log_file=Path(os.devnull),
             )
         else:
+            from fastmcp.client.transports import SSETransport
+
             return SSETransport(url=self.config.url)
 
     async def connect(self) -> None:
@@ -65,6 +67,8 @@ class MCPClient:
         self.status = MCPServerStatus.CONNECTING
 
         try:
+            from fastmcp import Client
+
             self._client = Client(transport=self._create_transport())
 
             await self._client.__aenter__()

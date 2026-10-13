@@ -84,7 +84,21 @@ class ModelRegistry:
                 context_length=m.get("context_length") or 128_000,
                 endpoints=m.get("supported_endpoints") or ["/chat/completions"],
             )
+        self._add_codex_models()
         self._apply_probe()
+
+    def _add_codex_models(self) -> None:
+        """Codex models you can pick, read from the Codex CLI's own list."""
+        from client.codex_auth import auth_path
+
+        try:
+            rows = json.loads((auth_path().parent / "models_cache.json").read_text())["models"]
+        except (OSError, ValueError, KeyError):
+            return
+        for m in rows:
+            if m.get("visibility") == "list":
+                mid = "codex/" + m["slug"]
+                self._models[mid] = _guess(mid, 0)
 
     def _apply_probe(self) -> None:
         path = self.data_dir / "model_probe.json"
@@ -108,7 +122,7 @@ class ModelRegistry:
 
     def validate(self, model_id: str) -> tuple[bool, list[str]]:
         """(known?, close matches). With no catalog (offline) anything goes."""
-        if not self._models or model_id in self._models:
+        if not self._models or model_id in self._models or model_id.startswith("codex/"):
             return True, []
         import difflib
 

@@ -1,6 +1,5 @@
 from tools.base import Tool, ToolInvocation, ToolKind, ToolResult
 from pydantic import BaseModel, Field
-from ddgs import DDGS
 
 
 class WebSearchParams(BaseModel):
@@ -23,6 +22,8 @@ class WebSearchTool(Tool):
         params = WebSearchParams(**invocation.params)
 
         try:
+            from ddgs import DDGS
+
             results = DDGS().text(
                 params.query,
                 region="us-en",

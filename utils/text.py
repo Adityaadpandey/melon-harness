@@ -1,7 +1,12 @@
-import tiktoken
+try:
+    import tiktoken
+except ModuleNotFoundError:
+    tiktoken = None
 
 
 def get_tokenizer(model: str):
+    if tiktoken is None:
+        return None
     try:
         encoding = tiktoken.encoding_for_model(model)
         return encoding.encode

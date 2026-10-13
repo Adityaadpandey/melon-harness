@@ -7,10 +7,6 @@ import json
 from typing import Any, AsyncGenerator
 
 import httpx
-from anthropic import APIStatusError as AnthropicStatusError
-from anthropic import AsyncAnthropic
-from anthropic import APIConnectionError as AnthropicConnError
-from openai import APIConnectionError, APIStatusError, AsyncOpenAI
 
 from client.errors import ProviderError, classify
 from client.response import (
@@ -45,6 +41,8 @@ class OpenAIChatAdapter:
     endpoint = "/chat/completions"
 
     def __init__(self, api_key: str, base_url: str, headers: dict[str, str] | None = None):
+        from openai import AsyncOpenAI
+
         self._client = AsyncOpenAI(
             api_key=api_key, base_url=base_url, timeout=TIMEOUT, max_retries=0,
             default_headers=headers,
@@ -76,10 +74,13 @@ class OpenAIChatAdapter:
             response = await self._client.chat.completions.create(**kwargs)
             async for ev in self._consume(response):
                 yield ev
-        except APIStatusError as e:
-            raise classify(e.status_code, str(e)) from e
-        except (APIConnectionError, httpx.HTTPError) as e:
-            raise classify(None, f"Connection error: {e}") from e
+        except Exception as e:
+            status = getattr(e, "status_code", None)
+            if status is not None:
+                raise classify(status, str(e)) from e
+            if e.__class__.__name__ == "APIConnectionError" or isinstance(e, httpx.HTTPError):
+                raise classify(None, f"Connection error: {e}") from e
+            raise
 
     async def _consume(self, response) -> AsyncGenerator[StreamEvent, None]:
         finish_reason: str | None = None
@@ -231,6 +232,8 @@ class AnthropicAdapter:
     MAX_TOKENS = 16384
 
     def __init__(self, api_key: str, base_url: str, headers: dict[str, str] | None = None):
+        from anthropic import AsyncAnthropic
+
         # the SDK appends /v1/messages itself, so strip the trailing /v1
         root = base_url.rstrip("/")
         if root.endswith("/v1"):
@@ -297,10 +300,13 @@ class AnthropicAdapter:
                             ),
                         )
                 final = await s.get_final_message()
-        except AnthropicStatusError as e:
-            raise classify(e.status_code, str(e)) from e
-        except (AnthropicConnError, httpx.HTTPError) as e:
-            raise classify(None, f"Connection error: {e}") from e
+        except Exception as e:
+            status = getattr(e, "status_code", None)
+            if status is not None:
+                raise classify(status, str(e)) from e
+            if e.__class__.__name__ == "APIConnectionError" or isinstance(e, httpx.HTTPError):
+                raise classify(None, f"Connection error: {e}") from e
+            raise
 
         for block in final.content:
             if block.type == "tool_use":
