@@ -107,7 +107,7 @@ class CLI:
             "mew",
             lines=[
                 f"model: {self.config.model_name}   approval: {self.config.approval.value}",
-                f"cwd: {self.config.cwd}" + (f"   profile: {self.config.profile}" if self.config.profile else ""),
+                f"cwd: {str(self.config.cwd).replace(str(Path.home()), '~')}" + (f"   profile: {self.config.profile}" if self.config.profile else ""),
                 "/help for commands · @file to attach · !cmd to run a command · Alt+Enter for a newline",
             ],
         )
@@ -300,7 +300,7 @@ class CLI:
             u = summarize_usage(self.agent.session.tracer.events, self.config.pricing)
             w = u["cache_waste"]
             console.print(f"  calls: {u['calls']}   in: {u['prompt_tokens']:,} ({u['cache_hit_pct']}% cached)   out: {u['completion_tokens']:,}")
-            console.print(f"  est cost: {('$' + str(u['est_cost_usd'])) if u['est_cost_usd'] is not None else 'unknown (add [pricing] to config)'}")
+            console.print(f"  est cost: {('$' + str(u['est_cost_usd'])) if u['est_cost_usd'] is not None else 'unknown (add a \\[pricing] section to config)'}")
             if w["misses"]:
                 console.print(f"  cache misses: {w['misses']} ({w['missed_tokens']:,} tokens re-billed: {', '.join(w['reasons'])})")
         elif cmd_name == "/skills":

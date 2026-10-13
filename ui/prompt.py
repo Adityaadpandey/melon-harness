@@ -32,9 +32,9 @@ COMMANDS = {
     "/expand": "toggle longer tool output",
     "/save": "save this session",
     "/sessions": "list saved sessions",
-    "/resume": "resume a saved session: /resume <id>",
+    "/resume": "resume a saved session (give its ID)",
     "/checkpoint": "create a checkpoint",
-    "/restore": "restore a checkpoint: /restore <id>",
+    "/restore": "restore a checkpoint (give its ID)",
     "/exit": "quit",
 }
 
