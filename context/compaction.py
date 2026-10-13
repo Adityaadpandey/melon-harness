@@ -56,38 +56,33 @@ class ChatCompactor:
 
     async def compress(
         self, context_manager: ContextManager
-    ) -> tuple[str | None, TokenUsage | None]:
-        messages = context_manager.get_messages()
+    ) -> tuple[str | None, TokenUsage | None, int]:
+        """Summarise the older part of the history (together with any earlier
+        summary), leaving the recent tail untouched. Returns (summary, usage, cut)."""
+        cm = context_manager
+        keep = cm.config.keep_recent_tokens
+        cut = cm.find_cut(keep)
+        if cut <= 0:  # the whole history is "recent": fall back to keeping a quarter
+            cut = cm.find_cut(max(1, keep // 4))
+        if cut <= 0:
+            return None, None, 0
 
-        if len(messages) < 3:
-            return None, None
-
+        history = self._format_history_for_compaction(cm.history_for_summary(cut))
+        if cm.summary:
+            history = f"PREVIOUS SUMMARY (update it, do not drop facts that still matter):\n{cm.summary}\n\n---\n\nNEW MESSAGES TO FOLD IN:\n{history}"
         compression_messages = [
-            {
-                "role": "system",
-                "content": get_compression_prompt(),
-            },
-            {
-                "role": "user",
-                "content": self._format_history_for_compaction(messages),
-            },
+            {"role": "system", "content": get_compression_prompt()},
+            {"role": "user", "content": history},
         ]
 
         try:
-            summary = ""
-            usage = None
-            async for event in self.client.chat_completion(
-                compression_messages,
-                stream=False,
-                role="summarize",
-            ):
+            summary, usage = "", None
+            async for event in self.client.chat_completion(compression_messages, stream=False, role="summarize"):
                 if event.type == StreamEventType.MESSAGE_COMPLETE:
                     usage = event.usage
                     summary += event.text_delta.content if event.text_delta else ""
-
-            if not summary or not usage:
-                return None, None
-
-            return summary, usage
+            if not summary:
+                return None, None, 0
+            return summary, usage, cut
         except Exception:
-            return None, None
+            return None, None, 0

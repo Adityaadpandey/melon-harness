@@ -1,4 +1,5 @@
 from datetime import datetime
+import json
 from typing import Any
 from client.response import TokenUsage
 from config.config import Config
@@ -57,6 +58,9 @@ class ContextManager:
         self._latest_usage = TokenUsage()
         self.total_usage = TokenUsage()
         self.context_window = config.model.context_window
+        self.summary: str | None = None  # running summary of everything compacted so far
+        self.files_read: set[str] = set()
+        self.files_modified: set[str] = set()
 
     @property
     def message_count(self) -> int:
@@ -129,55 +133,80 @@ class ContextManager:
     def add_usage(self, usage: TokenUsage):
         self.total_usage += usage
 
-    def replace_with_summary(self, summary: str) -> None:
-        self._messages = []
+    def find_cut(self, keep_tokens: int) -> int:
+        """Index in self._messages where the kept tail starts. The tail holds
+        roughly `keep_tokens` of the most recent messages and never starts on a
+        tool result (its assistant tool_calls message must travel with it)."""
+        total, cut = 0, len(self._messages)
+        for i in range(len(self._messages) - 1, -1, -1):
+            total += self._messages[i].token_count or 0
+            cut = i
+            if total >= keep_tokens:
+                break
+        while cut > 0 and cut < len(self._messages) and self._messages[cut].role == "tool":
+            cut -= 1
+        return cut
 
-        continuation_content = f"""# Context Restoration (Previous Session Compacted)
+    def history_for_summary(self, cut: int) -> list[dict[str, Any]]:
+        return [m.to_dict() for m in self._messages[:cut]]
 
-        The previous conversation was compacted due to context length limits. Below is a detailed summary of the work done so far. 
+    def _track_files(self, items: list[MessageItem]) -> None:
+        for m in items:
+            for tc in m.tool_calls:
+                try:
+                    args = json.loads(tc["function"]["arguments"])
+                except (ValueError, KeyError, TypeError):
+                    continue
+                path = args.get("path") if isinstance(args, dict) else None
+                if not isinstance(path, str):
+                    continue
+                name = tc["function"]["name"]
+                if name == "read_file":
+                    self.files_read.add(path)
+                elif name in {"edit", "write_file"}:
+                    self.files_modified.add(path)
 
-        **CRITICAL: Actions listed under "COMPLETED ACTIONS" are already done. DO NOT repeat them.**
-
-        ---
-
-        {summary}
-
-        ---
-
-        Resume work from where we left off. Focus ONLY on the remaining tasks."""
-
-        summary_item = MessageItem(
-            role="user",
-            content=continuation_content,
-            token_count=count_tokens(continuation_content, self._model_name),
+    def apply_compaction(self, summary: str, cut: int) -> None:
+        """Replace messages[:cut] with the summary and keep the recent tail verbatim,
+        so the model still sees exactly what it just did instead of a retelling."""
+        self._track_files(self._messages[:cut])
+        files = ""
+        if self.files_modified:
+            files += f"\n\nFiles modified so far: {', '.join(sorted(self.files_modified))}"
+        reads = sorted(self.files_read - self.files_modified)
+        if reads:
+            files += f"\nFiles read so far: {', '.join(reads[:40])}"
+        self.summary = summary + files
+        content = (
+            "# Earlier conversation (compacted)\n\n"
+            "Older messages were replaced by this summary to save context. Actions listed as "
+            "completed are done; do not repeat them. The most recent messages follow unchanged.\n\n"
+            f"{self.summary}"
         )
-        self._messages.append(summary_item)
+        head = MessageItem(role="user", content=content, token_count=count_tokens(content, self._model_name))
+        self._messages = [head] + self._messages[cut:]
 
-        ack_content = """I've reviewed the context from the previous session. I understand:
-- The original goal and what was requested
-- Which actions are ALREADY COMPLETED (I will NOT repeat these)
-- The current state of the project
-- What still needs to be done
-
-I'll continue with the REMAINING tasks only, starting from where we left off."""
-        ack_item = MessageItem(
-            role="assistant",
-            content=ack_content,
-            token_count=count_tokens(ack_content, self._model_name),
-        )
-        self._messages.append(ack_item)
-
-        continue_content = (
-            "Continue with the REMAINING work only. Do NOT repeat any completed actions. "
-            "Proceed with the next step as described in the context above."
-        )
-
-        continue_item = MessageItem(
-            role="user",
-            content=continue_content,
-            token_count=count_tokens(continue_content, self._model_name),
-        )
-        self._messages.append(continue_item)
+    def repair_orphans(self) -> int:
+        """After an interrupt, an assistant message may have tool_calls with no
+        results. Providers reject that, so close each one with a stub result."""
+        fixed, out, i = 0, [], 0
+        msgs = self._messages
+        while i < len(msgs):
+            m = msgs[i]
+            out.append(m)
+            i += 1
+            if m.role == "assistant" and m.tool_calls:
+                answered = set()
+                while i < len(msgs) and msgs[i].role == "tool":
+                    answered.add(msgs[i].tool_call_id)
+                    out.append(msgs[i])
+                    i += 1
+                for tc in m.tool_calls:
+                    if tc["id"] not in answered:
+                        out.append(MessageItem(role="tool", content="[interrupted before this tool ran]", tool_call_id=tc["id"], token_count=8))
+                        fixed += 1
+        self._messages = out
+        return fixed
 
     def prune_tool_outputs(self) -> int:
         user_message_count = sum(1 for msg in self._messages if msg.role == "user")
@@ -216,3 +245,6 @@ I'll continue with the REMAINING tasks only, starting from where we left off."""
 
     def clear(self) -> None:
         self._messages = []
+        self.summary = None
+        self.files_read.clear()
+        self.files_modified.clear()

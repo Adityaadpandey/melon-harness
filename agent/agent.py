@@ -162,15 +162,8 @@ class Agent:
                 self.session.client.registry.get(self.config.model_name).context_length
             )
             if self.session.context_manager.needs_compression():
-                summary, usage = await self.session.chat_compactor.compress(
-                    self.session.context_manager
-                )
-
-                if summary:
-                    self.session.tool_registry.epoch += 1  # old reads are gone from context
-                    self.session.context_manager.replace_with_summary(summary)
-                    self.session.context_manager.set_latest_usage(usage)
-                    self.session.context_manager.add_usage(usage)
+                if await self._compact():
+                    yield AgentEvent.notice("Context compacted (recent messages kept)")
 
             tool_schemas = self.session.tool_registry.get_schemas()
 
@@ -274,6 +267,19 @@ class Agent:
                 self.session.tool_registry.epoch += 1
         self._failed = True
         yield AgentEvent.agent_error(f"Maximum turns ({max_turns}) reached")
+
+    async def _compact(self) -> bool:
+        cm = self.session.context_manager
+        summary, usage, cut = await self.session.chat_compactor.compress(cm)
+        if not summary:
+            return False
+        before = cm._latest_usage.total_tokens
+        self.session.tool_registry.epoch += 1  # earlier reads are no longer in context
+        cm.apply_compaction(summary, cut)
+        cm.set_latest_usage(usage)
+        cm.add_usage(usage)
+        self.session.tracer.emit("compaction", cut=cut, tokens_before=before, summary_tokens=usage.completion_tokens if usage else None)
+        return True
 
     def _is_parallel_safe(self, tool_call: ToolCall) -> bool:
         tool = self.session.tool_registry.get(tool_call.name)
