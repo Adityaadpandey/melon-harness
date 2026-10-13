@@ -112,9 +112,9 @@ class Screen:
 
         # the Window keeps the cursor line visible, so parking the cursor on the last line follows
         # the output and parking it higher up holds the view still while new lines arrive below
-        self.main = Window(_Pane(self._transcript, self.scroll, self._cursor), wrap_lines=False)
+        self.main = Window(_Pane(self._transcript, self.scroll, self._cursor), wrap_lines=False, height=Dimension(weight=1))
         self.status = Window(_Pane(self._status, self.scroll), height=lambda: Dimension.exact(self._status_height))
-        self.sections = [Window(_Pane(lambda k=k: self._section(k), self.scroll), wrap_lines=False, style="bg:#151826") for k in ("read", "write", "cmd")]
+        self.sections = [Window(_Pane(lambda k=k: self._section(k), self.scroll), wrap_lines=False, style="bg:#151826", height=Dimension(weight=1)) for k in ("read", "write", "cmd")]
         rule = lambda: Window(height=1, char="─", style="fg:#3a3f5c bg:#151826")
         side = VSplit([
             Window(width=1, char="│", style="fg:#3a3f5c"),
@@ -125,7 +125,7 @@ class Screen:
         margin = Window(width=MARGIN)
         self.body = HSplit([
             header,
-            VSplit([margin, self.main, ConditionalContainer(side, filter=wide)]),
+            VSplit([margin, self.main, ConditionalContainer(side, filter=wide)], height=Dimension(min=4, weight=100)),
             VSplit([margin, self.status]),
         ])
         self.sink.on_write = self._poke
@@ -217,9 +217,10 @@ class Screen:
             "write": ("WRITTEN", AMBER, list(t.written.items())),
             "cmd": ("COMMANDS", LAVENDER, t.commands),
         }[kind]
-        out: list[tuple[str, str]] = [(f"bold fg:{color}", f" ▍{title} "), (f"fg:{MUTED}", f"{len(items)}\n")]
+        out: list[tuple[str, str]] = [("", " "), (f"bold fg:#14161f bg:{color}", f" {title} "), (f"bold fg:{color}", f" {len(items)}\n")]
         if not items:
-            out.append((f"fg:{MUTED} italic", "  nothing yet"))
+            hint = {"read": "files the agent opens", "write": "edits show up with a +/− bar", "cmd": "builds, tests and scripts"}[kind]
+            out.append((f"fg:{MUTED} italic", f"\n   {hint}"))
             return out
         hidden = max(0, len(items) - rows)
         if hidden:

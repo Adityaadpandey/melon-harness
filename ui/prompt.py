@@ -86,7 +86,8 @@ class InputSession:
         from prompt_toolkit.application import Application
         from prompt_toolkit.filters import Condition
         from prompt_toolkit.key_binding import merge_key_bindings
-        from prompt_toolkit.layout import Float, FloatContainer, HSplit, Layout, Window
+        from prompt_toolkit.application import get_app
+        from prompt_toolkit.layout import Float, FloatContainer, HSplit, Layout, VSplit, Window
         from prompt_toolkit.layout.controls import FormattedTextControl
         from prompt_toolkit.layout.dimension import Dimension
         from prompt_toolkit.layout.menus import CompletionsMenu
@@ -111,7 +112,7 @@ class InputSession:
         self.on_interrupt: Callable[[], None] | None = None
         self._task: asyncio.Task | None = None
         self.area = TextArea(
-            prompt=[("class:bar", "▍ "), ("class:prompt", "✦ ")], style="class:box", dont_extend_height=True, multiline=True, wrap_lines=True, history=history,
+            prompt=[("class:prompt", " ✦ ")], style="class:box", dont_extend_height=True, multiline=True, wrap_lines=True, history=history,
             completer=ThreadedCompleter(MewCompleter(cwd, forbidden, models)), complete_while_typing=True,
             height=lambda: Dimension(min=1, max=12, preferred=max(1, self.area.document.line_count)),
         )
@@ -227,8 +228,18 @@ class InputSession:
             kb.add(key, filter=asking)(lambda e: self._pick(self.choice[0] - 1))
         kb.add("<any>", filter=asking)(lambda e: None)  # swallow stray typing while a question is open
 
-        footer = Window(FormattedTextControl(footer_text), height=1)
-        input_box = [Window(height=1, style="class:box"), self.area, Window(height=1, style="class:box"), footer]
+        hints = [("class:tb.key", " enter "), ("class:toolbar", " send  "), ("class:tb.key", " alt+enter "), ("class:toolbar", " newline  "),
+                 ("class:tb.key", " / "), ("class:toolbar", " commands  "), ("class:tb.key", " @ "), ("class:toolbar", " files ")]
+
+        def footer_all():
+            left = footer_text()
+            used = sum(len(t) for _, t in left)
+            room = get_app().output.get_size().columns - used - sum(len(t) for _, t in hints)
+            return left + ([("class:toolbar", " " * room)] + hints if self.fullscreen and room > 2 else [])
+
+        footer = Window(FormattedTextControl(footer_all), height=1, style="class:statusbar")
+        bar = Window(width=1, char="▍", style=f"fg:{ACCENT} bg:#1d2033")  # accent edge down the whole input box
+        input_box = [Window(height=1, style="class:box"), VSplit([bar, self.area]), Window(height=1, style="class:box"), footer]
         root = FloatContainer(
             content=HSplit(([body] if body is not None else []) + input_box),
             floats=[Float(xcursor=True, ycursor=True, content=CompletionsMenu(max_height=8, scroll_offset=1))],
@@ -238,7 +249,7 @@ class InputSession:
             erase_when_done=not self.fullscreen, full_screen=self.fullscreen, mouse_support=self.fullscreen,
             refresh_interval=0.1 if self.fullscreen else None,
             style=Style.from_dict({
-                "prompt": f"bg:#1d2033 {ACCENT} bold", "box": "bg:#1d2033 #d5d9ec", "bar": f"bg:#1d2033 {ACCENT} bold", "toolbar": MUTED, "tb.dot": "#3a3f5c",
+                "prompt": f"bg:#1d2033 {ACCENT} bold", "box": "bg:#1d2033 #d5d9ec", "statusbar": "bg:#151826", "tb.key": "bg:#2a2e48 #c5cae9", "bar": f"bg:#1d2033 {ACCENT} bold", "toolbar": MUTED, "tb.dot": "#3a3f5c",
                 "tb.chip": f"bg:{LAVENDER} #14161f bold", "tb.model": f"{ACCENT} bold", "tb.ok": "#6ee7b7", "tb.warn": "#fbbf6a", "tb.bad": "#ff6b7f",
                 "completion-menu.completion": "bg:#1d2033 #c5cae9", "completion-menu.completion.current": f"bg:{ACCENT} #14161f bold",
                 "completion-menu.meta.completion": "bg:#1d2033 #6c7393", "completion-menu.meta.completion.current": f"bg:{ACCENT} #14161f",
