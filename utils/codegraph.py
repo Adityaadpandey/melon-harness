@@ -68,17 +68,19 @@ class CodeGraph:
     # ---- locations
     def rel(self, source_file: str) -> str:
         """Graph paths are absolute from wherever it was built; map them onto this workspace
-        by finding the longest suffix that exists here."""
+        by finding the longest suffix that exists here (relative to the workspace or its parents)."""
         if source_file in self._rel:
             return self._rel[source_file]
         parts = Path(source_file).parts
-        found = source_file
+        found, absolute = source_file, None
         for i in range(1, len(parts)):
             cand = Path(*parts[i:])
-            if (self.workspace / cand).exists() or any((p / cand).exists() for p in [self.workspace, *self.workspace.parents][:3]):
-                found = cand.as_posix()
+            base = next((b for b in [self.workspace, *self.workspace.parents][:3] if (b / cand).exists()), None)
+            if base is not None:
+                found, absolute = cand.as_posix(), base / cand
                 break
         self._rel[source_file] = found
+        self.__dict__.setdefault("_abs", {})[source_file] = absolute
         return found
 
     def where(self, nid: str) -> str:
@@ -146,3 +148,41 @@ class CodeGraph:
             return None
         age = time.strftime("%Y-%m-%d", time.localtime(self.built))
         return f"graph built {age}; {n} commit(s) since then, so recent changes may be missing" if n else None
+
+
+    # ---- direction: the graph's edge orientation is not reliable, the source text is
+    def _text(self, nid: str) -> str:
+        src = self.nodes[nid].get("source_file", "")
+        self.rel(src)
+        absolute = self.__dict__["_abs"].get(src)
+        cache = self.__dict__.setdefault("_texts", {})
+        if src not in cache:
+            try:
+                cache[src] = absolute.read_text(encoding="utf-8", errors="replace") if absolute else ""
+            except OSError:
+                cache[src] = ""
+        return cache[src]
+
+    def _call_count(self, src: str, dst: str) -> int:
+        """How many times the code in src's file calls dst by name (definitions excluded)."""
+        import re
+
+        name = re.escape(self.nodes[dst]["label"].strip().lstrip(".").removesuffix("()").split(".")[-1])
+        text = self._text(src)
+        calls = len(re.findall(rf"\b{name}\s*\(", text))
+        defs = len(re.findall(
+            rf"^[ \t]*(?:export\s+)?(?:default\s+)?(?:(?:public|private|protected|static|async|readonly|get|set)\s+)*(?:function\*?\s+|def\s+)?{name}\s*\(",
+            text, re.M,
+        ))
+        return max(0, calls - defs)
+
+    def call_direction(self, node: str, other: str) -> str:
+        """Who calls whom between two call-linked nodes, judged from the code itself:
+        'caller' (other calls node), 'callee' (node calls other) or 'unclear' (both or neither)."""
+        other_calls_node = self._call_count(other, node) > 0
+        node_calls_other = self._call_count(node, other) > 0
+        if other_calls_node and not node_calls_other:
+            return "caller"
+        if node_calls_other and not other_calls_node:
+            return "callee"
+        return "unclear"

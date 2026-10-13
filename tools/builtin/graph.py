@@ -10,7 +10,7 @@ LIMIT = 25
 class GraphParams(BaseModel):
     action: str = Field(
         ...,
-        description="find (locate symbols/files by name) | callers (who calls NAME) | callees (what NAME calls) | "
+        description="find (locate symbols/files by name) | callers (who calls NAME; direction checked in source) | callees (what NAME calls) | "
         "neighbors (all relations of NAME) | path (shortest connection NAME -> TO) | community (the module NAME belongs to) | stats",
     )
     name: str | None = Field(None, description="Symbol, class or file name (e.g. delTicketTypeCache, ticket.service.ts)")
@@ -63,12 +63,24 @@ class GraphTool(Tool):
                 rows.append(f"{mark} {e.get('relation', '?'):<10} {arrow} {g.nodes[other]['label']:<38} {g.where(other)}")
             return rows
 
-        if act == "callers":
-            rows = fmt([(o, e) for o, e in g.inc[node] if e.get("relation") == "calls"], "<-")
-            return ToolResult.success_result(f"{head}\ncalled by {len(rows)}:\n" + "\n".join(rows[:LIMIT]) + (f"\n... +{len(rows) - LIMIT} more" if len(rows) > LIMIT else "") + note)
-        if act == "callees":
-            rows = fmt([(o, e) for o, e in g.out[node] if e.get("relation") == "calls"], "->")
-            return ToolResult.success_result(f"{head}\ncalls {len(rows)}:\n" + "\n".join(rows[:LIMIT]) + (f"\n... +{len(rows) - LIMIT} more" if len(rows) > LIMIT else "") + note)
+        if act in {"callers", "callees"}:
+            # the graph's edge orientation is unreliable, so direction is decided from the source text
+            linked = {}
+            for other, e in g.out[node] + g.inc[node]:
+                if e.get("relation") == "calls" and other != node:
+                    linked.setdefault(other, e)
+            want = "caller" if act == "callers" else "callee"
+            rows, unclear = [], []
+            for other, e in linked.items():
+                d = g.call_direction(node, other)
+                mark = "~" if e.get("confidence") == "INFERRED" else " "
+                line = f"{mark} {g.nodes[other]['label']:<38} {g.where(other)}"
+                (rows if d == want else unclear if d == "unclear" else []).append(line)
+            what = "call it" if act == "callers" else "it calls"
+            out = f"{head}\n{len(rows)} that {what} (direction confirmed in the source text):\n" + "\n".join(rows[:LIMIT])
+            if unclear:
+                out += f"\n\ncall-linked but direction unclear ({len(unclear)}); confirm with grep:\n" + "\n".join(unclear[:10])
+            return ToolResult.success_result(out + note)
         if act == "neighbors":
             rows = fmt(g.out[node], "->") + fmt(g.inc[node], "<-")
             return ToolResult.success_result(f"{head}\n" + "\n".join(rows[: LIMIT * 2]) + note)
