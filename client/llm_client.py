@@ -1,234 +1,161 @@
-import asyncio
-from typing import Any, AsyncGenerator
-from openai import APIConnectionError, APIError, AsyncOpenAI, RateLimitError
+from __future__ import annotations
 
-from client.response import (
-    StreamEventType,
-    StreamEvent,
-    TextDelta,
-    TokenUsage,
-    ToolCall,
-    ToolCallDelta,
-    parse_tool_call_arguments,
-)
+import asyncio
+import json
+import random
+import time
+from pathlib import Path
+from typing import Any, AsyncGenerator
+
+from client.adapters import AnthropicAdapter, OpenAIChatAdapter
+from client.errors import ProviderError
+from client.response import StreamEvent, StreamEventType, TextDelta, TokenUsage, ToolCall
+from client.routing import ModelRegistry, Router
 from config.config import Config
+from config.loader import get_data_dir
+from utils.trace import Tracer
 
 
 class LLMClient:
-    def __init__(self, config: Config) -> None:
-        self._client: AsyncOpenAI | None = None
-        self._max_retries: int = 3
-        self.config = config
+    """One entry point for every model call. Picks candidates through the
+    router, talks to the right wire protocol, retries transient failures with
+    jittered backoff, and falls back to the next candidate when a model is
+    unusable. Fallbacks are announced as NOTICE events, never silent."""
 
-    def get_client(self) -> AsyncOpenAI:
-        if self._client is None:
-            self._client = AsyncOpenAI(
-                api_key=self.config.api_key,  # "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"
-                base_url=self.config.base_url,  # "https://openrouter.ai/api/v1"
-            )
-        return self._client
+    def __init__(self, config: Config, tracer: Tracer | None = None) -> None:
+        self.config = config
+        self.tracer = tracer or Tracer("detached")
+        self._max_retries = 3
+        self._adapters: dict[str, Any] = {}
+        self._no_temperature: set[str] = set()
+        self.registry = ModelRegistry(config, get_data_dir())
+        self.router = Router(config, self.registry)
+        self.last_model: str | None = None
+
+    async def initialize(self) -> None:
+        await self.registry.load()
+
+    def _adapter(self, endpoint: str):
+        if endpoint not in self._adapters:
+            cls = AnthropicAdapter if endpoint == "/messages" else OpenAIChatAdapter
+            self._adapters[endpoint] = cls(self.config.api_key, self.config.base_url)
+        return self._adapters[endpoint]
 
     async def close(self) -> None:
-        if self._client:
-            await self._client.close()
-            self._client = None
+        for a in self._adapters.values():
+            await a.close()
+        self._adapters.clear()
 
-    def _build_tools(self, tools: list[dict[str, Any]]):
-        return [
-            {
-                "type": "function",
-                "function": {
-                    "name": tool["name"],
-                    "description": tool.get("description", ""),
-                    "parameters": tool.get(
-                        "parameters",
-                        {
-                            "type": "object",
-                            "properties": {},
-                        },
-                    ),
-                },
-            }
-            for tool in tools
-        ]
+    @staticmethod
+    def _backoff(attempt: int) -> float:
+        return min(30.0, 2**attempt) * random.uniform(0.5, 1.0)
 
     async def chat_completion(
         self,
         messages: list[dict[str, Any]],
         tools: list[dict[str, Any]] | None = None,
         stream: bool = True,
+        role: str = "default",
     ) -> AsyncGenerator[StreamEvent, None]:
-        client = self.get_client()
+        est_tokens = len(json.dumps(messages, default=str)) // 3
+        models, skipped = self.router.candidates(
+            role, need_tools=bool(tools), min_context=est_tokens
+        )
+        for s in skipped:
+            self.tracer.emit("model_skipped", role=role, reason=s)
+        if not models:
+            why = "; ".join(skipped) or "no models configured"
+            yield StreamEvent(type=StreamEventType.ERROR, error=f"No usable model for role '{role}' ({why})")
+            return
 
-        kwargs = {
-            "model": self.config.model_name,
-            "messages": messages,
-            "stream": stream,
-        }
+        last_error = "unknown error"
+        for i, model in enumerate(models):
+            if i > 0:
+                yield StreamEvent(
+                    type=StreamEventType.NOTICE,
+                    notice=f"Falling back from {models[i - 1]} to {model} ({last_error[:120]})",
+                )
+            outcome: ProviderError | None = None
+            collected = _Collector()
+            async for ev in self._call_model(model, role, messages, tools, stream, collected):
+                if isinstance(ev, ProviderError):
+                    outcome = ev
+                else:
+                    yield ev
+            if outcome is None:
+                return
+            last_error = f"{model}: {outcome}"
+            if collected.emitted or not outcome.fallback:
+                # output already reached the caller (a fallback would duplicate
+                # it), or the request itself is bad: stop here
+                yield StreamEvent(type=StreamEventType.ERROR, error=last_error)
+                return
+        yield StreamEvent(type=StreamEventType.ERROR, error=f"All candidate models failed. Last: {last_error}")
 
-        if tools:
-            kwargs["tools"] = self._build_tools(tools)
-            kwargs["tool_choice"] = "auto"
+    async def _call_model(self, model, role, messages, tools, stream, collected):
+        info = self.registry.get(model)
+        adapter = self._adapter(info.endpoint)
+        temperature = None if model in self._no_temperature else self.config.temperature
 
         for attempt in range(self._max_retries + 1):
+            started = time.perf_counter()
+            first_token: float | None = None
+            text, calls, usage, finish = "", [], None, None
             try:
+                async for ev in adapter.stream(model, messages, tools, temperature):
+                    if first_token is None and ev.type in (
+                        StreamEventType.TEXT_DELTA,
+                        StreamEventType.TOOL_CALL_START,
+                    ):
+                        first_token = time.perf_counter() - started
+                    if ev.type == StreamEventType.TEXT_DELTA:
+                        text += ev.text_delta.content
+                    elif ev.type == StreamEventType.TOOL_CALL_COMPLETE:
+                        calls.append(ev.tool_call)
+                    elif ev.type == StreamEventType.MESSAGE_COMPLETE:
+                        usage, finish = ev.usage, ev.finish_reason
+                        continue  # re-emitted below, in the requested shape
+                    if stream:
+                        collected.emitted = True
+                        yield ev
+                self.last_model = model
+                self.tracer.emit(
+                    "model_call", model=model, role=role, attempt=attempt, ok=True,
+                    sec=round(time.perf_counter() - started, 3),
+                    ttft=round(first_token, 3) if first_token is not None else None,
+                    tokens=usage.__dict__ if usage else None, tool_calls=len(calls),
+                )
                 if stream:
-                    async for event in self._stream_response(client, kwargs):
-                        yield event
+                    yield StreamEvent(type=StreamEventType.MESSAGE_COMPLETE, finish_reason=finish, usage=usage)
                 else:
-                    event = await self._non_stream_response(client, kwargs)
-                    yield event
+                    for c in calls:
+                        yield StreamEvent(type=StreamEventType.TOOL_CALL_COMPLETE, tool_call=c)
+                    yield StreamEvent(
+                        type=StreamEventType.MESSAGE_COMPLETE,
+                        text_delta=TextDelta(text) if text else None,
+                        finish_reason=finish, usage=usage,
+                    )
                 return
-            except RateLimitError as e:
-                if attempt < self._max_retries:
-                    wait_time = 2**attempt
-                    await asyncio.sleep(wait_time)
-                else:
-                    yield StreamEvent(
-                        type=StreamEventType.ERROR,
-                        error=f"Rate limit exceeded: {e}",
-                    )
-                    return
-            except APIConnectionError as e:
-                if attempt < self._max_retries:
-                    wait_time = 2**attempt
-                    await asyncio.sleep(wait_time)
-                else:
-                    yield StreamEvent(
-                        type=StreamEventType.ERROR,
-                        error=f"Connection error: {e}",
-                    )
-                    return
-            except APIError as e:
-                yield StreamEvent(
-                    type=StreamEventType.ERROR,
-                    error=f"API error: {e}",
+            except ProviderError as e:
+                self.tracer.emit(
+                    "model_call", model=model, role=role, attempt=attempt, ok=False,
+                    status=e.status, error=str(e)[:300],
+                    sec=round(time.perf_counter() - started, 3),
                 )
+                if e.drop_temperature and temperature is not None and not collected.emitted:
+                    self._no_temperature.add(model)
+                    temperature = None
+                    continue
+                if e.retry and attempt < self._max_retries and not collected.emitted:
+                    await asyncio.sleep(self._backoff(attempt))
+                    continue
+                if e.fallback:
+                    self.registry.mark_down(model, 3600 if e.status in (403, 404) else 60)
+                yield e
                 return
 
-    async def _stream_response(
-        self,
-        client: AsyncOpenAI,
-        kwargs: dict[str, Any],
-    ) -> AsyncGenerator[StreamEvent, None]:
-        response = await client.chat.completions.create(**kwargs)
 
-        finish_reason: str | None = None
-        usage: TokenUsage | None = None
-        tool_calls: dict[int, dict[str, Any]] = {}
+class _Collector:
+    """Remembers whether any streamed output has already reached the caller."""
 
-        async for chunk in response:
-            if hasattr(chunk, "usage") and chunk.usage:
-                usage = TokenUsage(
-                    prompt_tokens=chunk.usage.prompt_tokens,
-                    completion_tokens=chunk.usage.completion_tokens,
-                    total_tokens=chunk.usage.total_tokens,
-                    cached_tokens=chunk.usage.prompt_tokens_details.cached_tokens,
-                )
-
-            if not chunk.choices:
-                continue
-
-            choice = chunk.choices[0]
-            delta = choice.delta
-
-            if choice.finish_reason:
-                finish_reason = choice.finish_reason
-
-            if delta.content:
-                yield StreamEvent(
-                    type=StreamEventType.TEXT_DELTA,
-                    text_delta=TextDelta(delta.content),
-                )
-
-            if delta.tool_calls:
-                for tool_call_delta in delta.tool_calls:
-                    idx = tool_call_delta.index
-
-                    if idx not in tool_calls:
-                        tool_calls[idx] = {
-                            "id": tool_call_delta.id or "",
-                            "name": "",
-                            "arguments": "",
-                        }
-
-                        if tool_call_delta.function:
-                            if tool_call_delta.function.name:
-                                tool_calls[idx]["name"] = tool_call_delta.function.name
-                                yield StreamEvent(
-                                    type=StreamEventType.TOOL_CALL_START,
-                                    tool_call_delta=ToolCallDelta(
-                                        call_id=tool_calls[idx]["id"],
-                                        name=tool_call_delta.function.name,
-                                    ),
-                                )
-
-                        if tool_call_delta.function.arguments:
-                            tool_calls[idx][
-                                "arguments"
-                            ] += tool_call_delta.function.arguments
-
-                            yield StreamEvent(
-                                type=StreamEventType.TOOL_CALL_DELTA,
-                                tool_call_delta=ToolCallDelta(
-                                    call_id=tool_calls[idx]["id"],
-                                    name=tool_call_delta.function.name,
-                                    arguments_delta=tool_call_delta.function.arguments,
-                                ),
-                            )
-
-        for idx, tc in tool_calls.items():
-            yield StreamEvent(
-                type=StreamEventType.TOOL_CALL_COMPLETE,
-                tool_call=ToolCall(
-                    call_id=tc["id"],
-                    name=tc["name"],
-                    arguments=parse_tool_call_arguments(tc["arguments"]),
-                ),
-            )
-
-        yield StreamEvent(
-            type=StreamEventType.MESSAGE_COMPLETE,
-            finish_reason=finish_reason,
-            usage=usage,
-        )
-
-    async def _non_stream_response(
-        self,
-        client: AsyncOpenAI,
-        kwargs: dict[str, Any],
-    ) -> StreamEvent:
-        response = await client.chat.completions.create(**kwargs)
-        choice = response.choices[0]
-        message = choice.message
-
-        text_delta = None
-        if message.content:
-            text_delta = TextDelta(content=message.content)
-
-        tool_calls: list[ToolCall] = []
-        if message.tool_calls:
-            for tc in message.tool_calls:
-                tool_calls.append(
-                    ToolCall(
-                        call_id=tc.id,
-                        name=tc.function.name,
-                        arguments=parse_tool_call_arguments(tc.function.arguments),
-                    )
-                )
-
-        usage = None
-        if response.usage:
-            usage = TokenUsage(
-                prompt_tokens=response.usage.prompt_tokens,
-                completion_tokens=response.usage.completion_tokens,
-                total_tokens=response.usage.total_tokens,
-                cached_tokens=response.usage.prompt_tokens_details.cached_tokens,
-            )
-
-        return StreamEvent(
-            type=StreamEventType.MESSAGE_COMPLETE,
-            text_delta=text_delta,
-            finish_reason=choice.finish_reason,
-            usage=usage,
-        )
+    emitted = False

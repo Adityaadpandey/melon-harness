@@ -98,6 +98,11 @@ class Config(BaseModel):
     max_turns: int = 100
     mcp_servers: dict[str, MCPServerConfig] = Field(default_factory=dict)
 
+    # role -> ordered model ids. Roles in use: default (fallbacks after the main
+    # model), explore, review, summarize. A missing role falls back to default.
+    routing: dict[str, list[str]] = Field(default_factory=dict)
+    trace: bool = True
+
     allowed_tools: list[str] | None = Field(
         None,
         description="If set, only these tools will be available to the agent",

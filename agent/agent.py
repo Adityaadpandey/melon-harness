@@ -69,6 +69,8 @@ class Agent:
                         content = event.text_delta.content
                         response_text += content
                         yield AgentEvent.text_delta(content)
+                elif event.type == StreamEventType.NOTICE:
+                    yield AgentEvent.notice(event.notice or "")
                 elif event.type == StreamEventType.TOOL_CALL_COMPLETE:
                     if event.tool_call:
                         tool_calls.append(event.tool_call)

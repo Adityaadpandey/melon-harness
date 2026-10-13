@@ -76,7 +76,9 @@ def _merge_dicts(base: dict[str, Any], override: dict[str, Any]) -> dict[str, An
 
 def load_config(cwd: Path | None) -> Config:
     cwd = cwd or Path.cwd()
+    # repo-local .env wins, then the harness's own (where API_KEY normally lives)
     load_dotenv(cwd / ".env")
+    load_dotenv(Path(__file__).resolve().parent.parent / ".env")
 
     system_path = get_system_config_path()
 

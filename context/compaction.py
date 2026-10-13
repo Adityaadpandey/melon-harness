@@ -79,10 +79,11 @@ class ChatCompactor:
             async for event in self.client.chat_completion(
                 compression_messages,
                 stream=False,
+                role="summarize",
             ):
                 if event.type == StreamEventType.MESSAGE_COMPLETE:
                     usage = event.usage
-                    summary += event.text_delta.content
+                    summary += event.text_delta.content if event.text_delta else ""
 
             if not summary or not usage:
                 return None, None

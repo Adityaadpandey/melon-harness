@@ -17,6 +17,7 @@ class StreamEventType(str, Enum):
     TEXT_DELTA = "text_delta"
     MESSAGE_COMPLETE = "message_complete"
     ERROR = "error"
+    NOTICE = "notice"
 
     TOOL_CALL_START = "tool_call_start"
     TOOL_CALL_DELTA = "tool_call_delta"
@@ -58,6 +59,7 @@ class StreamEvent:
     type: StreamEventType
     text_delta: TextDelta | None = None
     error: str | None = None
+    notice: str | None = None
     finish_reason: str | None = None
     tool_call_delta: ToolCallDelta | None = None
     tool_call: ToolCall | None = None

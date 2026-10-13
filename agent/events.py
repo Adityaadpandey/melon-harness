@@ -21,6 +21,9 @@ class AgentEventType(str, Enum):
     TEXT_DELTA = "text_delta"
     TEXT_COMPLETE = "text_complete"
 
+    # Harness decisions worth showing (e.g. model fallback)
+    NOTICE = "notice"
+
 
 @dataclass
 class AgentEvent:
@@ -105,3 +108,7 @@ class AgentEvent:
                 "exit_code": result.exit_code,
             },
         )
+
+    @classmethod
+    def notice(cls, message: str) -> AgentEvent:
+        return cls(type=AgentEventType.NOTICE, data={"message": message})

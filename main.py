@@ -85,6 +85,8 @@ class CLI:
                 if assistant_streaming:
                     self.tui.end_assistant()
                     assistant_streaming = False
+            elif event.type == AgentEventType.NOTICE:
+                console.print(f"[warning]{event.data.get('message')}[/warning]")
             elif event.type == AgentEventType.AGENT_ERROR:
                 error = event.data.get("error", "Unknown error")
                 console.print(f"\n[error]Error: {error}[/error]")

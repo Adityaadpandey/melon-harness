@@ -13,12 +13,17 @@ from safety.approval import ApprovalManager
 from tools.discovery import ToolDiscoveryManager
 from tools.mcp.mcp_manager import MCPManager
 from tools.registry import create_default_registry
+from utils.trace import Tracer
 
 
 class Session:
     def __init__(self, config: Config):
         self.config = config
-        self.client = LLMClient(config=config)
+        self.session_id = str(uuid.uuid4())
+        self.tracer = Tracer(
+            self.session_id, get_data_dir() / "traces" if config.trace else None
+        )
+        self.client = LLMClient(config=config, tracer=self.tracer)
         self.tool_registry = create_default_registry(config)
         self.context_manager: ContextManager | None = None
         self.discovery_manager = ToolDiscoveryManager(
@@ -33,13 +38,13 @@ class Session:
         )
         self.loop_detector = LoopDetector()
         self.hook_system = HookSystem(config)
-        self.session_id = str(uuid.uuid4())
         self.created_at = datetime.now()
         self.updated_at = datetime.now()
 
         self.turn_count = 0
 
     async def initialize(self) -> None:
+        await self.client.initialize()
         await self.mcp_manager.initialize()
         self.mcp_manager.register_tools(self.tool_registry)
 
