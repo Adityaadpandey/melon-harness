@@ -41,7 +41,7 @@ class MessageItem:
 
 
 class ContextManager:
-    PRUNE_PROTECT_TOKENS = 40_000
+    PRUNE_PROTECT_TOKENS = 20_000  # newest tool results kept whole
     PRUNE_MINIMUM_TOKENS = 20_000
 
     def __init__(
@@ -209,11 +209,7 @@ class ContextManager:
         return fixed
 
     def prune_tool_outputs(self) -> int:
-        user_message_count = sum(1 for msg in self._messages if msg.role == "user")
-
-        if user_message_count < 2:
-            return 0
-
+        # a single long task prunes too: its early searches are the ones re-sent most often
         total_tokens = 0
         pruned_tokens = 0
         to_prune: list[MessageItem] = []
@@ -236,7 +232,9 @@ class ContextManager:
         pruned_count = 0
 
         for msg in to_prune:
-            msg.content = "[Old tool result content cleared]"
+            head = (msg.content or "").strip().splitlines()[:1]
+            hint = f": {head[0][:100]}" if head else ""
+            msg.content = f"[Old tool result cleared to save tokens{hint}. Re-run the tool if you need it again.]"
             msg.token_count = count_tokens(msg.content, self._model_name)
             msg.pruned_at = datetime.now()
             pruned_count += 1

@@ -69,3 +69,15 @@ async def test_agent_compacts_mid_run_and_continues(tmp_path):
         evs = [e async for e in a.run("go")]
         assert seen.get("called")
         assert any("compacted" in e.data.get("message", "") for e in evs if e.type.value == "notice")
+
+
+def test_pruning_works_inside_one_task_keeps_newest_and_leaves_a_hint(tmp_path):
+    cm = ContextManager(Config(cwd=tmp_path), None, [])
+    cm.add_user_message("fix it")  # only one user message: a single long task
+    for i in range(20):
+        cm.add_assistant_message(None, [{"id": f"c{i}", "type": "function", "function": {"name": "grep", "arguments": "{}"}}])
+        cm.add_tool_result(f"c{i}", f"result number {i}\n" + "word " * 3000)  # ~3k tokens each
+    assert cm.prune_tool_outputs() > 0
+    tools = [m for m in cm._messages if m.role == "tool"]
+    assert tools[0].content.startswith("[Old tool result cleared") and "result number 0" in tools[0].content
+    assert "word word" in tools[-1].content and "word word" in tools[-2].content  # newest stay whole
