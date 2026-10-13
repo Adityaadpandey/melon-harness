@@ -43,3 +43,21 @@ async def test_stream_parsing():
     kinds = [e.type for e in out]
     assert StreamEventType.TEXT_DELTA in kinds and StreamEventType.TOOL_CALL_COMPLETE in kinds
     assert out[-1].finish_reason == "tool_calls" and out[-1].usage.total_tokens == 12
+
+
+def test_codex_requests_carry_a_stable_cache_session():
+    class Auth:
+        def credentials(self, refresh=False):
+            return "tok", "acct"
+
+    a = CodexResponsesAdapter(auth=Auth())
+    h1, h2 = a._headers(), a._headers()
+    # without this header the backend reports 0 cached tokens on every turn
+    assert h1["session_id"] == h2["session_id"] == a._cache_key and len(a._cache_key) >= 32
+    assert CodexResponsesAdapter(auth=Auth())._cache_key != a._cache_key
+
+
+def test_codex_luna_is_the_default_model():
+    from config.config import Config
+
+    assert Config().model_name == "codex/gpt-5.6-luna"

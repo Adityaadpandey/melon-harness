@@ -4,6 +4,7 @@ here knows about routing, retries or fallback; that lives in LLMClient."""
 from __future__ import annotations
 
 import json
+import uuid
 from typing import Any, AsyncGenerator
 
 import httpx
@@ -386,6 +387,7 @@ class CodexResponsesAdapter:
 
         self._auth = auth or CodexAuth()
         self._http = httpx.AsyncClient(timeout=TIMEOUT)
+        self._cache_key = str(uuid.uuid4())  # stable per session: keeps every turn on the backend that holds our prompt cache
 
     async def close(self) -> None:
         await self._http.aclose()
@@ -397,6 +399,7 @@ class CodexResponsesAdapter:
             "chatgpt-account-id": account,
             "OpenAI-Beta": "responses=experimental",
             "originator": "codex_cli_rs",
+            "session_id": self._cache_key,  # the Codex CLI sends its conversation id here and as prompt_cache_key
             "Accept": "text/event-stream",
         }
 
@@ -415,6 +418,7 @@ class CodexResponsesAdapter:
             "input": items,
             "store": False,
             "stream": True,
+            "prompt_cache_key": self._cache_key,
         }
         if tools:
             body["tools"] = [

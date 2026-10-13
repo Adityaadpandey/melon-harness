@@ -10,7 +10,7 @@ DEFAULT_BASE_URL = "https://api.commandcode.ai/provider/v1"
 
 
 class ModelConfig(BaseModel):
-    name: str = "claude-sonnet-5-5"  # a model the default gateway serves; override per project/profile or with -m
+    name: str = "codex/gpt-5.6-luna"  # your ChatGPT/Codex login; override per project/profile or with -m
     temperature: float = Field(default=1, ge=0.0, le=2.0)
     context_window: int = 256_000
 
