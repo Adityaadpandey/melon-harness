@@ -160,3 +160,22 @@ def test_heaviest_results_weighs_size_by_how_long_it_stays_in_context():
     assert h["repeated"] == ["read_file a.ts x2"]
     ev.insert(5, {"event": "compaction"})  # history rewritten: earlier results stop counting
     assert heaviest_results(ev)["tool_result_carried"] < h["tool_result_carried"]
+
+
+async def test_overlapping_reads_return_only_the_lines_not_already_in_context(tmp_path):
+    (tmp_path / "f.txt").write_text("\n".join(f"line{i}" for i in range(1, 31)) + "\n")
+    cfg = Config(cwd=tmp_path, approval=ApprovalPolicy.AUTO)
+    async with Agent(cfg) as a:
+        reg, hs = a.session.tool_registry, a.session.hook_system
+
+        async def read(**kw):
+            return (await reg.invoke("read_file", {"path": "f.txt", **kw}, tmp_path, hs)).output
+
+        assert "1|line1" in await read(offset=1, limit=10)
+        out = await read(offset=5, limit=11)  # 5-10 already seen, 11-15 new
+        assert "11|line11" in out and "7|line7" not in out and "already in context" in out
+        assert "unchanged and already in context" in await read(offset=3, limit=8)
+        out = await read()  # whole file: only 16-30 is new
+        assert "30|line30" in out and "\n2|line2\n" not in out and "[lines 1-15 already" in out
+        (tmp_path / "f.txt").write_text("changed\n" + "\n".join(f"line{i}" for i in range(2, 31)) + "\n")
+        assert "1|changed" in await read(offset=1, limit=3)  # file changed: forget the map

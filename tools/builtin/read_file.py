@@ -1,3 +1,4 @@
+import re
 from pathlib import Path
 
 from pydantic import BaseModel, Field
@@ -33,6 +34,34 @@ class ReadFileParams(BaseModel):
     )
 
 
+def _missing(have: list[tuple[int, int]], start: int, end: int) -> list[tuple[int, int]]:
+    """Sub-ranges of [start, end] (1-based, inclusive) not covered by `have`."""
+    out, cur = [], start
+    for a, b in sorted(have):
+        if b < cur:
+            continue
+        if a > end:
+            break
+        if a > cur:
+            out.append((cur, a - 1))
+        cur = max(cur, b + 1)
+    if cur <= end:
+        out.append((cur, end))
+    return out
+
+
+def _add(have: list[tuple[int, int]], a: int, b: int) -> None:
+    have.append((a, b))
+    have.sort()
+    merged = [have[0]]
+    for x, y in have[1:]:
+        if x <= merged[-1][1] + 1:
+            merged[-1] = (merged[-1][0], max(merged[-1][1], y))
+        else:
+            merged.append((x, y))
+    have[:] = merged
+
+
 class ReadFileTool(Tool):
     name = "read_file"
     description = (
@@ -46,7 +75,15 @@ class ReadFileTool(Tool):
 
     def __init__(self, config):
         super().__init__(config)
-        self._seen: dict = {}
+        self._seen: dict[str, tuple[tuple, list[tuple[int, int]]]] = {}
+
+    def _coverage(self, path: Path, epoch: int) -> list[tuple[int, int]]:
+        st = path.stat()
+        stamp = (st.st_mtime_ns, st.st_size, epoch)
+        entry = self._seen.get(str(path))
+        if not entry or entry[0] != stamp:
+            entry = self._seen[str(path)] = (stamp, [])
+        return entry[1]
 
     MAX_FILE_SIZE = 1024 * 1024 * 10
     MAX_OUTPUT_TOKENS = 8000  # ~32KB; bigger files are read in slices with offset/limit
@@ -73,22 +110,6 @@ class ReadFileTool(Tool):
                 where = ", ".join(f"{x.start}-{x.end}" for x in syms)
                 return ToolResult.error_result(f"'{params.symbol}' appears {len(syms)} times ({where}); read one with offset/limit.")
             params.offset, params.limit = syms[0].start, min(syms[0].end - syms[0].start + 1, 400)
-
-        # Re-reading an unchanged slice is pure token waste: say so instead, as
-        # long as the earlier read is still in context (epoch bumps when old
-        # tool output is pruned or the history is compacted).
-        try:
-            st = path.stat()
-            key = (str(path), params.offset, params.limit)
-            stamp = (st.st_mtime_ns, st.st_size, invocation.epoch)
-            if self._seen.get(key) == stamp:
-                return ToolResult.success_result(
-                    "[unchanged since you read it earlier in this conversation; that content is still in context above]",
-                    metadata={"deduped": True},
-                )
-            self._seen[key] = stamp
-        except OSError:
-            pass
 
         if not path.is_file():
             return ToolResult.error_result(f"Path is not a file: {path}")
@@ -135,11 +156,24 @@ class ReadFileTool(Tool):
             else:
                 end_idx = total_lines
 
-            selected_lines = lines[start_idx:end_idx]
+            # Per-file map of the line ranges already in context. A read only returns
+            # lines the model does not have yet; changing the file (mtime/size) or
+            # losing the old output (epoch: pruned or compacted) forgets the map.
+            have = self._coverage(path, invocation.epoch)
+            need = _missing(have, start_idx + 1, end_idx)
+            if not need:
+                return ToolResult.success_result(
+                    f"[lines {start_idx + 1}-{end_idx} of {path.name} are unchanged and already in context above]",
+                    metadata={"deduped": True},
+                )
             formatted_lines = []
-
-            for i, line in enumerate(selected_lines, start=start_idx + 1):
-                formatted_lines.append(f"{i}|{line}")
+            for n, (a, b) in enumerate(need):
+                if n or a > start_idx + 1:
+                    formatted_lines.append(f"[lines {start_idx + 1 if not n else need[n - 1][1] + 1}-{a - 1} already in context above]")
+                for i in range(a, b + 1):
+                    formatted_lines.append(f"{i}|{lines[i - 1]}")
+            if need[-1][1] < end_idx:
+                formatted_lines.append(f"[lines {need[-1][1] + 1}-{end_idx} already in context above]")
 
             output = "\n".join(formatted_lines)
             token_count = count_tokens(output)
@@ -153,6 +187,12 @@ class ReadFileTool(Tool):
                     suffix=f"\n... [truncated; file has {total_lines} lines. Re-read a slice with offset/limit]",
                 )
                 truncated = True
+
+            shown = re.findall(r"^(\d+)\|", output, re.M)  # what actually reached the model (truncation may cut it)
+            if shown:
+                last = int(shown[-1])
+                for a, b in need:
+                    _add(have, a, min(b, last))
 
             metadata_lines = []
             if start_idx > 0 or end_idx < total_lines:
