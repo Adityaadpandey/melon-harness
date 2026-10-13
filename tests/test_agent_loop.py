@@ -116,3 +116,15 @@ def test_empty_tool_output_still_has_content_key():
     m = MessageItem(role="tool", content="", tool_call_id="x").to_dict()
     assert m["content"] == "(no output)"
     assert MessageItem(role="assistant", content="", tool_calls=[{"id": "1"}]).to_dict()["content"] == ""
+
+
+async def test_a_stalled_model_stream_ends_when_the_time_budget_does(tmp_path):
+    import asyncio
+    from agent.agent import _within
+
+    async def stalled():
+        yield "first"
+        await asyncio.sleep(30)
+
+    got = [e async for e in _within(0.2, stalled())]
+    assert got[0] == "first" and "Time budget" in got[1].error

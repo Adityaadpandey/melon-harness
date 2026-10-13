@@ -80,6 +80,9 @@ class TaskState:
     def terminal(self) -> bool:
         return self.status in TERMINAL
 
+    def remaining(self) -> float:
+        return max(0.0, self.max_seconds - (time.monotonic() - self.started))
+
     def expired(self) -> bool:
         return time.monotonic() - self.started > self.max_seconds
 

@@ -19,11 +19,33 @@ from agent.verify import (
     run_check,
     snapshot,
 )
-from client.response import StreamEventType, TokenUsage, ToolCall, ToolResultMessage
+from client.response import StreamEvent, StreamEventType, TokenUsage, ToolCall, ToolResultMessage
 from config.config import Config
 from prompts.system import create_loop_breaker_prompt
 from tools.base import ToolConfirmation, ToolKind, ToolResult
 from tools.builtin.shell import finished_jobs, kill_jobs
+
+
+async def _within(seconds: float, stream):
+    """Pass a model stream through, but give up when the request's time budget is
+    gone: a stalled connection must not outlive the budget (retries and fallbacks
+    each wait for their own read timeout)."""
+    it = stream.__aiter__()
+    deadline = time.monotonic() + seconds
+    try:
+        while True:
+            left = deadline - time.monotonic()
+            try:
+                if left <= 0:
+                    raise asyncio.TimeoutError
+                yield await asyncio.wait_for(it.__anext__(), left)
+            except StopAsyncIteration:
+                return
+            except asyncio.TimeoutError:
+                yield StreamEvent(type=StreamEventType.ERROR, error="Time budget exhausted while waiting for the model")
+                return
+    finally:
+        await it.aclose()
 
 
 class Agent:
@@ -255,11 +277,11 @@ class Agent:
             usage: TokenUsage | None = None
             failed = False
 
-            async for event in self.session.client.chat_completion(
+            async for event in _within(task.remaining(), self.session.client.chat_completion(
                 self.session.context_manager.get_messages(),
                 tools=tool_schemas if tool_schemas else None,
                 role=self._role(task),
-            ):
+            )):
                 if event.type == StreamEventType.TEXT_DELTA:
                     if event.text_delta:
                         content = event.text_delta.content
