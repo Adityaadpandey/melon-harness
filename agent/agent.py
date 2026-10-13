@@ -44,6 +44,7 @@ class Agent:
         self._usage_base = 0
         self._review_sec = 0.0
         self.undo_info: dict | None = None
+        self._scout_error = ""
 
     async def run(self, message: str):
         await self.session.hook_system.trigger_before_agent(message)
@@ -59,7 +60,10 @@ class Agent:
             )
         else:
             message_for_model = message
+        self._scout_error = ""
         scout = await self._scout(message)
+        if self._scout_error:
+            yield AgentEvent.notice(f"Scout failed, continuing without it: {self._scout_error[:160]}")
         if scout:
             yield AgentEvent.notice("Scout finished; starting from its findings")
             message_for_model += (
@@ -378,7 +382,10 @@ class Agent:
         res = await reg.invoke(
             "subagent_investigator", {"goal": message}, self.config.cwd, self.session.hook_system, self.session.approval_manager
         )
-        return (res.output or "")[:6000] if res.success else ""
+        if not res.success:
+            self._scout_error = (res.error or "unknown error").splitlines()[0]
+            return ""
+        return (res.output or "")[:6000]
 
     def _role(self, task: TaskState) -> str:
         """Routing role for the next model call: a fixed role for sub-agents and

@@ -140,7 +140,8 @@ class SubagentTool(Tool):
         """
 
         if error:
-            return ToolResult.error_result(result)
+            # the reason goes first: UIs show only the top lines of a result
+            return ToolResult.error_result(f"Sub-agent '{self.definition.name}' FAILED: {error}\n" + result)
 
         return ToolResult.success_result(result)
 

@@ -86,6 +86,6 @@ def heaviest_results(events: list[dict], top: int = 5) -> dict:
     rows.sort(key=lambda r: -r["carried"])
     return {
         "top": rows[:top],
-        "tool_result_carried": sum(r["carried"] for r in rows),
+        "tool_result_carried": sum(r["carried"] for r in rows),  # an estimate (chars/4): pruned results still count
         "repeated": [f"{t} {tgt} x{n}" for (t, tgt), n in repeats.items() if n > 1 and t in ("read_file", "grep", "search")][:5],
     }
