@@ -99,7 +99,7 @@ def write(n):
 async def test_reviewer_findings_go_back_for_one_fix(repo, monkeypatch):
     calls = []
 
-    async def fake_review(config, request, files, checks):
+    async def fake_review(config, request, files, checks, claims=""):
         calls.append(files)
         return ReviewResult("ISSUES", "1. x.py:1 missing guard | evidence: none") if len(calls) == 1 else ReviewResult("PASS", "")
 
