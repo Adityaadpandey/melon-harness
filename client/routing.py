@@ -28,12 +28,16 @@ class ModelInfo:
     def endpoint(self) -> str:
         # /messages is the only route for Claude models; /responses is not
         # implemented, so chat/completions is the fallback for everything else
+        if "/responses" in self.endpoints and self.id.startswith("codex/"):
+            return "/responses"
         if "/messages" in self.endpoints:
             return "/messages"
         return "/chat/completions"
 
 
 def _guess(model_id: str, ctx: int) -> ModelInfo:
+    if model_id.startswith("codex/"):  # your ChatGPT login, not in the gateway catalog
+        return ModelInfo(model_id, 272_000, ["/responses"])
     eps = ["/messages"] if model_id.startswith("claude-") else ["/chat/completions"]
     return ModelInfo(model_id, ctx, eps)
 

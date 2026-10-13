@@ -1,8 +1,9 @@
-"""Terminal rendering in the style of Claude Code: a `⏺ Tool(args)` line per
-call, a `⎿` result summary under it, compact numbered diffs for edits, one
-spinner line with elapsed time, and a single-keypress approval prompt."""
+"""Terminal rendering with mew's own look: a night-sky palette (pink, lavender, mint),
+coloured chips for each tool call, a rail down the left of every block, syntax-highlighted
+diffs with tinted rows, and a shimmering status line while the agent works."""
 from __future__ import annotations
 
+import math
 import re
 import time
 from collections import deque
@@ -10,11 +11,12 @@ from pathlib import Path
 from typing import Any
 
 from rich import box
-from rich.console import Console, Group
+from rich.console import Console, ConsoleOptions, Group, RenderResult
 from rich.live import Live
 from rich.padding import Padding
 from rich.table import Table
 from rich.markdown import Markdown
+from rich.segment import Segment
 from rich.syntax import Syntax
 from rich.panel import Panel
 from rich.text import Text
@@ -25,31 +27,54 @@ from safety.approval import Decision
 from tools.base import ToolConfirmation
 from utils.paths import display_path_rel_to_cwd
 
-ACCENT = "#d97757"  # Claude orange
+ACCENT = "#ff7eb6"    # mew pink
+LAVENDER = "#b49cff"
+MINT = "#6ee7b7"
+AMBER = "#fbbf6a"
+SKY = "#7cc4ff"
+TEAL = "#5eead4"
+CORAL = "#ff6b7f"
+FG = "#d5d9ec"
+MUTED = "#6c7393"
+INK = "#14161f"       # text on top of a coloured chip
 
 AGENT_THEME = Theme(
     {
         "accent": ACCENT,
-        "info": "cyan",
-        "warning": "yellow",
-        "error": "bright_red",
-        "success": "green",
-        "dim": "dim",
-        "muted": "grey50",
-        "border": "grey35",
+        "info": SKY,
+        "warning": AMBER,
+        "error": f"bold {CORAL}",
+        "success": MINT,
+        "dim": MUTED,
+        "muted": MUTED,
+        "border": "#3a3f5c",
         "highlight": f"bold {ACCENT}",
         "user": f"bold {ACCENT}",
-        "assistant": "default",
+        "assistant": FG,
         "tool": "bold",
-        "tool.read": "cyan",
-        "tool.write": "yellow",
-        "tool.shell": "magenta",
-        "tool.network": "bright_blue",
-        "tool.memory": "green",
-        "tool.mcp": "bright_cyan",
-        "code": "white",
-        "diff.add": "green",
-        "diff.del": "red",
+        "tool.read": SKY,
+        "tool.write": AMBER,
+        "tool.shell": LAVENDER,
+        "tool.network": TEAL,
+        "tool.memory": MINT,
+        "tool.mcp": SKY,
+        "code": FG,
+        "diff.add": MINT,
+        "diff.del": CORAL,
+        # markdown: headings in the palette, inline code as a tinted pill
+        "markdown.h1": f"bold {ACCENT}",
+        "markdown.h2": f"bold {LAVENDER}",
+        "markdown.h3": f"bold {SKY}",
+        "markdown.h4": f"bold {TEAL}",
+        "markdown.code": f"{AMBER} on #232640",
+        "markdown.strong": "bold #f4f5ff",
+        "markdown.em": "italic #c9cdea",
+        "markdown.link": f"underline {SKY}",
+        "markdown.link_url": MUTED,
+        "markdown.item.bullet": f"bold {ACCENT}",
+        "markdown.item.number": f"bold {ACCENT}",
+        "markdown.block_quote": f"italic #8f96b8",
+        "markdown.hr": "#3a3f5c",
     }
 )
 

@@ -7,7 +7,7 @@ import time
 from pathlib import Path
 from typing import Any, AsyncGenerator
 
-from client.adapters import AnthropicAdapter, OpenAIChatAdapter
+from client.adapters import AnthropicAdapter, CodexResponsesAdapter, OpenAIChatAdapter
 from client.errors import ProviderError
 from client.response import StreamEvent, StreamEventType, TextDelta, TokenUsage, ToolCall
 from client.routing import ModelRegistry, Router
@@ -37,6 +37,9 @@ class LLMClient:
 
     def _adapter(self, endpoint: str):
         if endpoint not in self._adapters:
+            if endpoint == "/responses":
+                self._adapters[endpoint] = CodexResponsesAdapter()
+                return self._adapters[endpoint]
             cls = AnthropicAdapter if endpoint == "/messages" else OpenAIChatAdapter
             headers = {"x-cmd-zdr": "1"} if self.config.zdr else None
             self._adapters[endpoint] = cls(self.config.api_key, self.config.base_url, headers)

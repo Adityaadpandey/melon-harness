@@ -220,7 +220,7 @@ class Config(BaseModel):
     def validate(self) -> list[str]:
         errors: list[str] = []
 
-        if not self.api_key:
+        if not self.api_key and not self.model_name.startswith("codex/"):
             errors.append("No API key found. Set API_KEY environment variable")
 
         if not self.cwd.exists():
