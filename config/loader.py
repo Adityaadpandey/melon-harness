@@ -1,3 +1,4 @@
+import re
 from pathlib import Path
 from typing import Any
 
@@ -76,6 +77,24 @@ def _outline(text: str, max_lines: int = 45) -> str:
     return "\n".join(rows[:max_lines])
 
 
+def _with_imports(f: Path, text: str) -> str:
+    """Inline `@other.md` lines (Claude Code style), one level deep, files next to f only."""
+    def swap(m):
+        target = f.parent / m.group(1)
+        try:
+            return target.read_text(encoding="utf-8", errors="replace") if target.is_file() and target != f else m.group(0)
+        except OSError:
+            return m.group(0)
+
+    return re.sub(r"^@(\S+\.md)\s*$", swap, text, flags=re.M | re.I)
+
+
+def _house_rules(text: str, limit: int = 1500) -> str:
+    """Lines of a long rulebook about commits, comments, specs and plans, which must never be skipped."""
+    hits = [ln.strip() for ln in text.splitlines() if re.search(r"commit|comment|\bspec\b|\bplan\b|ask before", ln, re.I)]
+    return "\n".join(hits)[:limit]
+
+
 def _instructions_for(cwd: Path, home: Path | None = None) -> str | None:
     """AGENTS.md / CLAUDE.md from cwd up to the repo root, closest first, then the
     user's own ~/.claude/CLAUDE.md (their commit style, comment style, preferences).
@@ -100,7 +119,7 @@ def _instructions_for(cwd: Path, home: Path | None = None) -> str | None:
             f = d / name
             if not f.is_file() or f.resolve() in seen:
                 continue
-            text = f.read_text(encoding="utf-8", errors="replace")
+            text = _with_imports(f, f.read_text(encoding="utf-8", errors="replace"))
             if len(text.strip()) < 40 or text.strip() in texts:  # a stub like "@AGENTS.md", or a copy
                 continue
             seen.add(f.resolve())
@@ -112,6 +131,7 @@ def _instructions_for(cwd: Path, home: Path | None = None) -> str | None:
                     f"## {f} ({len(text)} chars, too long to inline)\n"
                     "Read the sections relevant to your task with read_file "
                     "(offset/limit) BEFORE editing. Section map:\n" + _outline(text)
+                    + "\nRules that always apply (commits, comments, specs, plans):\n" + _house_rules(text)
                 )
     return "\n\n".join(blocks) or None
 

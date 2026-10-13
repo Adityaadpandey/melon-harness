@@ -114,3 +114,11 @@ def test_user_global_and_sibling_instruction_files_are_all_read(tmp_path):
     (tmp_path / "home" / ".claude" / "CLAUDE.md").write_text("Never put a sign-off in commit messages. " * 2)
     out = _instructions_for(repo, home=tmp_path / "home")
     assert "Run the linter" in out and "one short imperative" in out and "sign-off" in out
+
+
+def test_long_rulebook_keeps_commit_rules_and_follows_imports(tmp_path):
+    (tmp_path / ".git").mkdir()
+    (tmp_path / "RULES.md").write_text("Commit messages never carry a sign-off line, ever.\n")
+    (tmp_path / "CLAUDE.md").write_text("# Rules\n@RULES.md\n" + "filler line\n" * 800 + "Always ask before writing a spec.\n")
+    out = _instructions_for(tmp_path, home=tmp_path / "nohome")
+    assert "too long to inline" in out and "never carry a sign-off" in out and "ask before writing a spec" in out
