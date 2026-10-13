@@ -36,8 +36,12 @@ class ReadFileTool(Tool):
 
     schema = ReadFileParams
 
+    def __init__(self, config):
+        super().__init__(config)
+        self._seen: dict = {}
+
     MAX_FILE_SIZE = 1024 * 1024 * 10
-    MAX_OUTPUT_TOKENS = 25000
+    MAX_OUTPUT_TOKENS = 8000  # ~32KB; bigger files are read in slices with offset/limit
 
     async def execute(self, invocation: ToolInvocation) -> ToolResult:
         params = ReadFileParams(**invocation.params)
@@ -45,6 +49,22 @@ class ReadFileTool(Tool):
 
         if not path.exists():
             return ToolResult.error_result(f"File not found: {path}")
+
+        # Re-reading an unchanged slice is pure token waste: say so instead, as
+        # long as the earlier read is still in context (epoch bumps when old
+        # tool output is pruned or the history is compacted).
+        try:
+            st = path.stat()
+            key = (str(path), params.offset, params.limit)
+            stamp = (st.st_mtime_ns, st.st_size, invocation.epoch)
+            if self._seen.get(key) == stamp:
+                return ToolResult.success_result(
+                    "[unchanged since you read it earlier in this conversation; that content is still in context above]",
+                    metadata={"deduped": True},
+                )
+            self._seen[key] = stamp
+        except OSError:
+            pass
 
         if not path.is_file():
             return ToolResult.error_result(f"Path is not a file: {path}")
@@ -95,7 +115,7 @@ class ReadFileTool(Tool):
             formatted_lines = []
 
             for i, line in enumerate(selected_lines, start=start_idx + 1):
-                formatted_lines.append(f"{i:6}|{line}")
+                formatted_lines.append(f"{i}|{line}")
 
             output = "\n".join(formatted_lines)
             token_count = count_tokens(output)
@@ -104,8 +124,9 @@ class ReadFileTool(Tool):
             if token_count > self.MAX_OUTPUT_TOKENS:
                 output = truncate_text(
                     output,
+                    "gpt-4",
                     self.MAX_OUTPUT_TOKENS,
-                    suffix=f"\n... [truncated {total_lines} total lines]",
+                    suffix=f"\n... [truncated; file has {total_lines} lines. Re-read a slice with offset/limit]",
                 )
                 truncated = True
 

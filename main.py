@@ -117,7 +117,16 @@ class CLI:
         console.print("\n[dim]Goodbye![/dim]")
 
     def _print_report(self, report: dict | None) -> None:
-        if not report or report["status"] == "done_no_changes":
+        if not report:
+            return
+        u = report.get("usage") or {}
+        if u.get("calls"):
+            cost = f"  est ${u['est_cost_usd']}" if u.get("est_cost_usd") is not None else ""
+            console.print(
+                f"\n[dim]usage: {u['calls']} calls, {u['prompt_tokens']:,} in "
+                f"({u['cache_hit_pct']}% cached), {u['completion_tokens']:,} out{cost}[/dim]"
+            )
+        if report["status"] == "done_no_changes":
             return
         style = {"verified": "success", "unverified": "warning"}.get(report["status"], "error")
         console.print(f"\n[{style}]Result: {report['status']}[/{style}]  "

@@ -86,6 +86,27 @@ class HookConfig(BaseModel):
         return self
 
 
+class ModelPrice(BaseModel):
+    """USD per 1M tokens. Left empty by default: prices are not invented here."""
+
+    input: float
+    output: float
+    cached_input: float | None = None
+
+
+class SubagentSpec(BaseModel):
+    """A subagent a profile can define without touching code. `role` picks the
+    model chain from [routing] (e.g. review -> an independent model)."""
+
+    name: str
+    description: str
+    goal_prompt: str
+    allowed_tools: list[str] | None = None
+    max_turns: int = 20
+    timeout_seconds: float = 600
+    role: str = "default"
+
+
 class VerifyRule(BaseModel):
     """Run `commands` when a changed file starts with one of `paths`. Commands
     run in `cwd` (relative to the repo root); {files} expands to the changed
@@ -126,9 +147,19 @@ class Config(BaseModel):
     forbidden_paths: list[str] = Field(default_factory=list)
     forbidden_commands: list[str] = Field(default_factory=list)
     profile: str | None = None
+
+    subagents: list[SubagentSpec] = Field(default_factory=list)
+    skill_dirs: list[str] = Field(default_factory=list)  # repo-relative dirs holding extra skill .md files
+    model_role: str = "default"  # which routing chain this agent's own calls use
+    auto_review: bool = False  # independent reviewer pass over the real diff before finishing
+    max_reviews: int = 1
     auto_verify: bool = True
     max_repairs: int = 2
     verify_timeout_sec: int = 600
+
+    max_total_tokens: int = 1_500_000  # processed tokens (incl. cached) per request; stops runaway runs
+    tool_output_max_chars: int = 16_000  # per tool result sent to the model
+    pricing: dict[str, ModelPrice] = Field(default_factory=dict)  # model id -> price, for cost estimates
 
     max_seconds: float = 1800  # wall-clock budget for one user request
     compact_at_tokens: int = 200_000  # compact earlier than the model window

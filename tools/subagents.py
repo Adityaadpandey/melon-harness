@@ -20,6 +20,7 @@ class SubagentDefinition:
     allowed_tools: list[str] | None = None
     max_turns: int = 20
     timeout_seconds: float = 600
+    role: str = "default"
 
 
 class SubagentTool(Tool):
@@ -33,7 +34,7 @@ class SubagentTool(Tool):
 
     @property
     def description(self) -> str:
-        return f"subagent_{self.definition.description}"
+        return self.definition.description
 
     schema = SubagentParams
 
@@ -50,6 +51,9 @@ class SubagentTool(Tool):
 
         config_dict = self.config.to_dict()
         config_dict["max_turns"] = self.definition.max_turns
+        config_dict["model_role"] = self.definition.role
+        config_dict["auto_review"] = False
+        config_dict["subagents"] = []  # no recursive delegation
         config_dict["auto_verify"] = False  # the parent run verifies the final tree
         config_dict["verify_commands"] = []
         if self.definition.allowed_tools:
@@ -143,8 +147,9 @@ Do NOT modify any files.""",
 )
 
 
-def get_default_subagent_definitions() -> list[SubagentDefinition]:
-    return [
-        CODEBASE_INVESTIGATOR,
-        CODE_REVIEWER,
-    ]
+def get_default_subagent_definitions(config: Config | None = None) -> list[SubagentDefinition]:
+    """Built-ins, overridden/extended by subagents declared in config/profile."""
+    defs = {d.name: d for d in (CODEBASE_INVESTIGATOR, CODE_REVIEWER)}
+    for spec in (config.subagents if config else []):
+        defs[spec.name] = SubagentDefinition(**spec.model_dump())
+    return list(defs.values())

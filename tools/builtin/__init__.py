@@ -6,6 +6,7 @@ from tools.builtin.memory import MemoryTool
 from tools.builtin.read_file import ReadFileTool
 from tools.builtin.shell import ShellTool
 from tools.builtin.todo import TodosTool
+from tools.builtin.use_skill import UseSkillTool
 from tools.builtin.web_fetch import WebFetchTool
 from tools.builtin.web_search import WebSearchTool
 from tools.builtin.write_file import WriteFileTool
@@ -22,6 +23,7 @@ __all__ = [
     "WebFetchTool",
     "TodosTool",
     "MemoryTool",
+    "UseSkillTool",
 ]
 
 
@@ -38,4 +40,5 @@ def get_all_builtin_tools() -> list[type]:
         WebFetchTool,
         TodosTool,
         MemoryTool,
+        UseSkillTool,
     ]

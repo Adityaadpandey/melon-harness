@@ -55,7 +55,7 @@ class ScriptedClient:
         self.requests = []
         self.registry = _Registry()
 
-    async def chat_completion(self, messages, tools=None, stream=True):
+    async def chat_completion(self, messages, tools=None, stream=True, role="default"):
         self.requests.append(messages)
         for ev in self.turns.pop(0):
             yield ev

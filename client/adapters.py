@@ -257,6 +257,10 @@ class AnthropicAdapter:
             "messages": msgs,
             "max_tokens": self.MAX_TOKENS,
         }
+        if msgs and msgs[-1]["content"]:
+            # second breakpoint: everything up to the newest message is a stable
+            # prefix on the next turn, so history is re-read at the cached rate
+            msgs[-1]["content"][-1]["cache_control"] = {"type": "ephemeral"}
         if system:
             # cache the stable prefix; agent loops resend it every turn
             system[-1]["cache_control"] = {"type": "ephemeral"}

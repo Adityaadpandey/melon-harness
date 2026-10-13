@@ -14,6 +14,7 @@ logger = logging.getLogger(__name__)
 
 class ToolRegistry:
     tracer = None  # set by Session; tool timing/outcome go to the trace
+    epoch = 0
 
     def __init__(self, config: Config):
         self._tools: dict[str, Tool] = {}
@@ -73,6 +74,7 @@ class ToolRegistry:
 
         started = time.perf_counter()
         result = await self._invoke(name, params, cwd, hook_system, approval_manager)
+        self._cap_output(result)
         if self.tracer:
             self.tracer.emit(
                 "tool_call", tool=name, ok=result.success,
@@ -81,6 +83,20 @@ class ToolRegistry:
                 error=(result.error or "")[:200] if not result.success else None,
             )
         return result
+
+    def _cap_output(self, result: ToolResult) -> None:
+        """One tool result must never be able to eat the context: keep the head
+        and the tail (errors and summaries usually live at the end)."""
+        limit = self.config.tool_output_max_chars
+        out = result.output
+        if len(out) > limit:
+            head, tail = int(limit * 0.6), int(limit * 0.4)
+            result.output = (
+                out[:head]
+                + f"\n... [{len(out) - limit} chars omitted; narrow the command or read a slice] ...\n"
+                + out[-tail:]
+            )
+            result.truncated = True
 
     async def _invoke(
         self,
@@ -134,10 +150,7 @@ class ToolRegistry:
             return result
 
         await hook_system.trigger_before_tool(name, params)
-        invocation = ToolInvocation(
-            params=params,
-            cwd=cwd,
-        )
+        invocation = ToolInvocation(params=params, cwd=cwd, epoch=self.epoch)
         if approval_manager:
             confirmation = await tool.get_confirmation(invocation)
             if confirmation:
@@ -184,7 +197,7 @@ def create_default_registry(config: Config) -> ToolRegistry:
     for tool_class in get_all_builtin_tools():
         registry.register(tool_class(config))
 
-    for subagent_def in get_default_subagent_definitions():
+    for subagent_def in get_default_subagent_definitions(config):
         registry.register(SubagentTool(config, subagent_def))
 
     return registry

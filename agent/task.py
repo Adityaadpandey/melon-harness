@@ -33,6 +33,7 @@ TERMINAL = {
 _ALLOWED = {
     TaskStatus.RUNNING: {
         TaskStatus.VERIFYING,
+        TaskStatus.REPAIRING,  # review findings on a run that had no checks
         TaskStatus.DONE_NO_CHANGES,
         TaskStatus.UNVERIFIED,
         TaskStatus.FAILED,
@@ -63,6 +64,7 @@ class TaskState:
     changed_files: list[str] = field(default_factory=list)
     history: list[tuple[float, str, str]] = field(default_factory=list)
     verification: list[dict] = field(default_factory=list)  # one entry per check run
+    review: dict | None = None  # {verdict, findings} from the independent reviewer
     started: float = field(default_factory=time.monotonic)
 
     def __post_init__(self) -> None:
@@ -102,4 +104,5 @@ class TaskState:
             "repairs": self.repairs,
             "changed_files": self.changed_files,
             "checks": self.verification,
+            "review": self.review,
         }

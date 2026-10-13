@@ -92,6 +92,7 @@ class ToolResult:
 class ToolInvocation:
     params: dict[str, Any]
     cwd: Path
+    epoch: int = 0  # bumps when earlier tool output leaves the context (see ReadFileTool)
 
 
 @dataclass

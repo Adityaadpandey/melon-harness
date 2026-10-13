@@ -3,7 +3,10 @@ import asyncio
 import json
 from typing import AsyncGenerator, Awaitable, Callable
 from agent.events import AgentEvent, AgentEventType
+from agent.review import review_changes
 from agent.session import Session
+from agent.skills import match_skills
+from utils.cost import summarize_usage
 from agent.task import TaskState, TaskStatus
 from agent.verify import (
     changed_since,
@@ -33,7 +36,18 @@ class Agent:
     async def run(self, message: str):
         await self.session.hook_system.trigger_before_agent(message)
         yield AgentEvent.agent_start(message)
-        self.session.context_manager.add_user_message(message)
+        playbooks = match_skills(self.session.skills, message)
+        if playbooks:
+            yield AgentEvent.notice("Loaded playbooks: " + ", ".join(p.name for p in playbooks))
+            self.session.tracer.emit("skills_loaded", skills=[p.name for p in playbooks])
+            loaded = "\n\n".join(f"### Playbook: {p.name}\n{p.body}" for p in playbooks)
+            message_for_model = (
+                f"{message}\n\n---\nPlaybooks selected for this request (follow them; "
+                f"use `use_skill` with `section` for the full reference):\n\n{loaded}"
+            )
+        else:
+            message_for_model = message
+        self.session.context_manager.add_user_message(message_for_model)
 
         task = self.task = TaskState(
             request=message,
@@ -44,6 +58,7 @@ class Agent:
         before = await snapshot(self.config.cwd)
         final_response: str | None = None
         nudged = False
+        reviews = 0
 
         while True:
             self._failed = False
@@ -72,34 +87,56 @@ class Agent:
                     continue
                 task.transition(TaskStatus.DONE_NO_CHANGES)
                 break
-            if not checks:
-                task.transition(TaskStatus.UNVERIFIED, "no verification commands")
-                break
+            failures: list = []
+            if checks:
+                task.transition(TaskStatus.VERIFYING, f"{len(checks)} check(s)")
+                yield AgentEvent.notice(f"Verifying: {' && '.join(c for c, _ in checks)}")
+                results = []
+                for cmd, sub in checks:
+                    results.append(await run_check(cmd, self.config.cwd / sub, self.config))
+                task.verification = [r.to_dict() for r in results]
+                failures = [r for r in results if not r.ok]
 
-            task.transition(TaskStatus.VERIFYING, f"{len(checks)} check(s)")
-            yield AgentEvent.notice(f"Verifying: {' && '.join(c for c, _ in checks)}")
-            results = []
-            for cmd, sub in checks:
-                results.append(await run_check(cmd, self.config.cwd / sub, self.config))
-            task.verification = [r.to_dict() for r in results]
-            failures = [r for r in results if not r.ok]
-            if not failures:
+            if failures:
+                if task.repairs >= task.max_repairs or task.expired():
+                    task.transition(TaskStatus.VERIFICATION_FAILED, failures[0].command)
+                    break
+                task.transition(TaskStatus.REPAIRING, failures[0].command)
+                yield AgentEvent.notice(
+                    f"Verification failed ({failures[0].command}); repair attempt {task.repairs}/{task.max_repairs}"
+                )
+                self.session.context_manager.add_user_message(
+                    repair_prompt(failures, task.changed_files)
+                )
+                continue
+
+            # checks passed (or none exist): an independent reviewer reads the real diff
+            if self.config.auto_review and reviews < self.config.max_reviews and not task.expired():
+                reviews += 1
+                yield AgentEvent.notice("Independent review of the diff...")
+                res = await review_changes(self.config, message, task.changed_files, task.verification)
+                task.review = {"verdict": res.verdict, "findings": res.findings}
+                self.session.tracer.emit("review", task=task.id, verdict=res.verdict, findings=res.findings[:1500])
+                if res.verdict == "ISSUES" and task.repairs < task.max_repairs:
+                    task.transition(TaskStatus.REPAIRING, "review findings")
+                    yield AgentEvent.notice("Reviewer found issues; sending them back for a fix")
+                    self.session.context_manager.add_user_message(
+                        "An independent reviewer examined your diff and reported these problems:\n\n"
+                        f"{res.findings}\n\nFix each one that is real. If a finding is wrong, say why in one "
+                        "sentence and leave the code alone. Keep changes minimal, then stop."
+                    )
+                    continue
+
+            if checks:
                 task.transition(TaskStatus.VERIFIED)
-                break
-            if task.repairs >= task.max_repairs or task.expired():
-                task.transition(TaskStatus.VERIFICATION_FAILED, failures[0].command)
-                break
-
-            task.transition(TaskStatus.REPAIRING, failures[0].command)
-            yield AgentEvent.notice(
-                f"Verification failed ({failures[0].command}); repair attempt {task.repairs}/{task.max_repairs}"
-            )
-            self.session.context_manager.add_user_message(
-                repair_prompt(failures, task.changed_files)
-            )
+            else:
+                task.transition(TaskStatus.UNVERIFIED, "no verification commands")
+            break
 
         await self.session.hook_system.trigger_after_agent(message, final_response)
-        yield AgentEvent.agent_end(final_response, report=task.report())
+        report = task.report()
+        report["usage"] = summarize_usage(self.session.tracer.events, self.config.pricing)
+        yield AgentEvent.agent_end(final_response, report=report)
 
     async def _agentic_loop(self, task: TaskState) -> AsyncGenerator[AgentEvent, None]:
         max_turns = self.config.max_turns
@@ -109,6 +146,13 @@ class Agent:
             if task.expired():
                 self._failed = True
                 yield AgentEvent.agent_error(f"Time budget of {self.config.max_seconds:.0f}s exhausted")
+                return
+            if self.session.context_manager.total_usage.total_tokens > self.config.max_total_tokens:
+                self._failed = True
+                yield AgentEvent.agent_error(
+                    f"Token budget exhausted ({self.config.max_total_tokens:,} tokens processed). "
+                    "Raise max_total_tokens or narrow the task."
+                )
                 return
             self.session.increment_turn()
             response_text = ""
@@ -123,6 +167,7 @@ class Agent:
                 )
 
                 if summary:
+                    self.session.tool_registry.epoch += 1  # old reads are gone from context
                     self.session.context_manager.replace_with_summary(summary)
                     self.session.context_manager.set_latest_usage(usage)
                     self.session.context_manager.add_usage(usage)
@@ -136,6 +181,7 @@ class Agent:
             async for event in self.session.client.chat_completion(
                 self.session.context_manager.get_messages(),
                 tools=tool_schemas if tool_schemas else None,
+                role=self.config.model_role,
             ):
                 if event.type == StreamEventType.TEXT_DELTA:
                     if event.text_delta:
@@ -191,7 +237,8 @@ class Agent:
                     self.session.context_manager.set_latest_usage(usage)
                     self.session.context_manager.add_usage(usage)
 
-                self.session.context_manager.prune_tool_outputs()
+                if self.session.context_manager.prune_tool_outputs():
+                    self.session.tool_registry.epoch += 1
                 return
 
             tool_call_results: list[ToolResultMessage] = []
@@ -223,7 +270,8 @@ class Agent:
                 self.session.context_manager.set_latest_usage(usage)
                 self.session.context_manager.add_usage(usage)
 
-            self.session.context_manager.prune_tool_outputs()
+            if self.session.context_manager.prune_tool_outputs():
+                self.session.tool_registry.epoch += 1
         self._failed = True
         yield AgentEvent.agent_error(f"Maximum turns ({max_turns}) reached")
 

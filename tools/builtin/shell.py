@@ -130,8 +130,9 @@ class ShellTool(Tool):
         if exit_code != 0:
             output += f"\nExit code: {exit_code}"
 
-        if len(output) > 100 * 1024:
-            output = output[: 100 * 1024] + "\n... [output truncated]"
+        # the registry applies the model-facing cap; this only bounds memory
+        if len(output) > 400 * 1024:
+            output = output[: 400 * 1024] + "\n... [output truncated]"
 
         return ToolResult(
             success=exit_code == 0,

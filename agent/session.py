@@ -2,6 +2,7 @@ from datetime import datetime
 import json
 from typing import Any
 import uuid
+from agent.skills import load_skills
 from client.llm_client import LLMClient
 from config.config import Config
 from config.loader import get_data_dir
@@ -26,6 +27,7 @@ class Session:
         self.client = LLMClient(config=config, tracer=self.tracer)
         self.tool_registry = create_default_registry(config)
         self.tool_registry.tracer = self.tracer
+        self.skills = load_skills(config)
         self.context_manager: ContextManager | None = None
         self.discovery_manager = ToolDiscoveryManager(
             self.config,
@@ -54,6 +56,7 @@ class Session:
             config=self.config,
             user_memory=self._load_memory(),
             tools=self.tool_registry.get_tools(),
+            skills=self.skills,
         )
 
     def _load_memory(self) -> str | None:
