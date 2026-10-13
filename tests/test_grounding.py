@@ -77,3 +77,14 @@ async def test_edit_requires_a_prior_read_and_detects_changes_since(repo):
         assert r2.success  # our own write counts as 'known content'
         w = await reg.invoke("write_file", {"path": "brand_new.py", "content": "1"}, repo, hook, a.session.approval_manager)
         assert w.success  # creating a file needs no read
+
+
+def test_nudge_only_for_change_requests_with_source_code_in_the_reply():
+    from agent.grounding import has_file_code, wants_change
+
+    assert wants_change("fix the pagination bug") and wants_change("add a remove command to the CLI")
+    assert not wants_change("Read-only. Open .env and tell me DATABASE_URL")
+    assert not wants_change("explain how check-in works") and not wants_change("where is the discount validated?")
+    assert has_file_code("Here:\n```python\nx = 1\n```\n") and has_file_code("```ts\nconst a = 1\n```")
+    assert not has_file_code("Run this:\n```bash\npsql -c 'select 1'\n```\n") and not has_file_code("```sql\nSELECT 1;\n```")
+    assert not has_file_code("no code here")

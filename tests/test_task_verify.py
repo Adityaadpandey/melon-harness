@@ -109,12 +109,12 @@ async def test_code_pasted_instead_of_written_gets_one_nudge(repo):
         a.session.client = ScriptedClient(
             [text("Here you go:\n```py\nx=1\n```"), write("x.py"), text("applied")]
         )
-        rep = final(await run(a))
+        rep = final(await run(a, "create x.py with x = 1"))
         assert rep["status"] == "unverified" and rep["changed_files"] == ["x.py"]
 
 
 async def test_nudge_happens_only_once(repo):
     cfg = cfg_for(repo, auto_verify=False)
     async with Agent(cfg) as a:
-        a.session.client = ScriptedClient([text("```a```"), text("```b```")])
-        assert final(await run(a))["status"] == "done_no_changes"
+        a.session.client = ScriptedClient([text("```py\na\n```"), text("```py\nb\n```")])
+        assert final(await run(a, "create x.py"))["status"] == "done_no_changes"  # nudged once, then accepted

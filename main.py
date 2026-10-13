@@ -86,8 +86,15 @@ class CLI:
         )
 
     def _toolbar(self) -> str:
+        """Footer: the things you act on first (mode, model, context), details after, fitted to the width."""
+        import shutil
+
         sess = self.agent.session if self.agent else None
-        parts = [self.config.model_name]
+        parts = []
+        if sess:
+            parts.append(sess.approval_manager.approval_policy.value)
+        model = (sess.client.last_model if sess and sess.client.last_model else self.config.model_name)
+        parts.append(model)
         if sess:
             used = sess.context_manager._latest_usage.total_tokens
             window = sess.client.registry.get(self.config.model_name).context_length
@@ -95,13 +102,18 @@ class CLI:
                 parts.append("ctx " + context_bar(100 * used / window))
             u = summarize_usage(sess.tracer.events, self.config.pricing)
             if u["calls"]:
-                parts.append(f"{u['prompt_tokens'] / 1000:.0f}k in ({u['cache_hit_pct']:.0f}% cached) · {u['completion_tokens'] / 1000:.1f}k out")
+                parts.append(f"{u['prompt_tokens'] / 1000:.0f}k in ({u['cache_hit_pct']:.0f}% cached)")
                 if u["est_cost_usd"] is not None:
                     parts.append(f"${u['est_cost_usd']}")
-            parts.append(sess.approval_manager.approval_policy.value)
+            if self.config.sandbox != "off":
+                from safety.sandbox import mode
+
+                parts.append({"on": "sandboxed", "unavailable": "no sandbox"}.get(mode(self.config), ""))
         if self.config.profile:
-            parts.append(f"profile {self.config.profile}")
-        return "  ·  ".join(parts)
+            parts.append(self.config.profile)
+        text = "  ·  ".join(p for p in parts if p)
+        width = shutil.get_terminal_size((100, 20)).columns - 3
+        return text if len(text) <= width else text[: width - 1] + "…"
 
     async def run_interactive(self) -> str | None:
         self.tui.print_welcome(

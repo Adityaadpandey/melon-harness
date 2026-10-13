@@ -83,3 +83,22 @@ def correction_prompt(problems: list[Problem]) -> str:
         f"{rows}\n\nRe-check each with your tools (grep/read_file) and correct it, or remove the claim. "
         "Do not guess a replacement. Reply with the corrected answer only."
     )
+
+
+_EDIT_VERBS = re.compile(
+    r"\b(fix|add|implement|change|update|refactor|rename|write|create|remove|delete|replace|make|move|extract|"
+    r"split|convert|migrate|rewrite|patch|build|set up|wire)\b", re.I)
+_READONLY = re.compile(r"\b(read[- ]only|do not (modify|change|edit)|don't (modify|change|edit)|without (modifying|changing)|"
+                       r"no (changes|edits)|just (explain|tell|show|answer)|investigate|explain|what is|where is|why)\b", re.I)
+_SHELLISH = {"bash", "sh", "shell", "zsh", "console", "sql", "text", "txt", "output", "log", "diff", "http", "curl"}
+
+
+def wants_change(request: str) -> bool:
+    """Does the request ask for a change to files? Read-only questions must not be nudged to write."""
+    return bool(_EDIT_VERBS.search(request)) and not _READONLY.search(request)
+
+
+def has_file_code(answer: str) -> bool:
+    """A fenced block in a source language (not a command or output the user is meant to run or read)."""
+    langs = re.findall(r"```([\w+#-]*)", answer)
+    return any(lang.lower() not in _SHELLISH for lang in langs[::2] or langs)

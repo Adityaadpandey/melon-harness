@@ -3,7 +3,7 @@ import asyncio
 import json
 from typing import AsyncGenerator, Awaitable, Callable
 from agent.events import AgentEvent, AgentEventType
-from agent.grounding import correction_prompt, verify_references
+from agent.grounding import correction_prompt, has_file_code, verify_references, wants_change
 from agent.review import review_changes
 from agent.routing_policy import classify
 from agent.session import Session
@@ -104,7 +104,7 @@ class Agent:
             checks = select_checks(self.config, task.changed_files)
             # outside git we can't tell what changed, so only verify when asked to
             if not task.changed_files and before is not None:
-                if not nudged and final_response and "```" in final_response:
+                if not nudged and final_response and wants_change(message) and has_file_code(final_response):
                     # models sometimes paste the solution instead of writing it
                     nudged = True
                     yield AgentEvent.notice("Reply contained code but no file changed; asking the model to apply it")
