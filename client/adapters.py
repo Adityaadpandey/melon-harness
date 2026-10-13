@@ -328,3 +328,175 @@ class AnthropicAdapter:
                 cached_tokens=cached,
             ),
         )
+
+
+def to_responses_input(messages: list[dict[str, Any]]) -> tuple[str, list[dict[str, Any]]]:
+    """OpenAI chat history -> (instructions, Responses API input items).
+    System messages become `instructions`; tool calls and their results become
+    function_call / function_call_output items linked by call_id."""
+    instructions = "\n\n".join(m["content"] for m in messages if m["role"] == "system" and m.get("content"))
+    items: list[dict[str, Any]] = []
+    for m in messages:
+        role = m["role"]
+        if role == "system":
+            continue
+        if role == "tool":
+            items.append({
+                "type": "function_call_output",
+                "call_id": m["tool_call_id"],
+                "output": m.get("content") or "(no output)",
+            })
+        elif role == "assistant":
+            if m.get("content"):
+                items.append({
+                    "type": "message", "role": "assistant",
+                    "content": [{"type": "output_text", "text": m["content"]}],
+                })
+            for tc in m.get("tool_calls") or []:
+                args = tc["function"]["arguments"]
+                items.append({
+                    "type": "function_call",
+                    "call_id": tc["id"],
+                    "name": tc["function"]["name"],
+                    "arguments": args if isinstance(args, str) else json.dumps(args),
+                })
+        else:
+            items.append({
+                "type": "message", "role": "user",
+                "content": [{"type": "input_text", "text": m.get("content") or "(empty)"}],
+            })
+    return instructions or "You are a helpful coding agent.", items
+
+
+class CodexResponsesAdapter:
+    """Talks to the ChatGPT-backed Codex endpoint (Responses API over SSE),
+    authenticated with the stored Codex login rather than an API key."""
+
+    endpoint = "/responses"
+    URL = "https://chatgpt.com/backend-api/codex/responses"
+
+    def __init__(self, auth=None):
+        from client.codex_auth import CodexAuth
+
+        self._auth = auth or CodexAuth()
+        self._http = httpx.AsyncClient(timeout=TIMEOUT)
+
+    async def close(self) -> None:
+        await self._http.aclose()
+
+    def _headers(self, force_refresh: bool = False) -> dict[str, str]:
+        token, account = self._auth.credentials(force_refresh)
+        return {
+            "Authorization": f"Bearer {token}",
+            "chatgpt-account-id": account,
+            "OpenAI-Beta": "responses=experimental",
+            "originator": "codex_cli_rs",
+            "Accept": "text/event-stream",
+        }
+
+    async def stream(
+        self,
+        model: str,
+        messages: list[dict[str, Any]],
+        tools: list[dict[str, Any]] | None,
+        temperature: float | None,
+    ) -> AsyncGenerator[StreamEvent, None]:
+        # the "codex/" prefix only routes inside mew; the backend wants the bare name
+        instructions, items = to_responses_input(messages)
+        body: dict[str, Any] = {
+            "model": model.removeprefix("codex/"),
+            "instructions": instructions,
+            "input": items,
+            "store": False,
+            "stream": True,
+        }
+        if tools:
+            body["tools"] = [
+                {
+                    "type": "function",
+                    "name": t["name"],
+                    "description": t.get("description", ""),
+                    "parameters": t.get("parameters", {"type": "object", "properties": {}}),
+                }
+                for t in tools
+            ]
+            body["tool_choice"] = "auto"
+        # no temperature: the Codex backend rejects sampling params
+
+        try:
+            headers = self._headers()
+        except RuntimeError as e:
+            raise ProviderError(str(e), status=401) from e
+        try:
+            for attempt in range(2):
+                async with self._http.stream("POST", self.URL, json=body, headers=headers) as r:
+                    if r.status_code == 401 and attempt == 0:
+                        # token expired mid-session: refresh once and replay
+                        try:
+                            headers = self._headers(force_refresh=True)
+                        except RuntimeError as e:
+                            raise ProviderError(str(e), status=401) from e
+                        continue
+                    if r.status_code != 200:
+                        raise classify(r.status_code, (await r.aread()).decode(errors="replace")[:500])
+                    async for ev in self._consume(r):
+                        yield ev
+                    return
+        except httpx.HTTPError as e:
+            raise classify(None, f"Connection error: {e}") from e
+
+    async def _consume(self, r) -> AsyncGenerator[StreamEvent, None]:
+        usage: TokenUsage | None = None
+        finish = "stop"
+        names: dict[str, str] = {}  # item id -> call_id, to route argument deltas
+        async for line in r.aiter_lines():
+            if not line.startswith("data:"):
+                continue
+            payload = line[5:].strip()
+            if not payload or payload == "[DONE]":
+                continue
+            try:
+                ev = json.loads(payload)
+            except ValueError:
+                continue
+            kind = ev.get("type", "")
+            if kind == "response.output_text.delta":
+                yield StreamEvent(type=StreamEventType.TEXT_DELTA, text_delta=TextDelta(ev.get("delta", "")))
+            elif kind == "response.output_item.added" and ev["item"].get("type") == "function_call":
+                it = ev["item"]
+                names[it["id"]] = it["call_id"]
+                yield StreamEvent(
+                    type=StreamEventType.TOOL_CALL_START,
+                    tool_call_delta=ToolCallDelta(call_id=it["call_id"], name=it["name"]),
+                )
+            elif kind == "response.function_call_arguments.delta":
+                yield StreamEvent(
+                    type=StreamEventType.TOOL_CALL_DELTA,
+                    tool_call_delta=ToolCallDelta(
+                        call_id=names.get(ev.get("item_id"), ""), arguments_delta=ev.get("delta", "")
+                    ),
+                )
+            elif kind == "response.output_item.done" and ev["item"].get("type") == "function_call":
+                it = ev["item"]
+                finish = "tool_calls"
+                yield StreamEvent(
+                    type=StreamEventType.TOOL_CALL_COMPLETE,
+                    tool_call=ToolCall(
+                        call_id=it["call_id"],
+                        name=it["name"],
+                        arguments=parse_tool_call_arguments(it.get("arguments", "")),
+                    ),
+                )
+            elif kind == "response.completed":
+                u = ev["response"].get("usage") or {}
+                cached = (u.get("input_tokens_details") or {}).get("cached_tokens", 0) or 0
+                usage = TokenUsage(
+                    prompt_tokens=u.get("input_tokens", 0),
+                    completion_tokens=u.get("output_tokens", 0),
+                    total_tokens=u.get("total_tokens", 0),
+                    cached_tokens=cached,
+                )
+            elif kind in ("response.failed", "error"):
+                err = ev.get("response", {}).get("error") or ev.get("error") or ev
+                raise classify(None, f"Codex error: {json.dumps(err)[:300]}")
+        yield StreamEvent(type=StreamEventType.MESSAGE_COMPLETE, finish_reason=finish, usage=usage)
