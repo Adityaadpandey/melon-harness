@@ -1,3 +1,23 @@
+<p align="center">
+  <img src="docs/banner.svg" alt="mew: the coding agent that proves its work" width="100%">
+</p>
+
+<p align="center">
+  <img alt="python" src="https://img.shields.io/badge/python-3-c3a6ff?style=flat-square">
+  <img alt="tests" src="https://img.shields.io/badge/tests-224%20passing-8ff0c4?style=flat-square">
+  <img alt="models" src="https://img.shields.io/badge/models-Claude%20%C2%B7%20GPT%20%C2%B7%20Codex%20%C2%B7%20DeepSeek-ff8fc7?style=flat-square">
+  <img alt="sandbox" src="https://img.shields.io/badge/sandbox-macOS-ffd28f?style=flat-square">
+</p>
+
+<p align="center">
+  <a href="#quick-start">Quick start</a> ·
+  <a href="#how-a-request-flows">How it works</a> ·
+  <a href="#speed-and-token-savings">Token savings</a> ·
+  <a href="#correctness-verify-review-ground">Correctness</a> ·
+  <a href="#safety">Safety</a> ·
+  <a href="#not-there-yet">Not there yet</a>
+</p>
+
 # mew
 
 **The coding agent that proves its work.**
@@ -13,20 +33,21 @@ guardrails live in code, not in a prompt asking the model to behave.
 |---|---|---|---|
 | search and scout before reading | incremental reads, diffs, caching that hits | verify, review, citation check | confined tools, OS sandbox, project trust |
 
-```
-$ mew
-> fix the blank-line bug in the description field
+<p align="center">
+  <img src="docs/screenshot.png" alt="mew working on a real repo: side panel, token breakdown, verification and review" width="100%">
+</p>
 
-  scout  ● found candidate files                     (read-only, cheap model)
-  ⏺ read_file(description.tsx, symbol="normalize")    (only that function, not the file)
-  ⏺ edit_file(description.tsx)                        (diff shown, you approve)
-  ⏺ verify   related unit specs ... passed
-  ⏺ review   independent reviewer, different model ... no findings
+A real session, not a mock-up. What you are looking at:
 
-  verified  · tokens and cache hit % on the result line
-```
-
-(Illustrative session, not a recording.)
+- **Routing and failover, out loud.** The request was judged hard and sent to the strong model; that provider hit a rate limit, and
+  mew said so and fell back to another model instead of dying.
+- **Cost report after the run.** 21 calls, 85% of input cached, and a breakdown showing which earlier tool results were re-sent
+  the most, so you know what to fix.
+- **Honest verification.** Result is `verified` with typecheck and lint passing, and mew adds that these checks do not exercise
+  the changed behaviour, so "verified" does not mean the bug is fixed. The independent review ran, and the final answer says
+  it is from reading the code, not a reproduction.
+- **Side panel.** Files read (with re-read counts), files written with lines added and removed, commands run.
+- **Approval prompt** with three choices, the footer showing mode, model, context bar, cache rate and `sandboxed`.
 
 ## Why it is different
 
@@ -45,29 +66,11 @@ Most harnesses make the model do the hard parts and then hope. mew moves the har
 
 ## How a request flows
 
-```
- your request
-      │
-      ▼
- classify difficulty (no model call) ──► fast / default / strong model chain
-      │
-      ▼
- scout (read-only, cheap) ── search · outline · git · graph ──► findings
-      │
-      ▼
- main model: read symbols, edit (read-before-edit enforced, diff approved by you)
-      │
-      ▼
- verification gate ── fail ──► repair (up to max_repairs) ──┐
-      │ pass                                                │
-      ▼                                                     │
- independent review on a different model ── findings ──► one fix, then re-review
-      │ clean
-      ▼
- citation check on the answer ──► verified · unverified · verification_failed ...
-```
+<p align="center">
+  <img src="docs/flow.svg" alt="Request flow: classify, scout, edit, verification gate, review, citation check" width="100%">
+</p>
 
-Every arrow that can fail has a defined next step. Nothing ends in "the model said it was fine".
+Every step that can fail has a defined next step. Nothing ends in "the model said it was fine".
 
 ## Contents
 
