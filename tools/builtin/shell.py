@@ -47,6 +47,7 @@ class BackgroundJob:
         return "\n".join(text.rstrip().splitlines()[-lines:])
 
 
+AUTO_BACKGROUND_AFTER = 15  # seconds a foreground command may run before it is moved to the background
 JOBS: dict[int, BackgroundJob] = {}
 
 
@@ -84,9 +85,8 @@ class ShellParams(BaseModel):
     background: bool = Field(
         False,
         description=(
-            "Run detached and return at once with a log path. Use for anything slow "
-            "(builds, installs, dev servers, long test suites) so you can keep working; "
-            "you are told when it finishes. Timeout does not apply."
+            "Detach at once and return a log path. Not required: any command still running "
+            "after ~15s is moved to the background automatically, and you are told when it finishes."
         ),
     )
 
@@ -150,53 +150,58 @@ class ShellTool(Tool):
 
         from safety.sandbox import wrap
 
-        if params.background:
-            job_id = len(JOBS) + 1
-            log = Path(tempfile.gettempdir()) / f"mew-job-{os.getpid()}-{job_id}.log"
-            with open(log, "wb") as out:
-                process = await asyncio.create_subprocess_exec(
-                    *wrap(shell_cmd, self.config),
-                    stdout=out,
-                    stderr=asyncio.subprocess.STDOUT,
-                    stdin=asyncio.subprocess.DEVNULL,
-                    cwd=cwd,
-                    env=env,
-                    start_new_session=True,
-                )
-            JOBS[job_id] = BackgroundJob(job_id, params.command, log, process)
-            # reap it so returncode gets set even if nobody awaits the job
-            asyncio.get_running_loop().create_task(process.wait())
-            return ToolResult.success_result(
-                f"Started background job {job_id}: {params.command}\n"
-                f"Output: {log} (read it with `tail`). Stop it with `kill -- -{process.pid}`. "
-                "You will be told when it finishes; keep working on other things meanwhile."
-            )
-
         process = await asyncio.create_subprocess_exec(
             *wrap(shell_cmd, self.config),
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
+            stdin=asyncio.subprocess.DEVNULL,
             cwd=cwd,
             env=env,
             start_new_session=True,
         )
 
-        try:
-            stdout_data, stderr_data = await asyncio.wait_for(
-                process.communicate(),
-                timeout=params.timeout,
-            )
-        except (asyncio.TimeoutError, asyncio.CancelledError) as exc:
-            # on timeout or user interrupt, never leave the process group running
-            if sys.platform != "win32":
-                os.killpg(os.getpgid(process.pid), signal.SIGKILL)
-            else:
-                process.kill()
-            await process.wait()
-            if isinstance(exc, asyncio.CancelledError):
-                raise
-            return ToolResult.error_result(f"Command timed out after {params.timeout}s")
+        # output is copied to a log as it arrives, so a slow command can be handed
+        # over to the background mid-run without losing what it already printed
+        job_id = len(JOBS) + 1
+        log = Path(tempfile.gettempdir()) / f"mew-job-{os.getpid()}-{job_id}.log"
+        log.write_bytes(b"")
+        bufs: dict[str, bytearray] = {"out": bytearray(), "err": bytearray()}
 
+        async def pump(stream, key):
+            with open(log, "ab") as f:
+                while chunk := await stream.read(65536):
+                    bufs[key] += chunk
+                    f.write(chunk)
+                    f.flush()
+
+        pumps = asyncio.gather(pump(process.stdout, "out"), pump(process.stderr, "err"))
+        finished = asyncio.ensure_future(asyncio.gather(pumps, process.wait()))
+
+        # background=true detaches at once; otherwise a command that is still running
+        # after AUTO_BACKGROUND_AFTER seconds (a build, a dev server) is detached too
+        wait_for = 0 if params.background else min(params.timeout, AUTO_BACKGROUND_AFTER)
+        try:
+            await asyncio.wait_for(asyncio.shield(finished), timeout=wait_for or 0.01)
+        except asyncio.TimeoutError:
+            if params.background or params.timeout > AUTO_BACKGROUND_AFTER:
+                JOBS[job_id] = BackgroundJob(job_id, params.command, log, process)
+                return ToolResult.success_result(
+                    f"{'Started' if params.background else 'Still running after '+str(AUTO_BACKGROUND_AFTER)+'s, moved to'} "
+                    f"background job {job_id}: {params.command}\n"
+                    f"Output so far and onward: {log} (read it with `tail`). Stop it with `kill -- -{process.pid}`. "
+                    "You will be told when it finishes; keep working on other things meanwhile.",
+                    metadata={"background_job": job_id},
+                )
+            self._kill(process)
+            await process.wait()
+            return ToolResult.error_result(f"Command timed out after {params.timeout}s")
+        except asyncio.CancelledError:
+            # user interrupt: never leave the process group running
+            self._kill(process)
+            await process.wait()
+            raise
+
+        stdout_data, stderr_data = bytes(bufs["out"]), bytes(bufs["err"])
         stdout = stdout_data.decode("utf-8", errors="replace")
         stderr = stderr_data.decode("utf-8", errors="replace")
         exit_code = process.returncode
@@ -222,6 +227,16 @@ class ShellTool(Tool):
             error=stderr if exit_code != 0 else None,
             exit_code=exit_code,
         )
+
+    @staticmethod
+    def _kill(process) -> None:
+        if sys.platform != "win32":
+            try:
+                os.killpg(os.getpgid(process.pid), signal.SIGKILL)
+            except ProcessLookupError:
+                pass
+        else:
+            process.kill()
 
     def _build_environment(self) -> dict[str, str]:
         return build_environment(self.config)
