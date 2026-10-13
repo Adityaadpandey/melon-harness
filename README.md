@@ -181,6 +181,13 @@ Before each request mew records the working tree as a commit object (`refs/mew/b
 before are never deleted. Token budget per request (`max_total_tokens`): warning at 70%, then one tool-free call so the work
 so far becomes an answer.
 
+## Learning between sessions
+
+Per repo, stored outside it (data dir). Only things that can't be hallucinated are kept: what you told it and what verified runs
+changed. `/learn <rule>`, or rejecting an action with feedback, saves a lesson; lessons appear in the next session's prompt
+(newest first, capped at 1,500 chars). `/lessons` lists them, `/forget N` removes one. Each verified run records its request words
+and the files it changed; `search` boosts files that fixed similar requests before. Nothing the model merely claims is stored.
+
 ## Context and cost
 
 Compaction keeps the most recent ~20k tokens verbatim and folds only older messages into a running summary (plus a deterministic
