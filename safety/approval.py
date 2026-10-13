@@ -150,7 +150,10 @@ class ApprovalManager:
                 return path_decision
 
         if context.is_dangerous:
-            if self.approval_policy == ApprovalPolicy.YOLO:
+            # e.g. overwriting an existing file. Paths outside cwd were already
+            # sent for confirmation above, so auto policies only get here for
+            # in-workspace changes, which is what "auto" means.
+            if self.approval_policy in {ApprovalPolicy.YOLO, ApprovalPolicy.AUTO, ApprovalPolicy.AUTO_EDIT}:
                 return ApprovalDecision.APPROVED
             return ApprovalDecision.NEEDS_CONFIRMATION
 

@@ -116,8 +116,8 @@ async def run_one(task: Task, harness: Path, model: str, mode: str, timeout: int
         "tool_failures": rep.get("tool_failures"), "model_call_failures": rep.get("model_call_failures"),
         "prompt_tokens": usage.get("prompt_tokens"), "completion_tokens": usage.get("completion_tokens"),
         "cached_tokens": usage.get("cached_tokens"),
-        "models_used": rep.get("models_used"),
-        "fail_detail": None if success else (acc_tail if not acc_ok else text[-400:]),
+        "models_used": rep.get("models_used"), "out_tail": text[-1500:],
+        "fail_detail": None if success else (text[-500:] if not rep else (acc_tail if not acc_ok else text[-400:])),
     }
     shutil.rmtree(d, ignore_errors=True)
     report_path.unlink(missing_ok=True)
