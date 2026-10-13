@@ -177,3 +177,39 @@ list of files read/modified). `/cost` and the result line report cache misses wi
 
 A repo's `.ai-agent/config.toml` cannot enable `hooks`, `mcp_servers`, `verify_commands`, `verify_rules`, `approval` or
 `shell_environment` until you trust that exact file (interactive prompt, or `--trust`). Editing the file revokes the trust.
+
+## Guardrails: the session stays in its workspace
+
+Three layers, each independent:
+1. **File tools** (read, edit, write, list, grep, glob, and the `cwd` of shell) are confined to the folder you started in. Paths are
+   resolved first, so `..` and symlinks that point out are refused. Add roots deliberately with `--add-dir`.
+2. **Shell commands** are scanned for paths in your home, `/etc`, other users' folders or `..` escapes, and refused before they run.
+3. **OS sandbox** (macOS `sandbox-exec`, on by default when available): even a command built dynamically cannot write outside the
+   workspace, temp dirs and package caches, or read `~/.ssh`, `~/.aws`, `~/.gnupg`, keychains and similar. `sandbox = "off"` disables it.
+
+Also: `.env*`, `*.pem`, `*.key` and SSH keys are protected by default; `web_fetch` refuses localhost, private ranges and cloud
+metadata at every redirect hop; project config cannot loosen any of this until you trust it (`--trust`).
+
+## Not hallucinating
+
+- **Read before edit:** editing an existing file the agent has not read this session is refused, and so is editing a file that
+  changed on disk since it was read.
+- **Citation check:** every `path` / `path:line` in the final answer is checked against the real tree. Fabricated files or line
+  numbers past the end of a file go back for one correction, and anything still unverified is shown as a warning.
+- **Always-on `grounded` rule** (only claim what a tool showed you), an independent reviewer on the real diff, and the verification gate.
+- **graph tool:** answers structure questions from the graphify graph; call direction is decided from the source text because the graph's
+  edge order is unreliable. Results say how stale the graph is.
+
+## Models and parallelism
+
+- **Routing by difficulty:** with `fast` / `strong` chains in `[routing]`, each request is classified (no model call) and sent to the
+  right chain; a failed repair or a detected loop escalates to `strong`. `-m` or `/model` pins a model.
+- **Parallel sub-agents:** read-only sub-agents called in the same turn run concurrently (cap `max_parallel_agents`, default 4) and
+  show live progress. `parallel_tasks` fans write-capable workers out into separate git worktrees, merges them in dependency order,
+  and reports conflicts instead of resolving them silently.
+
+## Built-in skills
+
+Always on (about 450 tokens): `ponytail` (do the least that fully works), `grounded`, `house-rules`. Loaded when the request matches:
+`debugging`, `code-review`, `security`, `refactor`, `testing`, `performance`, `database`, `api-design`, `git-workflow`. A profile's
+own playbooks (e.g. `tunyt-debugging`) replace the generic one they specialise. Turn one off with `disabled_skills = ["ponytail"]`.
