@@ -131,3 +131,20 @@ in the tool layer, not just requested of the model. Project `.ai-agent/config.to
 
 Benchmarks hit the real API. Runs that cannot execute (plan, quota, key) are recorded as `blocked`, not as failures. Traces: one
 JSONL per session under the user data dir (`traces/`).
+
+## Skills, subagents, review (what makes it "smart" on a known repo)
+
+- **Skills** are short curated playbooks (`profiles/<name>/skills/*.md`, or `.ai-agent/skills/*.md` in a repo) with `triggers`
+  and an optional `canonical:` long doc. Matching playbooks are attached to the request automatically (keyword match, no model
+  call); the model can pull any other with `use_skill(name)` or a single section of the full doc with `use_skill(name, section=...)`.
+- **Subagents** can be declared in a profile (`[[subagents]]`: name, description, goal_prompt, allowed_tools, role). `role` picks a
+  `[routing]` chain, so exploration can run on a cheap model and debugging on a strong one.
+- **Independent review** (`auto_review = true`): after checks pass, a read-only reviewer on a different model reads the real diff;
+  concrete findings go back for one fix, and the verdict is kept in the final report either way.
+
+## Cost controls
+
+System prompt ~0.7k tokens (was ~3k). Tool output is capped (`tool_output_max_chars`), unchanged re-reads of a file are
+deduplicated, Claude calls cache both the system prompt and the conversation prefix, `max_total_tokens` stops runaway runs, and the
+result line shows tokens, cache hit % and (if you fill `[pricing."model-id"]` with input/output/cached_input per 1M tokens) an
+estimated cost. Plan-wide usage limits (HTTP 429 "usage limit") are not retried and not failed over.
