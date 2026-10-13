@@ -26,6 +26,9 @@ class ProviderError(Exception):
 
 def classify(status: int | None, message: str) -> ProviderError:
     m = message.lower()
+    if status == 429 and ("usage limit" in m or "limit resets" in m or "upgrade your plan" in m):
+        # plan-wide quota, not a burst limit: retrying or switching model can't help
+        return ProviderError(message, status=status)
     if status == 429:
         return ProviderError(message, status=status, retry=True, fallback=True)
     if status is None or status >= 500 or status == 408:

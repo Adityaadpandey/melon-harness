@@ -27,7 +27,7 @@ from dotenv import load_dotenv
 from bench.tasks import ALL, BY_ID, Task
 
 ROOT = Path(__file__).resolve().parent.parent
-BLOCK_MARKERS = ("MODEL_NOT_IN_PLAN", "No API key", "must be called via", "Rate limit exceeded")
+BLOCK_MARKERS = ("MODEL_NOT_IN_PLAN", "No API key", "must be called via", "Rate limit exceeded", "usage limit", "limit resets")
 
 
 def build_repo(task: Task, d: Path, model: str, legacy: bool) -> None:

@@ -190,3 +190,9 @@ async def test_unsupported_model_error_suggests_real_ids(tmp_path):
     c.config.model_name = "gpt-luna-6"
     evs = await collect(c)
     assert "did you mean: gpt-6-luna" in evs[-1].error
+
+
+def test_plan_wide_usage_limit_is_not_retried_or_failed_over():
+    e = classify(429, "You've reached your 5-hour usage limit for your plan. Your limit resets at 19:12")
+    assert not e.retry and not e.fallback
+    assert classify(429, "slow down").retry  # ordinary burst limits still retry
