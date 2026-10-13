@@ -182,3 +182,15 @@ def test_outline_maps_jsx_sections_inside_a_big_component():
     src = "export default function Page() {\n  return (\n    <div>\n      {/* About the Event */}\n      {x && (\n        <A />\n      )}\n\n      {/* Footer */}\n      <B />\n    </div>\n  );\n}\n"
     names = {s.name: (s.start, s.end) for s in outline("Page.tsx", src)}
     assert names["Page"] == (1, 13) and names["About the Event"] == (4, 7) and names["Footer"][0] == 9
+
+
+def test_atomic_write_keeps_mode_crlf_and_leaves_no_temp_files(tmp_path):
+    import os, stat
+    from utils.paths import atomic_write
+
+    f = tmp_path / "x.sh"
+    f.write_bytes(b"old\r\n")
+    os.chmod(f, 0o755)
+    atomic_write(f, "new\r\nline\r\n")
+    assert f.read_bytes() == b"new\r\nline\r\n" and stat.S_IMODE(f.stat().st_mode) == 0o755
+    assert [p.name for p in tmp_path.iterdir()] == ["x.sh"]

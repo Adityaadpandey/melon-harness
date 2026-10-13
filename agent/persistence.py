@@ -2,6 +2,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import datetime
 import json
+from utils.paths import atomic_write
 import os
 from typing import Any
 from client.response import TokenUsage
@@ -52,9 +53,7 @@ class PersistenceManager:
     def save_session(self, snapshot: SessionSnapshot) -> None:
         file_path = self.sessions_dir / f"{snapshot.session_id}.json"
 
-        with open(file_path, "w", encoding="utf-8") as fp:
-            json.dump(snapshot.to_dict(), fp, indent=2)
-
+        atomic_write(file_path, json.dumps(snapshot.to_dict(), indent=2))
         os.chmod(file_path, 0o600)
 
     def load_session(self, session_id: str) -> SessionSnapshot | None:
@@ -90,8 +89,7 @@ class PersistenceManager:
         checkpoint_id = f"{snapshot.session_id}_{timestamp}"
         file_path = self.checkpoints_dir / f"{checkpoint_id}.json"
 
-        with open(file_path, "w", encoding="utf-8") as fp:
-            json.dump(snapshot.to_dict(), fp, indent=2)
+        atomic_write(file_path, json.dumps(snapshot.to_dict(), indent=2))
         os.chmod(file_path, 0o600)
         return checkpoint_id
 

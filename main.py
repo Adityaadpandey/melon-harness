@@ -244,6 +244,8 @@ class CLI:
             console.print(f"[warning]  ⚠ {len(g['unverified'])} cited reference(s) could not be verified: {'; '.join(g['unverified'][:4])}[/warning]")
         if report["status"] == "done_no_changes":
             return
+        if report.get("undo"):
+            console.print("[dim]    /undo puts these files back[/dim]")
         style = {"verified": "success", "unverified": "warning"}.get(report["status"], "error")
         console.print(f"  [{style}]Result: {report['status']}[/{style}]  files changed: {len(report['changed_files'])}  repairs: {report['repairs']}")
         for c in report["checks"]:
@@ -457,6 +459,23 @@ class CLI:
                     console.print(
                         f"[success]Resumed session: {session.session_id}[/success]"
                     )
+        elif cmd_name == "/undo":
+            info = self.agent.undo_info
+            if not info:
+                console.print("[dim]Nothing to undo: the last request changed no files.[/dim]")
+            else:
+                from ui.prompt import ask_choice
+                from agent.verify import undo
+
+                names = ", ".join(info["files"][:6]) + (" ..." if len(info["files"]) > 6 else "")
+                pick = await ask_choice(console, f"Put back {len(info['files'])} file(s) to how they were before the last request? ({names})", ["Yes, undo", "No"])
+                if pick == 0:
+                    restored, deleted, skipped = await undo(self.config.cwd, info["ref"], info["files"], info["created"])
+                    self.agent.undo_info = None
+                    self.agent.session.tool_registry.epoch += 1  # files on disk changed under earlier reads
+                    console.print(f"[success]Restored {len(restored)}, removed {len(deleted)} new file(s).[/success]")
+                    if skipped:
+                        console.print(f"[warning]Left alone (no earlier copy): {', '.join(skipped)}[/warning]")
         elif cmd_name == "/checkpoint":
             persistence_manager = PersistenceManager()
             session_snapshot = SessionSnapshot(

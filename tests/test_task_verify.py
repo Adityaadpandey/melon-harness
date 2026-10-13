@@ -131,3 +131,23 @@ def test_related_tests_expand_only_for_specs_that_import_the_changed_file(tmp_pa
     cfg = Config(cwd=tmp_path, verify_rules=[rule], auto_verify=False)
     assert select_checks(cfg, ["app/src/lib/thing.ts"]) == [("run unit/a.spec.ts", "app")]
     assert select_checks(cfg, ["app/src/lib/none.ts"]) == []
+
+
+async def test_backup_and_undo_restore_edits_and_remove_created_files(tmp_path):
+    import subprocess
+    from agent.verify import backup, undo
+
+    def git(*a):
+        subprocess.run(["git", "-c", "user.name=t", "-c", "user.email=t@t", *a], cwd=tmp_path, check=True, capture_output=True)
+
+    git("init", "-q")
+    (tmp_path / "a.txt").write_text("one\n")
+    git("add", "-A"); git("commit", "-qm", "init")
+    (tmp_path / "a.txt").write_text("two (user's unsaved work)\n")  # dirty tree before the run
+    ref = await backup(tmp_path)
+    (tmp_path / "a.txt").write_text("agent edit\n")
+    (tmp_path / "new.txt").write_text("made by the run\n")
+    restored, deleted, skipped = await undo(tmp_path, ref, ["a.txt", "new.txt"], ["new.txt"])
+    assert (tmp_path / "a.txt").read_text() == "two (user's unsaved work)\n"
+    assert not (tmp_path / "new.txt").exists() and restored == ["a.txt"] and deleted == ["new.txt"] and not skipped
+    assert (await backup(tmp_path)) and subprocess.run(["git", "rev-parse", "refs/mew/backup"], cwd=tmp_path).returncode == 0

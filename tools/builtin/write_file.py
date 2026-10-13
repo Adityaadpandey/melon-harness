@@ -8,7 +8,7 @@ from tools.base import (
 )
 from pydantic import BaseModel, Field
 
-from utils.paths import ensure_parent_directory, resolve_path
+from utils.paths import atomic_write, ensure_parent_directory, resolve_path
 
 
 class WriteFileParams(BaseModel):
@@ -87,7 +87,7 @@ class WriteFileTool(Tool):
                     f"Parent directory does not exist: {path.parent}"
                 )
 
-            path.write_text(params.content, encoding="utf-8")
+            atomic_write(path, params.content)
 
             action = "Created" if is_new_file else "Updated"
             line_count = len(params.content.splitlines())

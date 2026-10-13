@@ -163,3 +163,35 @@ def repair_prompt(failures: list[CheckResult], files: list[str]) -> str:
         "a test just to make it pass; only change a test if its expectation is "
         "genuinely wrong, and say so. Stop when the checks should pass."
     )
+
+
+async def backup(cwd: Path) -> str | None:
+    """A commit holding the working tree as it is right now (tracked files, staged
+    or not), made without touching the tree, index or stash list. Clean tree: HEAD.
+    None outside git or in a repo with no commits."""
+    code, out = await _git(cwd, "stash", "create")
+    sha = out.decode().strip() if code == 0 else ""
+    if not sha:
+        code, out = await _git(cwd, "rev-parse", "--verify", "HEAD")
+        sha = out.decode().strip() if code == 0 else ""
+    if sha:  # keep the objects from being garbage collected while the user may still undo
+        await _git(cwd, "update-ref", "refs/mew/backup", sha)
+    return sha or None
+
+
+async def undo(cwd: Path, ref: str, changed: list[str], created: list[str]) -> tuple[list[str], list[str], list[str]]:
+    """Put back what a run changed: (restored, deleted, skipped). Files the run
+    created are deleted; files that existed untracked before the run have no
+    copy in `ref`, so they are reported, not touched."""
+    restored, deleted, skipped = [], [], []
+    for f in changed:
+        code, _ = await _git(cwd, "cat-file", "-e", f"{ref}:{f}")
+        if code == 0:
+            code, _ = await _git(cwd, "restore", f"--source={ref}", "--worktree", "--", f)
+            (restored if code == 0 else skipped).append(f)
+        elif f in created and (cwd / f).is_file():
+            (cwd / f).unlink()
+            deleted.append(f)
+        else:
+            skipped.append(f)
+    return restored, deleted, skipped

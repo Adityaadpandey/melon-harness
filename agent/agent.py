@@ -12,6 +12,7 @@ from agent.skills import match_skills
 from utils.cost import summarize_usage
 from agent.task import TaskState, TaskStatus
 from agent.verify import (
+    backup,
     changed_since,
     repair_prompt,
     select_checks,
@@ -42,6 +43,7 @@ class Agent:
         self._uncached_streak = 0
         self._usage_base = 0
         self._review_sec = 0.0
+        self.undo_info: dict | None = None
 
     async def run(self, message: str):
         await self.session.hook_system.trigger_before_agent(message)
@@ -91,6 +93,7 @@ class Agent:
             max_repairs=self.config.max_repairs,
         )
         before = await snapshot(self.config.cwd)
+        backup_ref = await backup(self.config.cwd) if before is not None else None
         final_response: str | None = None
         nudged = False
         reviews = 0
@@ -185,8 +188,12 @@ class Agent:
                 task.transition(TaskStatus.UNVERIFIED, "no verification commands")
             break
 
+        if backup_ref and task.changed_files:
+            created = [f for f in task.changed_files if f not in (before or {})]
+            self.undo_info = {"ref": backup_ref, "files": list(task.changed_files), "created": created}
         await self.session.hook_system.trigger_after_agent(message, final_response)
         report = task.report()
+        report["undo"] = bool(self.undo_info)
         report["usage"] = summarize_usage(self.session.tracer.events, self.config.pricing)
         ev = self.session.tracer.events
         report["timings"] = {

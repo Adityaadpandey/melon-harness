@@ -40,3 +40,29 @@ def is_binary_file(path: str | Path) -> bool:
             return b"\x00" in chunk
     except (OSError, IOError):
         return False
+
+
+def atomic_write(path: str | Path, text: str) -> None:
+    """Write via a temp file in the same folder and rename over the target, so a
+    crash or kill mid-write leaves the old file intact instead of a truncated one.
+    Keeps the original permissions, and writes through a symlink to its target."""
+    import os
+    import tempfile
+
+    path = Path(path).resolve()
+    mode = path.stat().st_mode & 0o777 if path.exists() else None
+    fd, tmp = tempfile.mkstemp(dir=path.parent, prefix=f".{path.name}.", suffix=".tmp")
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8", newline="") as f:  # newline="": keep CRLF as given
+            f.write(text)
+            f.flush()
+            os.fsync(f.fileno())
+        if mode is not None:
+            os.chmod(tmp, mode)
+        os.replace(tmp, path)
+    except BaseException:
+        try:
+            os.unlink(tmp)
+        except OSError:
+            pass
+        raise

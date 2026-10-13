@@ -4,7 +4,7 @@ from pydantic import BaseModel, Field
 
 from tools.base import FileDiff, Tool, ToolConfirmation, ToolInvocation, ToolKind, ToolResult
 from utils.edits import plan_edits
-from utils.paths import ensure_parent_directory, resolve_path
+from utils.paths import atomic_write, ensure_parent_directory, resolve_path
 
 
 class EditItem(BaseModel):
@@ -78,8 +78,7 @@ class EditTool(Tool):
         is_new = not path.exists()
         try:
             ensure_parent_directory(path)
-            with open(path, "w", encoding="utf-8", newline="") as f:
-                f.write(new)
+            atomic_write(path, new)
         except OSError as e:
             return ToolResult.error_result(f"Failed to write file: {e}")
         delta = len(new.splitlines()) - len(old.splitlines())

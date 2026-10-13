@@ -37,6 +37,7 @@ COMMANDS = {
     "/sessions": "list saved sessions",
     "/resume": "resume a saved session (give its ID)",
     "/checkpoint": "create a checkpoint",
+    "/undo": "put back the files the last request changed",
     "/restore": "restore a checkpoint (give its ID)",
     "/exit": "quit",
 }
