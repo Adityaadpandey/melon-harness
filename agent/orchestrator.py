@@ -137,6 +137,10 @@ class Orchestrator:
             await git(wt, "-c", "user.email=mew@local", "-c", "user.name=mew", "commit", "-qm", f"{node.id}: {node.goal[:60]}")
             _, names = await git(wt, "diff", "--name-only", f"{base}", "HEAD")
             node.changed = [n for n in names.splitlines() if n]
+            if node.status == "done" and not node.changed:
+                # a worker that "finished" without touching anything almost
+                # always printed code instead of writing it; never count that as success
+                node.status, node.note = "failed", "worker made no changes"
             node.seconds = round(time.perf_counter() - started, 2)
             self._emit("worker_done", node=node.id, status=node.status, changed=node.changed, sec=node.seconds)
 

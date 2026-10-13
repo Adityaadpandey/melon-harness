@@ -43,6 +43,7 @@ class Agent:
         )
         before = await snapshot(self.config.cwd)
         final_response: str | None = None
+        nudged = False
 
         while True:
             self._failed = False
@@ -59,6 +60,16 @@ class Agent:
             checks = select_checks(self.config, task.changed_files)
             # outside git we can't tell what changed, so only verify when asked to
             if not task.changed_files and before is not None:
+                if not nudged and final_response and "```" in final_response:
+                    # models sometimes paste the solution instead of writing it
+                    nudged = True
+                    yield AgentEvent.notice("Reply contained code but no file changed; asking the model to apply it")
+                    self.session.context_manager.add_user_message(
+                        "You showed code but no file on disk changed. If the task needs "
+                        "changes, apply them now with your tools. If no change is needed, "
+                        "say so in one sentence."
+                    )
+                    continue
                 task.transition(TaskStatus.DONE_NO_CHANGES)
                 break
             if not checks:

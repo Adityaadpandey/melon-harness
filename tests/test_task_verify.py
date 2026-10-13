@@ -101,3 +101,20 @@ async def test_repeated_identical_calls_end_the_task(repo):
         events = await run(a)
         assert final(events)["status"] == "failed"
         assert any("Stopped" in e.data.get("error", "") for e in events if e.type == AgentEventType.AGENT_ERROR)
+
+
+async def test_code_pasted_instead_of_written_gets_one_nudge(repo):
+    cfg = cfg_for(repo, auto_verify=False)
+    async with Agent(cfg) as a:
+        a.session.client = ScriptedClient(
+            [text("Here you go:\n```py\nx=1\n```"), write("x.py"), text("applied")]
+        )
+        rep = final(await run(a))
+        assert rep["status"] == "unverified" and rep["changed_files"] == ["x.py"]
+
+
+async def test_nudge_happens_only_once(repo):
+    cfg = cfg_for(repo, auto_verify=False)
+    async with Agent(cfg) as a:
+        a.session.client = ScriptedClient([text("```a```"), text("```b```")])
+        assert final(await run(a))["status"] == "done_no_changes"

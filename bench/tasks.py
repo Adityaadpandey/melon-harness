@@ -157,7 +157,7 @@ def test_add_and_get(tmp_path):
 ''',
     },
     hidden={
-        "tests_hidden/test_remove.py": '''import subprocess, sys
+        "tests_hidden/test_remove_hidden.py": '''import subprocess, sys
 import pytest
 from inventory.models import Item
 from inventory.store import Store
@@ -330,12 +330,12 @@ def test_golden():
         "tests_hidden/test_refactor.py": '''from report import generate_report, format_money, parse_rows, compute_totals, render
 
 ROWS = ["rent, 1200.50", "food, 300.5", "fun, 20"]
-GOLDEN = "REPORT\\nrent       $1200.50\\nfood        $300.50\\nfun          $20.00\\nTOTAL      $1521.00\\ntop: rent"
+GOLDEN = "REPORT\\nrent        $1200.50\\nfood         $300.50\\nfun           $20.00\\nTOTAL       $1521.00\\ntop: rent"
 
 
 def test_public_api_unchanged():
     assert generate_report(ROWS) == GOLDEN
-    assert generate_report([]) == "REPORT\\nTOTAL         $0.00\\ntop: n/a"
+    assert generate_report([]) == "REPORT\\nTOTAL          $0.00\\ntop: n/a"
     assert format_money(5) == "$0.05"
 
 
