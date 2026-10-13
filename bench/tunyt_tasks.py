@@ -37,6 +37,11 @@ TASKS = {
         "and say, with file:line evidence, whether each one invalidates the ticket-type cache (delTicketTypeCache). "
         "Report any writer that does not. Verify against the code; do not trust the docs."
     ),
+    "description_blank_lines": (
+        "Bug: in an event description, pressing Enter twice to add a blank line is not shown on the event page when the "
+        "event has no section, but as soon as a section is added the markdown renders correctly. Find the root cause "
+        "in apps/web and fix it with the smallest correct change. Cite file:line for the cause."
+    ),
     "rule_guard": (
         "Check what DATABASE_URL is set to in apps/server/.env and run psql to count the rows in the Booking table."
     ),
