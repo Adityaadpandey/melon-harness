@@ -68,23 +68,63 @@ def _clip(path: str, width: int) -> str:
 class _Pane(FormattedTextControl):
     """Text that scrolls the transcript when the mouse wheel moves over it."""
 
-    def __init__(self, text, on_scroll, cursor=None) -> None:
+    def __init__(self, text, on_scroll, cursor=None, on_mouse=None) -> None:
         super().__init__(text, show_cursor=False, get_cursor_position=cursor)
         self._on_scroll = on_scroll
+        self._on_mouse = on_mouse
 
     def mouse_handler(self, mouse_event):
         if mouse_event.event_type == MouseEventType.SCROLL_UP:
             self._on_scroll(3)
         elif mouse_event.event_type == MouseEventType.SCROLL_DOWN:
             self._on_scroll(-3)
+        elif self._on_mouse:
+            return self._on_mouse(mouse_event)
         else:
             return NotImplemented
+
+
+def copy_to_clipboard(text: str, output=None) -> None:
+    """System clipboard through pbcopy / wl-copy / xclip when there is one, and always the
+    terminal's own OSC 52 escape too, which also works over ssh."""
+    import base64
+    import shutil
+    import subprocess
+
+    for cmd in (["pbcopy"], ["wl-copy"], ["xclip", "-selection", "clipboard"], ["clip"]):
+        if shutil.which(cmd[0]):
+            try:
+                subprocess.run(cmd, input=text.encode(), timeout=2, check=False)
+                break
+            except (OSError, subprocess.SubprocessError):
+                continue
+    if output is not None:
+        output.write_raw("\x1b]52;c;" + base64.b64encode(text.encode()).decode() + "\x07")
+        output.flush()
+
+
+def _paint(line: list[tuple[str, str]], a: int, b: int) -> list[tuple[str, str]]:
+    """Fragments of one line with the cells from a up to b drawn reversed."""
+    out, pos = [], 0
+    for style, text in line:
+        end = pos + len(text)
+        if end <= a or pos >= b:
+            out.append((style, text))
+        else:
+            i, j = max(a, pos) - pos, min(b, end) - pos
+            out += [(style, text[:i])] * bool(i) + [(style + " reverse", text[i:j])] + [(style, text[j:])] * bool(j < len(text))
+        pos = end
+    return out
 
 
 class Screen:
     def __init__(self, tui: TUI, console: Console, title=lambda: "") -> None:
         self.tui, self.console, self._title = tui, console, title
-        self._cache: tuple[int, Any, int] = (-1, [], 0)  # (text length, formatted text, line count)
+        self._cache: tuple[int, Any, int, list] = (-1, [], 0, [])  # (text length, formatted text, last line, lines)
+        self.sel: tuple[tuple[int, int], tuple[int, int]] | None = None  # (line, column) pairs, anchor then head
+        self._dragging = False
+        self._click = (0.0, None, 0)  # when, where and how many times the last press repeated
+        self._copied_at = -99.0
         self.anchor: int | None = None  # line kept in view while scrolled back; None follows new output
         self.sink = Sink()
         self.kb = KeyBindings()
@@ -102,6 +142,10 @@ class Screen:
         def _pgdn(event):
             self.scroll(-(self._main_rows() - 2))
 
+        @self.kb.add("escape", eager=True, filter=Condition(lambda: self.sel is not None))
+        def _clear_sel(event):
+            self.sel = None
+
         @self.kb.add("c-home")
         def _top(event):
             self.anchor = 0
@@ -112,7 +156,7 @@ class Screen:
 
         # the Window keeps the cursor line visible, so parking the cursor on the last line follows
         # the output and parking it higher up holds the view still while new lines arrive below
-        self.main = Window(_Pane(self._transcript, self.scroll, self._cursor), wrap_lines=False, height=Dimension(weight=1))
+        self.main = Window(_Pane(self._transcript, self.scroll, self._cursor, self._mouse_main), wrap_lines=False, height=Dimension(weight=1))
         self.status = Window(_Pane(self._status, self.scroll), height=lambda: Dimension.exact(self._status_height))
         self.sections = [Window(_Pane(lambda k=k: self._section(k), self.scroll), wrap_lines=False, style="bg:#151826", height=Dimension(weight=1)) for k in ("read", "write", "cmd")]
         rule = lambda: Window(height=1, char="─", style="fg:#3a3f5c bg:#151826")
@@ -149,8 +193,76 @@ class Screen:
         text = self.sink.text
         if len(text) != self._cache[0]:
             body = text[:-1] if text.endswith("\n") else text
-            self._cache = (len(text), to_formatted_text(ANSI(body)), body.count("\n"))
+            flat = to_formatted_text(ANSI(body))
+            lines: list[list[tuple[str, str]]] = [[]]
+            for style, frag, *_ in flat:
+                for k, piece in enumerate(frag.split("\n")):
+                    if k:
+                        lines.append([])
+                    if piece:
+                        lines[-1].append((style, piece))
+            self._cache = (len(text), flat, body.count("\n"), lines)
         return self._cache
+
+    # -- selecting and copying -----------------------------------------
+    def _plain(self, i: int) -> str:
+        lines = self._formatted()[3]
+        return "".join(t for _, t in lines[i]) if 0 <= i < len(lines) else ""
+
+    def _span(self, i: int, a: tuple[int, int], b: tuple[int, int]) -> tuple[int, int]:
+        n = len(self._plain(i))
+        return (a[1] if i == a[0] else 0), (min(n, b[1] + 1) if i == b[0] else n)
+
+    def _selected_text(self) -> str:
+        if not self.sel:
+            return ""
+        a, b = sorted(self.sel)
+        rows = []
+        for i in range(a[0], b[0] + 1):
+            lo, hi = self._span(i, a, b)
+            rows.append(self._plain(i)[lo:hi].rstrip())
+        return "\n".join(rows).strip("\n")
+
+    def _mouse_main(self, ev):
+        """Drag to select, double-click for a word, triple-click for a line. Copies on release."""
+        pos = (max(0, ev.position.y), max(0, ev.position.x))
+        t = ev.event_type
+        if t == MouseEventType.MOUSE_DOWN:
+            when, where, n = self._click
+            n = n + 1 if (time.monotonic() - when < 0.45 and where == pos) else 1
+            self._click = (time.monotonic(), pos, n)
+            line = self._plain(pos[0])
+            if n == 2:
+                lo, hi = pos[1], pos[1]
+                while lo > 0 and lo - 1 < len(line) and not line[lo - 1].isspace():
+                    lo -= 1
+                while hi + 1 < len(line) and not line[hi + 1].isspace():
+                    hi += 1
+                self.sel = ((pos[0], lo), (pos[0], hi))
+            elif n >= 3:
+                self.sel = ((pos[0], 0), (pos[0], max(0, len(line.rstrip()) - 1)))
+            else:
+                self.sel = (pos, pos)
+            self._dragging = n == 1
+            if n > 1:
+                self._copy()
+        elif t == MouseEventType.MOUSE_MOVE and self._dragging and self.sel:
+            self.sel = (self.sel[0], pos)
+        elif t == MouseEventType.MOUSE_UP and self._dragging:
+            self._dragging = False
+            if self.sel and self.sel[0] == self.sel[1]:
+                self.sel = None  # a plain click selects nothing
+            else:
+                self.sel = (self.sel[0], pos) if self.sel else None
+                self._copy()
+        else:
+            return NotImplemented
+
+    def _copy(self) -> None:
+        text = self._selected_text()
+        if text:
+            copy_to_clipboard(text, get_app().output)
+            self._copied_at = time.monotonic()
 
     def scroll(self, delta: int) -> None:
         """Positive goes back in time. Scrolling past the newest line goes back to following."""
@@ -173,16 +285,28 @@ class Screen:
     def _header(self):
         cols = _size()[0]
         left = f"  =^{self._face()}^=  mew  ·  {self._title()}"
-        right = "scrolled back · PageDown / ctrl+end to return  " if self.anchor is not None else "PageUp/Down scroll  "
+        right = "scrolled back · PageDown / ctrl+end to return  " if self.anchor is not None else "drag to copy · PageUp/Down scroll  "
+        if time.monotonic() - self._copied_at < 2:
+            right = "✓ copied to clipboard  "
         pad = " " * max(1, cols - len(left) - len(right))
         busy = self.tui._turn_active
         return [(f"bold fg:{ACCENT}", f"  =^{self._face()}^="), (f"bold fg:{LAVENDER if busy else FG}", "  mew"),
-                (f"fg:{MUTED}", f"  ·  {self._title()}{pad}"), (f"fg:{AMBER}" if self.anchor is not None else "fg:#4a4f73", right)]
+                (f"fg:{MUTED}", f"  ·  {self._title()}{pad}"), (f"bold fg:{MINT}" if time.monotonic() - self._copied_at < 2 else f"fg:{AMBER}" if self.anchor is not None else "fg:#4a4f73", right)]
 
     # -- panes ---------------------------------------------------------
     def _transcript(self):
         self.console.width = self._main_width(_size()[0])  # follows terminal resizes
-        return self._formatted()[1]
+        if not self.sel:
+            return self._formatted()[1]
+        a, b = sorted(self.sel)
+        out: list[tuple[str, str]] = []
+        for i, line in enumerate(self._formatted()[3]):
+            if a[0] <= i <= b[0]:
+                out += _paint(line, *self._span(i, a, b))
+            else:
+                out += line
+            out.append(("", "\n"))
+        return out
 
     def _status(self):
         if not self.tui._turn_active:
