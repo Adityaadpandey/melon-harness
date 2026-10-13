@@ -1,3 +1,6 @@
 __pycache__
 .git
 .venv/
+.env
+.pytest_cache/
+.mew/
