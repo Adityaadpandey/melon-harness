@@ -141,3 +141,36 @@ async def test_search_ranks_files_by_plain_words(repo):
     files = [l.split()[0] for l in r.output.splitlines() if not l.startswith(" ")]
     assert files[0] == "src/EventAbout.tsx"
     assert files.index("src/EventAbout.tsx") < files.index("docs/notes.md")
+
+
+async def test_outline_and_read_symbol_return_one_function(repo):
+    from tools.builtin.outline import OutlineTool
+    from tools.builtin.read_file import ReadFileTool
+
+    (repo / "big.ts").write_text(
+        "export function alpha() {\n  return 1;\n}\n\nexport const beta = async (x: number) => {\n  return x;\n};\n\n"
+        "class Box {\n  size() {\n    return 2;\n  }\n}\n"
+    )
+    (repo / "m.py").write_text("class A:\n    def f(self):\n        return 1\n\ndef g():\n    return 2\n")
+    out = (await run(OutlineTool(Config(cwd=repo)), repo, path="big.ts")).output
+    assert "1-3" in out and "function alpha" in out and "const beta" in out and "method size" in out
+    assert "def f" in (await run(OutlineTool(Config(cwd=repo)), repo, path="m.py")).output
+    r = await run(ReadFileTool(Config(cwd=repo)), repo, path="big.ts", symbol="beta")
+    assert "return x;" in r.output and "alpha" not in r.output
+    r = await run(ReadFileTool(Config(cwd=repo)), repo, path="big.ts", symbol="nope")
+    assert not r.success and "outline" in r.error
+
+
+async def test_git_tool_is_read_only_and_finds_changes(repo):
+    from tools.builtin.git import GitTool
+
+    git(repo, "add", "-A")
+    git(repo, "-c", "user.name=t", "-c", "user.email=t@t", "commit", "-qm", "add loader")
+    t = GitTool(Config(cwd=repo))
+    assert "add loader" in (await run(t, repo, op="log", path="src/a.py")).output
+    assert "add loader" in (await run(t, repo, op="find_change", query="load_user")).output
+    assert "load_user" in (await run(t, repo, op="blame", path="src/a.py", lines="1,1")).output
+    assert not (await run(t, repo, op="log", rev="--output=x")).success
+    from pydantic import ValidationError
+    with pytest.raises(ValidationError):
+        await run(t, repo, op="commit")

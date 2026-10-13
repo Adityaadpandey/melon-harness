@@ -1,8 +1,10 @@
 from tools.builtin.edit_file import EditTool
+from tools.builtin.git import GitTool
 from tools.builtin.glob import GlobTool
 from tools.builtin.grep import GrepTool
 from tools.builtin.list_dir import ListDirTool
 from tools.builtin.memory import MemoryTool
+from tools.builtin.outline import OutlineTool
 from tools.builtin.read_file import ReadFileTool
 from tools.builtin.search import SearchTool
 from tools.builtin.shell import ShellTool
@@ -19,8 +21,10 @@ __all__ = [
     "ShellTool",
     "ListDirTool",
     "GrepTool",
+    "OutlineTool",
     "SearchTool",
     "GlobTool",
+    "GitTool",
     "WebSearchTool",
     "WebFetchTool",
     "TodosTool",
@@ -37,8 +41,10 @@ def get_all_builtin_tools() -> list[type]:
         ShellTool,
         ListDirTool,
         GrepTool,
+        OutlineTool,
         SearchTool,
         GlobTool,
+        GitTool,
         WebSearchTool,
         WebFetchTool,
         TodosTool,

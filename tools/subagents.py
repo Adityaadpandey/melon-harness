@@ -23,7 +23,7 @@ class SubagentDefinition:
     role: str = "default"
 
 
-READONLY_TOOLS = {"read_file", "grep", "search", "glob", "list_dir", "use_skill", "graph", "web_search", "web_fetch"}
+READONLY_TOOLS = {"read_file", "grep", "search", "outline", "git", "glob", "list_dir", "use_skill", "graph", "web_search", "web_fetch"}
 _SEMAPHORES: dict[int, asyncio.Semaphore] = {}
 
 

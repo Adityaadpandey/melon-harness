@@ -10,3 +10,4 @@ always: true
 - Cite code as `path:line` from what you just read, not from memory. A search with no hits means "not found by this search" (say which pattern and path), not "probably exists elsewhere".
 - Names, comments and docs can be stale. The code you read wins; when sources disagree, say so.
 - End with what you could not verify, in one line, if anything.
+- A change that passes lint/typecheck/tests is not proof it fixes the bug. Unless a check exercises the symptom, say the fix is unproven and say how to confirm it.

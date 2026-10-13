@@ -68,7 +68,8 @@ async def build_diff(cwd: Path, files: list[str]) -> str:
 
 
 def parse_verdict(text: str) -> ReviewResult:
-    m = re.search(r"VERDICT:\s*(PASS|ISSUES)\b(.*)", text or "", re.S | re.I)
+    ms = list(re.finditer(r"VERDICT:\s*(PASS|ISSUES)\b(.*)", text or "", re.S | re.I))
+    m = ms[-1] if ms else None  # last one wins: a model may restate the format before answering
     if not m:
         return ReviewResult("UNPARSED", (text or "")[:500])
     return ReviewResult(m.group(1).upper(), m.group(2).strip())
@@ -89,12 +90,20 @@ async def review_changes(config, request: str, files: list[str], checks: list[di
     })
     summary = ", ".join(f"{c['command']}={'ok' if c['ok'] else 'FAILED'}" for c in checks) or "none ran"
     prompt = REVIEW_PROMPT.format(request=request[:3000], files=", ".join(files[:30]), checks=summary, diff=diff)
-    text = ""
+    texts: list[str] = []
+    error = ""
     try:
         async with Agent(cfg) as reviewer:
             async for ev in reviewer.run(prompt):
-                if ev.type == AgentEventType.TEXT_COMPLETE:
-                    text = ev.data.get("content") or text
+                if ev.type == AgentEventType.TEXT_COMPLETE and ev.data.get("content"):
+                    texts.append(ev.data["content"])
+                elif ev.type == AgentEventType.AGENT_ERROR:
+                    error = ev.data.get("error", "")
     except Exception as e:  # a broken reviewer must never block or fail the task
         return ReviewResult("UNPARSED", f"reviewer crashed: {type(e).__name__}: {e}")
-    return parse_verdict(text)
+    result = parse_verdict("\n".join(texts))  # the verdict may sit in an earlier turn than the last text
+    if result.verdict == "UNPARSED" and error:
+        result.findings = f"reviewer stopped: {error[:300]}"
+    elif result.verdict == "UNPARSED" and not texts:
+        result.findings = "reviewer produced no answer"
+    return result

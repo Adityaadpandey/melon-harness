@@ -38,7 +38,7 @@ def _tokens(command: str) -> list[str]:
     return out
 
 
-BUILTIN_TOOLS = {"read_file", "write_file", "edit", "shell", "list_dir", "grep", "search", "glob", "web_search", "web_fetch", "todos", "memory", "use_skill", "graph", "parallel_tasks"}
+BUILTIN_TOOLS = {"read_file", "write_file", "edit", "shell", "list_dir", "grep", "search", "outline", "git", "glob", "web_search", "web_fetch", "todos", "memory", "use_skill", "graph", "parallel_tasks"}
 
 
 def violation(tool_name: str, params: dict[str, Any], config) -> str | None:

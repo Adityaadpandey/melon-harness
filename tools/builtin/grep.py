@@ -9,6 +9,9 @@ from utils.paths import resolve_path
 from utils.search import list_files, search, similar_paths
 
 
+MAX_GREP_CHARS = 7000  # about 2k tokens
+
+
 class GrepParams(BaseModel):
     pattern: str = Field(..., description="Regex (or literal text with literal=true) to search for")
     path: str = Field(".", description="File or directory to search (default: working directory)")
@@ -62,4 +65,7 @@ class GrepTool(Tool):
             return ToolResult.success_result(f"No matches for '{p.pattern}' in {len(files)} files", metadata=meta)
         if not p.files_only and total > p.limit:
             lines.append(f"... {total - p.limit} more matches in {hit_files} files not shown; narrow the pattern, path or glob")
-        return ToolResult.success_result("\n".join(lines), metadata=meta)
+        body = "\n".join(lines)
+        if len(body) > MAX_GREP_CHARS:  # wide context or long lines: cap by size, not just by match count
+            body = body[:MAX_GREP_CHARS].rsplit("\n", 1)[0] + "\n... output clipped; narrow the pattern, path or glob, or use files_only"
+        return ToolResult.success_result(body, metadata=meta)

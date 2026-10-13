@@ -27,6 +27,11 @@ class ReadFileParams(BaseModel):
         description="Maximum number of lines to read. If not specified, reads entire file.",
     )
 
+    symbol: str | None = Field(
+        None,
+        description="Read just this function/class/method (see `outline`) instead of a line range",
+    )
+
 
 class ReadFileTool(Tool):
     name = "read_file"
@@ -54,6 +59,20 @@ class ReadFileTool(Tool):
             return ToolResult.error_result(
                 f"File not found: {path}." + similar_paths(Path(invocation.cwd), path, self.config.forbidden_paths)
             )
+
+        if params.symbol:
+            from utils.outline import outline
+
+            try:
+                syms = [x for x in outline(path.name, path.read_text(encoding="utf-8", errors="replace")) if x.name == params.symbol]
+            except OSError:
+                syms = []
+            if not syms:
+                return ToolResult.error_result(f"No symbol '{params.symbol}' in {path.name}. Call outline to list them.")
+            if len(syms) > 1:
+                where = ", ".join(f"{x.start}-{x.end}" for x in syms)
+                return ToolResult.error_result(f"'{params.symbol}' appears {len(syms)} times ({where}); read one with offset/limit.")
+            params.offset, params.limit = syms[0].start, min(syms[0].end - syms[0].start + 1, 400)
 
         # Re-reading an unchanged slice is pure token waste: say so instead, as
         # long as the earlier read is still in context (epoch bumps when old
