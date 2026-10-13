@@ -27,8 +27,14 @@ class MessageItem:
         if self.tool_calls:
             result["tool_calls"] = self.tool_calls
 
+        # providers reject a tool message with no content (e.g. `touch x` prints
+        # nothing), so those always carry text; assistant tool-call turns send ""
         if self.content:
             result["content"] = self.content
+        elif self.role == "tool":
+            result["content"] = "(no output)"
+        elif self.role == "assistant":
+            result["content"] = ""
 
         return result
 

@@ -108,3 +108,11 @@ async def test_no_callback_means_no_silent_approval(tmp_path):
         )
         await run(agent)
         assert not (tmp_path / "n.txt").exists()
+
+
+def test_empty_tool_output_still_has_content_key():
+    from context.manager import MessageItem
+
+    m = MessageItem(role="tool", content="", tool_call_id="x").to_dict()
+    assert m["content"] == "(no output)"
+    assert MessageItem(role="assistant", content="", tool_calls=[{"id": "1"}]).to_dict()["content"] == ""
