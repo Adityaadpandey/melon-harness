@@ -393,6 +393,7 @@ class TUI:
         self.todos: list[tuple[str, bool]] = []
         self.agents: dict[str, dict[str, Any]] = {}
         self.results: deque = deque(maxlen=30)  # full tool results for /expand
+        self.last_reply = ""
         self.fullscreen = False  # a full-screen pane shows the status line, so no Live region
         # what the side panel lists: files read, files written, commands run
         self.read_files: dict[str, int] = {}
@@ -505,6 +506,7 @@ class TUI:
             return
         self.console.print()
         self.console.print(self._assistant_grid(md, self._first_block))
+        self.last_reply = md.strip() if self._first_block else self.last_reply + "\n\n" + md.strip()  # for /copy
         self._first_block = False
 
     def assistant_delta(self, content: str) -> None:
@@ -650,7 +652,11 @@ class TUI:
             danger = AMBER if confirmation.command else LAVENDER
             self.console.print(Panel(Group(*parts), title=Text(f" {title.split(chr(10))[0]} ", style=f"bold {danger}"), title_align="left",
                                      border_style=danger, box=box.ROUNDED, padding=(0, 1)))
+            self._phase = "Waiting for your answer"
             choice = await ask_choice(self.console, q, ["Yes", always, "No, and tell me what to do differently"])
+            if choice < 2:  # answer at once, the command itself may take a while
+                self.console.print(Text("  ▸ approved, running…", style=MINT))
+                self._phase = f"Running {tool_label(confirmation.tool_name, confirmation.params, self.cwd)}"
             if choice == 0:
                 return Decision(True)
             if choice == 1:

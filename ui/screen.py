@@ -128,7 +128,9 @@ class Screen:
         self.anchor: int | None = None  # line kept in view while scrolled back; None follows new output
         self.sink = Sink()
         self.kb = KeyBindings()
-        self._status_height = 0
+        self._status_cache = (0.0, "", 0)  # (rendered at, ansi, rows)
+        self.mouse_on = True  # F2 turns mouse capture off so the terminal's own selection works
+        self._last_move = 0.0
         self._status_console = Console(file=io.StringIO(), force_terminal=True, color_system="truecolor", theme=AGENT_THEME, highlight=False)
         cols, _ = _size()
         redirect_console(console, self.sink, self._main_width(cols))
@@ -146,6 +148,11 @@ class Screen:
         def _clear_sel(event):
             self.sel = None
 
+        @self.kb.add("f2")
+        def _toggle_mouse(event):
+            self.mouse_on = not self.mouse_on
+            self.sel, self._dragging = None, False
+
         @self.kb.add("c-home")
         def _top(event):
             self.anchor = 0
@@ -157,8 +164,8 @@ class Screen:
         # the Window keeps the cursor line visible, so parking the cursor on the last line follows
         # the output and parking it higher up holds the view still while new lines arrive below
         self.main = Window(_Pane(self._transcript, self.scroll, self._cursor, self._mouse_main), wrap_lines=False, height=Dimension(weight=1))
-        self.status = Window(_Pane(self._status, self.scroll), height=lambda: Dimension.exact(self._status_height))
-        self.sections = [Window(_Pane(lambda k=k: self._section(k), self.scroll), wrap_lines=False, style="bg:#151826", height=Dimension(weight=1)) for k in ("read", "write", "cmd")]
+        self.status = Window(_Pane(self._status, self.scroll, on_mouse=self._mouse_elsewhere), height=lambda: Dimension.exact(self._status_render()[1]))
+        self.sections = [Window(_Pane(lambda k=k: self._section(k), self.scroll, on_mouse=self._mouse_elsewhere), wrap_lines=False, style="bg:#151826", height=Dimension(weight=1)) for k in ("read", "write", "cmd")]
         rule = lambda: Window(height=1, char="─", style="fg:#3a3f5c bg:#151826")
         side = VSplit([
             Window(width=1, char="│", style="fg:#3a3f5c"),
@@ -256,6 +263,7 @@ class Screen:
                 self._copy()
         elif t == MouseEventType.MOUSE_MOVE and self._dragging and self.sel:
             self.sel = (self.sel[0], pos)
+            self._last_move = time.monotonic()
         elif t == MouseEventType.MOUSE_UP and self._dragging:
             self._dragging = False
             if self.sel and self.sel[0] == self.sel[1]:
@@ -265,6 +273,14 @@ class Screen:
                 self._copy()
         else:
             return NotImplemented
+
+    def _mouse_elsewhere(self, ev):
+        """A drag that ends over the side panel or input box still finishes and copies."""
+        if self._dragging and ev.event_type == MouseEventType.MOUSE_UP:
+            self._dragging = False
+            self._copy()
+            return None
+        return NotImplemented
 
     def _copy(self) -> None:
         text = self._selected_text()
@@ -293,7 +309,9 @@ class Screen:
     def _header(self):
         cols = _size()[0]
         left = f"  =^{self._face()}^=  mew  ·  {self._title()}"
-        right = "scrolled back · PageDown / ctrl+end to return  " if self.anchor is not None else "drag to copy · PageUp/Down scroll  "
+        right = "scrolled back · PageDown / ctrl+end to return  " if self.anchor is not None else "drag to copy · F2 native select  "
+        if not self.mouse_on:
+            right = "native select on (wheel off) · F2 to go back  "
         if time.monotonic() - self._copied_at < 2:
             right = "✓ copied to clipboard  "
         pad = " " * max(1, cols - len(left) - len(right))
@@ -304,6 +322,9 @@ class Screen:
     # -- panes ---------------------------------------------------------
     def _transcript(self):
         self.console.width = self._main_width(_size()[0])  # follows terminal resizes
+        if self._dragging and time.monotonic() - self._last_move > 0.8 and self.sel and self.sel[0] != self.sel[1]:
+            self._dragging = False  # the release went somewhere we never heard about: finish anyway
+            self._copy()
         if not self.sel:
             return self._formatted()[1]
         a, b = sorted(self.sel)
@@ -316,17 +337,25 @@ class Screen:
             out.append(("", "\n"))
         return out
 
-    def _status(self):
+    def _status_render(self) -> tuple[str, int]:
+        """(ansi, rows) for the working indicator. The height comes from here too: a window that
+        starts at height 0 is never drawn, so it could never grow to show anything."""
+        at, ansi, rows = self._status_cache
+        if time.monotonic() - at < 0.05:
+            return ansi, rows
         if not self.tui._turn_active:
-            self._status_height = 0
-            return ""
+            self._status_cache = (time.monotonic(), "", 0)
+            return "", 0
         c = self._status_console
         c.width = self._main_width(_size()[0])
         c.file = io.StringIO()
         c.print(self.tui._renderable())
         out = c.file.getvalue().rstrip("\n") + "\n" + self._scanner(c.width)
-        self._status_height = out.count("\n") + 1
-        return ANSI(out)
+        self._status_cache = (time.monotonic(), out, out.count("\n") + 1)
+        return out, out.count("\n") + 1
+
+    def _status(self):
+        return ANSI(self._status_render()[0])
 
     def _scanner(self, width: int) -> str:
         """A thin light that sweeps back and forth above the input while the agent works."""
