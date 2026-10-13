@@ -126,6 +126,9 @@ class CLI:
                 f"\n[dim]usage: {u['calls']} calls, {u['prompt_tokens']:,} in "
                 f"({u['cache_hit_pct']}% cached), {u['completion_tokens']:,} out{cost}[/dim]"
             )
+            w = u.get("cache_waste") or {}
+            if w.get("misses"):
+                console.print(f"[dim]cache misses: {w['missed_tokens']:,} tokens re-billed ({', '.join(w['reasons'])})[/dim]")
         if report["status"] == "done_no_changes":
             return
         style = {"verified": "success", "unverified": "warning"}.get(report["status"], "error")

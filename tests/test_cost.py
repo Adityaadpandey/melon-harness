@@ -89,3 +89,32 @@ def test_anthropic_marks_history_for_caching():
     # simulate what the adapter does before sending
     out[-1]["content"][-1]["cache_control"] = {"type": "ephemeral"}
     assert out[-1]["content"][-1]["cache_control"]["type"] == "ephemeral"
+
+
+def _call(t, model, prompt, cached, sec=1):
+    return {"event": "model_call", "ok": True, "model": model, "t": t, "sec": sec,
+            "tokens": {"prompt_tokens": prompt, "completion_tokens": 10, "cached_tokens": cached}}
+
+
+def test_cache_waste_attributes_reason_and_ignores_noise_and_first_turn():
+    from utils.cost import cache_waste
+
+    ev = [
+        _call(0, "m", 10_000, 0),           # first turn: nothing to miss yet
+        _call(10, "m", 12_000, 9_900),      # fine: previous prompt (10k) mostly read from cache
+        _call(20, "m", 14_000, 12_000),     # fine
+        _call(30, "m", 15_000, 2_000),      # prefix changed: ~12k tokens re-billed
+        _call(900, "m", 16_000, 0),         # long idle gap: expired cache
+        _call(910, "other", 17_000, 0),     # different model, never reported caching -> not counted
+    ]
+    w = cache_waste(ev, {})
+    assert w["misses"] == 2 and w["reasons"] == ["idle > 5 min", "prefix changed"]
+    assert w["missed_tokens"] == (14_000 - 2_000) + (15_000 - 0)
+
+
+def test_cache_waste_resets_after_compaction_and_providers_without_caching():
+    from utils.cost import cache_waste
+
+    ev = [_call(0, "m", 50_000, 1), _call(5, "m", 60_000, 50_000), {"event": "compaction"}, _call(10, "m", 8_000, 0)]
+    assert cache_waste(ev, {})["misses"] == 0
+    assert cache_waste([_call(0, "n", 9_000, 0), _call(5, "n", 9_500, 0)], {})["misses"] == 0
