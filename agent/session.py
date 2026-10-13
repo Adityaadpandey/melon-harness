@@ -25,6 +25,7 @@ class Session:
         )
         self.client = LLMClient(config=config, tracer=self.tracer)
         self.tool_registry = create_default_registry(config)
+        self.tool_registry.tracer = self.tracer
         self.context_manager: ContextManager | None = None
         self.discovery_manager = ToolDiscoveryManager(
             self.config,

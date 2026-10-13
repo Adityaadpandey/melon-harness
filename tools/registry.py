@@ -13,6 +13,8 @@ logger = logging.getLogger(__name__)
 
 
 class ToolRegistry:
+    tracer = None  # set by Session; tool timing/outcome go to the trace
+
     def __init__(self, config: Config):
         self._tools: dict[str, Tool] = {}
         self._mcp_tools: dict[str, Tool] = {}
@@ -66,7 +68,21 @@ class ToolRegistry:
     def get_schemas(self) -> list[dict[str, Any]]:
         return [tool.to_openai_schema() for tool in self.get_tools()]
 
-    async def invoke(
+    async def invoke(self, name, params, cwd, hook_system, approval_manager=None):
+        import time
+
+        started = time.perf_counter()
+        result = await self._invoke(name, params, cwd, hook_system, approval_manager)
+        if self.tracer:
+            self.tracer.emit(
+                "tool_call", tool=name, ok=result.success,
+                sec=round(time.perf_counter() - started, 3),
+                blocked=bool(result.metadata.get("blocked")),
+                error=(result.error or "")[:200] if not result.success else None,
+            )
+        return result
+
+    async def _invoke(
         self,
         name: str,
         params: dict[str, Any],

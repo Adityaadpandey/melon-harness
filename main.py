@@ -1,4 +1,5 @@
 import asyncio
+import json
 from pathlib import Path
 import sys
 import click
@@ -21,10 +22,63 @@ class CLI:
         self.tui = TUI(config, console)
         self.last_report: dict | None = None
 
-    async def run_single(self, message: str) -> str | None:
+    async def run_single(self, message: str, report_path: Path | None = None) -> str | None:
         async with Agent(self.config) as agent:
             self.agent = agent
-            return await self._process_message(message)
+            result = await self._process_message(message)
+            if report_path:
+                self._write_report(report_path, agent, result)
+            return result
+
+    async def run_orchestrated(self, message: str, graph: Path | None, apply: bool, report_path: Path | None) -> bool:
+        from agent.orchestrator import Orchestrator, parse_graph, plan
+        from agent.session import Session
+        from client.llm_client import LLMClient
+
+        client = LLMClient(self.config)
+        await client.initialize()
+        try:
+            nodes = parse_graph(json.loads(graph.read_text())) if graph else await plan(client, message)
+        finally:
+            await client.close()
+        console.print(f"[bold]Parallel plan:[/bold] {', '.join(n.id for n in nodes)}")
+        result = await Orchestrator(self.config).run(message, nodes, apply=apply)
+        console.print_json(json.dumps({k: v for k, v in result.items() if k != "tasks"}))
+        for t in result["tasks"]:
+            console.print(f"  {t['status']:<9}{t['id']:<14}{t['seconds']}s  {t['note']}")
+        if report_path:
+            report_path.write_text(json.dumps({"report": {"status": result["status"], "repairs": 0,
+                "changed_files": sorted({f for t in result["tasks"] for f in t["changed"]}), "checks": result["combined_checks"]},
+                "parallel": result, "model_calls": None}, indent=1))
+        return result["status"] == "ok"
+
+    def _write_report(self, path: Path, agent: Agent, response: str | None) -> None:
+        """Metrics for one run, for the benchmark runner and for debugging."""
+        import json
+
+        ev = agent.session.tracer.events
+        calls = [e for e in ev if e["event"] == "model_call"]
+        usage = agent.session.context_manager.total_usage
+        path.write_text(
+            json.dumps(
+                {
+                    "report": self.last_report,
+                    "final_response": response,
+                    "session_id": agent.session.session_id,
+                    "turns": agent.session.turn_count,
+                    "model_calls": len(calls),
+                    "model_call_failures": sum(1 for c in calls if not c["ok"]),
+                    "models_used": sorted({c["model"] for c in calls if c["ok"]}),
+                    "tool_calls": sum(1 for e in ev if e["event"] == "tool_call"),
+                    "tool_failures": sum(
+                        1 for e in ev if e["event"] == "tool_call" and not e["ok"]
+                    ),
+                    "ttft_sec": [c["ttft"] for c in calls if c.get("ttft") is not None],
+                    "usage": usage.__dict__,
+                },
+                indent=1,
+            )
+        )
 
     async def run_interactive(self) -> str | None:
         self.tui.print_welcome(
@@ -328,6 +382,10 @@ class CLI:
     type=click.Path(exists=True, file_okay=False, path_type=Path),
     help="Current working directory",
 )
+@click.option("--parallel", is_flag=True, help="Let a planner split the request into parallel workers")
+@click.option("--graph", type=click.Path(exists=True, path_type=Path), help="Task graph JSON (implies --parallel)")
+@click.option("--apply/--no-apply", default=True, help="Fast-forward the integrated result into a clean checkout")
+@click.option("--report", type=click.Path(path_type=Path), help="Write run metrics JSON here")
 @click.option("--model", "-m", help="Model id (overrides config)")
 @click.option(
     "--approval",
@@ -337,6 +395,10 @@ class CLI:
 def main(
     prompt: str | None,
     cwd: Path | None,
+    parallel: bool,
+    graph: Path | None,
+    apply: bool,
+    report: Path | None,
     model: str | None,
     approval: str | None,
 ):
@@ -361,9 +423,13 @@ def main(
 
     cli = CLI(config)
 
+    if (parallel or graph) and prompt:
+        ok = asyncio.run(cli.run_orchestrated(prompt, graph, apply, report))
+        sys.exit(0 if ok else 1)
+
     # messages = [{"role": "user", "content": prompt}]
     if prompt:
-        result = asyncio.run(cli.run_single(prompt))
+        result = asyncio.run(cli.run_single(prompt, report))
         bad = {"failed", "verification_failed"}
         if result is None or (cli.last_report or {}).get("status") in bad:
             sys.exit(1)
