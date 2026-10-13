@@ -118,3 +118,16 @@ async def test_nudge_happens_only_once(repo):
     async with Agent(cfg) as a:
         a.session.client = ScriptedClient([text("```py\na\n```"), text("```py\nb\n```")])
         assert final(await run(a, "create x.py"))["status"] == "done_no_changes"  # nudged once, then accepted
+
+
+def test_related_tests_expand_only_for_specs_that_import_the_changed_file(tmp_path):
+    from config.config import Config, VerifyRule
+    from agent.verify import select_checks
+
+    (tmp_path / "app" / "unit").mkdir(parents=True)
+    (tmp_path / "app" / "unit" / "a.spec.ts").write_text('import { x } from "../src/lib/thing";\n')
+    (tmp_path / "app" / "unit" / "b.spec.ts").write_text('import { y } from "../src/lib/other";\n')
+    rule = VerifyRule(paths=["app/"], cwd="app", tests_glob="unit/**/*.spec.ts", commands=["run {tests}"])
+    cfg = Config(cwd=tmp_path, verify_rules=[rule], auto_verify=False)
+    assert select_checks(cfg, ["app/src/lib/thing.ts"]) == [("run unit/a.spec.ts", "app")]
+    assert select_checks(cfg, ["app/src/lib/none.ts"]) == []

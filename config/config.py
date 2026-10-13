@@ -115,6 +115,9 @@ class VerifyRule(BaseModel):
     paths: list[str]
     commands: list[str]
     cwd: str = "."
+    # {tests} expands to spec files under `cwd` matching this glob that mention a changed
+    # file's name in an import; a command that needs {tests} is skipped when none match
+    tests_glob: str | None = None
 
 
 class Config(BaseModel):

@@ -84,9 +84,10 @@ async def review_changes(config, request: str, files: list[str], checks: list[di
     cfg = Config(**{
         **config.to_dict(),
         "model_role": "review",
-        "allowed_tools": ["read_file", "grep", "glob", "list_dir", "use_skill"],
+        "allowed_tools": ["read_file", "grep", "search", "outline", "git", "glob", "list_dir", "use_skill"],
         "auto_review": False, "auto_verify": False, "verify_commands": [], "verify_rules": [],
-        "subagents": [], "max_turns": 14, "max_seconds": 300, "approval": "never",
+        "subagents": [], "max_turns": 5 if diff.count("\n") < 80 else 14, "max_seconds": 300,
+        "approval": "never",  # small diffs get 5 turns: a look, not an expedition
     })
     summary = ", ".join(f"{c['command']}={'ok' if c['ok'] else 'FAILED'}" for c in checks) or "none ran"
     prompt = REVIEW_PROMPT.format(request=request[:3000], files=", ".join(files[:30]), checks=summary, diff=diff)

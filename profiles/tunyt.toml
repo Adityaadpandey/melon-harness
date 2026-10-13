@@ -55,7 +55,8 @@ commands = ["npx tsc --noEmit", "npx biome check --no-errors-on-unmatched {files
 [[verify_rules]]
 paths = ["apps/web/"]
 cwd = "apps/web"
-commands = ["pnpm typecheck", "npx biome check --no-errors-on-unmatched {files}"]
+tests_glob = "unit/**/*.spec.ts"  # pure unit specs only; e2e and server specs may reach a database and are never auto-run
+commands = ["pnpm typecheck", "npx biome check --no-errors-on-unmatched {files}", "pnpm test:unit {tests}"]
 
 [[verify_rules]]
 paths = ["apps/crm/"]

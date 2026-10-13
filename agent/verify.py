@@ -4,6 +4,7 @@ from __future__ import annotations
 import asyncio
 import hashlib
 import os
+import re
 import shlex
 import signal
 from dataclasses import dataclass
@@ -74,6 +75,23 @@ def detect_verify_commands(cwd: Path) -> list[str]:
     return []
 
 
+def related_tests(root: Path, rule, hits: list[str]) -> list[str]:
+    """Specs (under the rule's cwd, matching tests_glob) that import one of the changed files."""
+    if not rule.tests_glob:
+        return []
+    base = root / rule.cwd
+    stems = {Path(f).stem for f in hits if not re.search(r"\.(spec|test)\.", f)}
+    found = []
+    for spec in sorted(base.glob(rule.tests_glob)):
+        try:
+            text = spec.read_text(encoding="utf-8", errors="replace")
+        except OSError:
+            continue
+        if any(re.search(rf"/{re.escape(st)}[\"']", text) for st in stems):
+            found.append(spec.relative_to(base).as_posix())
+    return found[:8]
+
+
 def select_checks(config, changed: list[str]) -> list[tuple[str, str]]:
     """(command, cwd) pairs to run for this change set. Explicit commands win,
     then rules matching the changed paths (monorepos), then auto-detection."""
@@ -84,8 +102,11 @@ def select_checks(config, changed: list[str]) -> list[tuple[str, str]]:
             continue
         rel = [os.path.relpath(f, rule.cwd) for f in hits]
         files = " ".join(shlex.quote(f) for f in rel)
+        tests = " ".join(shlex.quote(t) for t in related_tests(config.cwd, rule, hits))
         for cmd in rule.commands:
-            item = (cmd.replace("{files}", files), rule.cwd)
+            if "{tests}" in cmd and not tests:
+                continue
+            item = (cmd.replace("{files}", files).replace("{tests}", tests), rule.cwd)
             if item not in checks:
                 checks.append(item)
     if not checks and config.auto_verify:
