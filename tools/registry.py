@@ -247,6 +247,12 @@ def create_default_registry(config: Config) -> ToolRegistry:
     for tool_class in get_all_builtin_tools():
         registry.register(tool_class(config))
 
+    from tools.builtin.graph import GraphTool
+    from utils.codegraph import locate
+
+    if locate(config.cwd):  # only advertise the tool when there is a graph to query
+        registry.register(GraphTool(config))
+
     for subagent_def in get_default_subagent_definitions(config):
         registry.register(SubagentTool(config, subagent_def))
 

@@ -166,10 +166,19 @@ def _get_tool_guidelines_section(tools: list[Tool]) -> str:
     """Tool schemas already describe each tool; only list sub-agents (the model
     must know when to delegate) and skip the duplicated per-tool prose."""
     subagent_tools = [t for t in tools if t.name.startswith("subagent_")]
-    if not subagent_tools:
-        return ""
-    lines = "\n".join(f"- **{t.name}**: {t.description[:160]}" for t in subagent_tools)
-    return f"# Sub-agents\n\nThey run with isolated context and limited tools; give each a specific goal and use the result.\n\n{lines}"
+    out = []
+    if any(t.name == "graph" for t in tools):
+        out.append(
+            "# Code graph\n\nUse `graph` for structure questions (where is X defined, who calls X, what does X call, how do A and B connect) "
+            "BEFORE grepping: one call usually answers it. It is a snapshot, so confirm the lines you rely on with read_file."
+        )
+    if subagent_tools:
+        lines = "\n".join(f"- **{t.name}**: {t.description[:160]}" for t in subagent_tools)
+        out.append(
+            "# Sub-agents\n\nThey run with isolated context and limited tools; give each a specific goal and use the result. "
+            "When several investigations are independent, call several sub-agents in the SAME turn: they run in parallel.\n\n" + lines
+        )
+    return "\n\n".join(out)
 
 
 def get_compression_prompt() -> str:
