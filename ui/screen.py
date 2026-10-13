@@ -194,14 +194,22 @@ class Screen:
         if len(text) != self._cache[0]:
             body = text[:-1] if text.endswith("\n") else text
             flat = to_formatted_text(ANSI(body))
-            lines: list[list[tuple[str, str]]] = [[]]
+            raw: list[list[tuple[str, str]]] = [[]]
             for style, frag, *_ in flat:
                 for k, piece in enumerate(frag.split("\n")):
                     if k:
-                        lines.append([])
+                        raw.append([])
                     if piece:
-                        lines[-1].append((style, piece))
-            self._cache = (len(text), flat, body.count("\n"), lines)
+                        raw[-1].append((style, piece))
+            # several blank lines in a row (every block adds its own gap) read as one
+            lines: list[list[tuple[str, str]]] = []
+            for ln in raw:
+                blank = not "".join(t for _, t in ln).strip()
+                if blank and lines and not "".join(t for _, t in lines[-1]).strip():
+                    continue
+                lines.append(ln)
+            flat = [f for i, ln in enumerate(lines) for f in (ln + ([("", "\n")] if i < len(lines) - 1 else []))]
+            self._cache = (len(text), flat, len(lines) - 1, lines)
         return self._cache
 
     # -- selecting and copying -----------------------------------------

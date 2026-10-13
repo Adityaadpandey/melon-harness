@@ -140,6 +140,7 @@ class CLI:
                 **({"body": screen.body, "extra_kb": screen.kb} if screen else {}),
             )
             self.inputs = inputs
+            inputs.is_busy = lambda: self.tui._turn_active
             if screen:
                 import ui.prompt as prompt_mod
 
@@ -150,6 +151,8 @@ class CLI:
                     user_input = (await inputs.read()).strip()
                     if not user_input:
                         continue
+                    if user_input.startswith(("/", "!")):
+                        self.tui.echo_user(user_input)  # show what was typed so Enter always gets an answer
                     if user_input.startswith("/"):
                         if not await self._handle_command(user_input):
                             break
@@ -236,7 +239,7 @@ class CLI:
         h = u.get("heaviest") or {}
         if u.get("calls", 0) < 6 or not h.get("top") or h.get("tool_result_carried", 0) < 5000:  # tiny tasks have nothing worth tuning
             return
-        share = round(100 * h["tool_result_carried"] / u["prompt_tokens"])
+        share = min(100, round(100 * h["tool_result_carried"] / u["prompt_tokens"]))
         console.print(f"[dim]    {share}% of the input tokens were earlier tool results re-sent. Biggest:[/dim]")
         for r in h["top"][:3]:
             console.print(f"[dim]      {r['tool']} {r['target']}: {r['tokens']:,} tokens, re-sent {r['carried'] // max(r['tokens'], 1)}x = {r['carried']:,}[/dim]")

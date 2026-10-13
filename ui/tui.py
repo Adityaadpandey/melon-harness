@@ -476,11 +476,14 @@ class TUI:
 
         cat = Text.assemble((" /\\_/\\ \n", ACCENT), ("( ", ACCENT), ("o.o", MINT), (" )\n", ACCENT), (" > ^ < ", ACCENT))
         info = Text.assemble((title, f"bold {ACCENT}"), ("  ·  a small agent for real repos\n", MUTED))
-        for ln in lines:
-            # "model: x   approval: y" becomes lavender keys over soft text
-            for part in re.split(r"(\w+:)", ln):
-                info.append(part, style=LAVENDER if part.endswith(":") and " " not in part else MUTED)
-            info.append("\n")
+        if not self.fullscreen:  # the full-screen header and footer already show model, directory and mode
+            for ln in lines:
+                # "model: x   approval: y" becomes lavender keys over soft text
+                for part in re.split(r"(\w+:)", ln):
+                    info.append(part, style=LAVENDER if part.endswith(":") and " " not in part else MUTED)
+                info.append("\n")
+        else:
+            info.append("/help commands  ·  @file attach  ·  !cmd run  ·  drag to copy", style=MUTED)
         info.rstrip()
         grid = Table.grid(padding=(0, 3))
         grid.add_row(cat, info)
@@ -570,7 +573,7 @@ class TUI:
             body, adds, dels = render_diff(diff, 400 if self.expand else 14, path, min(self.console.width, 120) - 6)
             what = Text.assemble(*(x for x in ((f"+{adds}", f"bold {MINT}"), (" ", ""), (f"−{dels}", f"bold {CORAL}")) if x[0] not in ("+0", "−0")))
             verb = "created" if md.get("is_new_file") else "updated"
-            rows.append(Text.assemble(("✓ ", f"bold {MINT}"), (f"{verb} ", MUTED), (path, f"bold {FG}"), "  ", what))
+            rows.append(Text.assemble(("✓ ", f"bold {MINT}"), (f"{verb}  ", MUTED), what))
             rows.append(body)
         else:
             mark = ("✗ ", f"bold {CORAL}") if not success else ("✓ ", f"bold {MINT}")

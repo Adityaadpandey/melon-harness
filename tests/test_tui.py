@@ -62,7 +62,7 @@ def test_transcript_shape(tmp_path):
     out = con.export_text()
     assert re.search(r"search\s+needle\n.*✓ Found 1 match.*\n.*x:1:needle\n\n.*read\s+b.py\n.*✓ Read 5 lines", out)
     assert re.search(r"update\s+a.py", out)
-    assert re.search(r"updated a.py\s+\+2 −1", out)
+    assert re.search(r"updated\s+\+2 −1", out)
     assert re.search(r"2 \+ y = 20", out) and re.search(r"2 - y = 2", out)
     assert "✗ Exit code 1" in out
 
