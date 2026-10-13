@@ -78,6 +78,11 @@ def _load(profile: str | None, cwd: str, skill_dirs: tuple[str, ...]) -> tuple[S
                 sk = parse_skill(f.read_text(encoding="utf-8"), f)
                 if sk:
                     found[sk.name] = sk  # later dirs (repo-local) override profile ones
+    if profile:
+        # a profile's own playbook (e.g. tunyt-debugging) replaces the generic one it specialises
+        for name in list(found):
+            if f"{profile}-{name}" in found:
+                del found[name]
     return tuple(found.values())
 
 

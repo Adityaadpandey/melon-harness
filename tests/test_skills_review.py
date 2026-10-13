@@ -61,7 +61,7 @@ async def test_matching_playbook_is_attached_to_the_request(tmp_path):
     async with Agent(cfg) as a:
         a.session.client = ScriptedClient([text("ok")])
         evs = [e async for e in a.run("there is a bug in checkout")]
-        assert any("Loaded playbooks: dbg" in e.data.get("message", "") for e in evs if e.type == AgentEventType.NOTICE)
+        assert any("Loaded playbooks:" in e.data.get("message", "") and "dbg" in e.data["message"] for e in evs if e.type == AgentEventType.NOTICE)
         sent = a.session.client.requests[0]
         assert "Body text." in sent[-1]["content"] and "Skills" in sent[0]["content"]
 
@@ -185,4 +185,20 @@ def test_ponytail_is_on_by_default_inlined_not_indexed_and_can_be_disabled(tmp_p
     assert "the least that fully works" in prompt and "- **ponytail**" not in prompt  # inlined, not an index entry
     off = Config(cwd=tmp_path, disabled_skills=["ponytail"])
     assert "the least that fully works" not in get_system_prompt(off, None, [], load_skills(off))
-    assert match_skills(sk, "fix this bug") == []  # always-on skills are never 'triggered' a second time
+    assert "ponytail" not in [m.name for m in match_skills(sk, "fix this bug")]  # always-on skills are never triggered a second time
+    assert match_skills(sk, "hello there") == []
+
+
+def test_builtin_skills_load_with_the_right_always_on_core_and_profile_overrides(tmp_path):
+    from agent.skills import load_skills
+    from utils.text import count_tokens
+
+    sk = {s.name: s for s in load_skills(Config(cwd=tmp_path))}
+    assert {n for n, s in sk.items() if s.always} == {"ponytail", "grounded", "house-rules"}
+    assert {"debugging", "code-review", "security", "refactor", "testing", "performance", "database", "api-design", "git-workflow"} <= set(sk)
+    assert sum(count_tokens(s.body) for s in sk.values() if s.always) < 650  # the always-on core stays cheap
+    assert all(s.triggers for s in sk.values() if not s.always)
+    tunyt = {s.name for s in load_skills(Config(cwd=tmp_path, profile="tunyt"))}
+    assert "tunyt-debugging" in tunyt and "debugging" not in tunyt  # specialised playbook replaces the generic one
+    assert "refactor" in tunyt  # generic ones without a Tunyt twin remain
+    assert [s.name for s in match_skills(list(sk.values()), "please refactor this module and rename the helper")][:1] == ["refactor"]
