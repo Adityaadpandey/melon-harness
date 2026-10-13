@@ -23,6 +23,9 @@ from agent.events import AgentEventType
 from config.config import Config
 
 
+WORKER_TIMEOUT = 900  # seconds one worker may take before it is failed and the rest carry on
+
+
 class GraphError(Exception):
     pass
 
@@ -127,15 +130,22 @@ class Orchestrator:
             )
             last_text = ""
             try:
-                async with Agent(cfg, self.cb) as agent:
-                    async for ev in agent.run(prompt):
-                        if ev.type == AgentEventType.TEXT_COMPLETE:
-                            last_text = ev.data.get("content") or ""
-                        if ev.type == AgentEventType.AGENT_END:
-                            node.task_status = (ev.data.get("report") or {}).get("status")
+                async def work() -> None:
+                    nonlocal last_text
+                    async with Agent(cfg, self.cb) as agent:
+                        async for ev in agent.run(prompt):
+                            if ev.type == AgentEventType.TEXT_COMPLETE:
+                                last_text = ev.data.get("content") or ""
+                            if ev.type == AgentEventType.AGENT_END:
+                                node.task_status = (ev.data.get("report") or {}).get("status")
+
+                # one stuck worker must not hold the whole layer (and the merge) hostage
+                await asyncio.wait_for(work(), WORKER_TIMEOUT)
                 node.status = "failed" if node.task_status in ("failed", "verification_failed") else "done"
                 if node.status == "failed":
                     node.note = f"worker ended {node.task_status}"
+            except asyncio.TimeoutError:
+                node.status, node.note = "failed", f"timed out after {WORKER_TIMEOUT}s"
             except Exception as e:  # one worker crashing must not sink the others
                 node.status, node.note = "failed", f"{type(e).__name__}: {e}"
             await git(wt, "add", "-A")
