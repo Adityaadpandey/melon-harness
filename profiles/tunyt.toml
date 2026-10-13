@@ -1,0 +1,59 @@
+# Tunyt engineering profile. version 1.
+# Rules here mirror /AGENTS.md "Absolute Rules" and are enforced by the tool
+# layer (safety/guard.py), not just stated to the model.
+name = "tunyt"
+version = "1"
+match = ["tunyt"]
+
+instructions = """
+# Tunyt profile (v1)
+
+The checked-out code is the source of truth. Docs and your memory of this repo can be stale.
+
+Before changing anything:
+1. Name the app/package you are touching (apps/server, apps/web, apps/crm, packages/*) and read its nested AGENTS.md.
+2. Trace the affected request path: route -> controller -> service -> repository -> cache/queue. Read callers of anything whose signature you might change.
+3. Search for an existing implementation of the same pattern and copy it (docs/skills/tunyt-performance.md lists proven exemplars). Do not invent a new abstraction.
+4. For list/query/cache/worker work read docs/skills/tunyt-performance.md first: bounded findMany, batch instead of loop, cache-aside with invalidation at every writer, no external API call inside a $transaction, indexes for new filters.
+
+Hard rules (also enforced by the harness; attempts are blocked):
+- Never open, grep or summarize .env*, *.pem, *.key or service-account files. Read src/config to learn which variables exist.
+- Never run SQL or anything that connects to a database (psql, prisma migrate/db/studio, apps/server/scripts, ad-hoc ts-node/tsx using Prisma). Write the query, say where to run it (local/prod), whether it is read or write, and what output to paste back.
+- Never print secrets.
+- Tests are Playwright only. Never add vitest or jest.
+
+Sensitive flows (auth, tenant isolation, payments, webhooks, payouts): state the invariant you rely on (who may do this, what must never double-apply), check idempotency/retry behaviour, and make sure ownership checks are not weakened.
+
+Make the smallest coherent change. Do not add dependencies. Keep pnpm and the existing error-handling/observability patterns. Do not claim a performance gain you did not measure; if you cannot measure, say "estimated" and why.
+
+When done, report: files changed, checks run and their results, anything you could not verify.
+"""
+
+forbidden_paths = [".env", ".env.*", "*.pem", "*.key", "*service-account*.json", "*serviceaccount*.json"]
+forbidden_commands = [
+  '\bpsql\b', '\bpg_dump\b', '\bpg_restore\b', 'redis-cli',
+  'prisma\s+(studio|migrate|db)\b',
+  'apps/server/scripts',
+  '\b(ts-node|tsx)\b[^\n]*\bprisma\b',
+]
+
+# Targeted checks per app. {files} = changed files under the app. Type errors
+# are always real; biome runs only on touched files so old lint debt elsewhere
+# never sends the agent chasing unrelated failures.
+[[verify_rules]]
+paths = ["apps/server/"]
+cwd = "apps/server"
+commands = ["npx tsc --noEmit", "npx biome check --no-errors-on-unmatched {files}"]
+
+[[verify_rules]]
+paths = ["apps/web/"]
+cwd = "apps/web"
+commands = ["pnpm typecheck", "npx biome check --no-errors-on-unmatched {files}"]
+
+[[verify_rules]]
+paths = ["apps/crm/"]
+cwd = "apps/crm"
+commands = ["pnpm typecheck", "npx biome check --no-errors-on-unmatched {files}"]
+
+[routing]
+review = ["claude-sonnet-5-5", "deepseek/deepseek-v4-pro"]

@@ -86,6 +86,16 @@ class HookConfig(BaseModel):
         return self
 
 
+class VerifyRule(BaseModel):
+    """Run `commands` when a changed file starts with one of `paths`. Commands
+    run in `cwd` (relative to the repo root); {files} expands to the changed
+    files under that rule, relative to `cwd`, shell-quoted."""
+
+    paths: list[str]
+    commands: list[str]
+    cwd: str = "."
+
+
 class Config(BaseModel):
     model: ModelConfig = Field(default_factory=ModelConfig)
     cwd: Path = Field(default_factory=Path.cwd)
@@ -107,6 +117,14 @@ class Config(BaseModel):
     # pass before the task counts as verified. Empty = auto-detect (pytest, go
     # test, cargo test); set explicitly for anything heavier.
     verify_commands: list[str] = Field(default_factory=list)
+    verify_rules: list[VerifyRule] = Field(default_factory=list)
+
+    # Repository rules enforced by the tool layer (not just asked of the model).
+    # forbidden_paths are fnmatch globs on file names; forbidden_commands are
+    # regexes tried against shell commands.
+    forbidden_paths: list[str] = Field(default_factory=list)
+    forbidden_commands: list[str] = Field(default_factory=list)
+    profile: str | None = None
     auto_verify: bool = True
     max_repairs: int = 2
     verify_timeout_sec: int = 600

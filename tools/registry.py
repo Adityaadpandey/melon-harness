@@ -2,6 +2,7 @@ from pathlib import Path
 from typing import Any
 from config.config import Config
 from hooks.hook_system import HookSystem
+from safety.guard import violation
 from safety.approval import ApprovalContext, ApprovalDecision, ApprovalManager
 from tools.base import Tool, ToolInvocation, ToolResult
 import logging
@@ -104,6 +105,16 @@ class ToolRegistry:
 
             await hook_system.trigger_after_tool(name, params, result)
 
+            return result
+
+        blocked = violation(name, params, self.config)
+        if blocked:
+            result = ToolResult.error_result(
+                f"Blocked by repository rules: {blocked}. Do not retry this; "
+                "ask the user to provide what you need.",
+                metadata={"tool_name": name, "blocked": True},
+            )
+            await hook_system.trigger_after_tool(name, params, result)
             return result
 
         await hook_system.trigger_before_tool(name, params)

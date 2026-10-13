@@ -4,6 +4,7 @@ from __future__ import annotations
 import asyncio
 import hashlib
 import os
+import shlex
 import signal
 from dataclasses import dataclass
 from pathlib import Path
@@ -71,6 +72,25 @@ def detect_verify_commands(cwd: Path) -> list[str]:
     if has_py_tests or (cwd / "pytest.ini").exists():
         return ["python3 -m pytest -q -x"]
     return []
+
+
+def select_checks(config, changed: list[str]) -> list[tuple[str, str]]:
+    """(command, cwd) pairs to run for this change set. Explicit commands win,
+    then rules matching the changed paths (monorepos), then auto-detection."""
+    checks: list[tuple[str, str]] = [(c, ".") for c in config.verify_commands]
+    for rule in config.verify_rules:
+        hits = [f for f in changed if any(f.startswith(p) for p in rule.paths)]
+        if not hits:
+            continue
+        rel = [os.path.relpath(f, rule.cwd) for f in hits]
+        files = " ".join(shlex.quote(f) for f in rel)
+        for cmd in rule.commands:
+            item = (cmd.replace("{files}", files), rule.cwd)
+            if item not in checks:
+                checks.append(item)
+    if not checks and config.auto_verify:
+        checks = [(c, ".") for c in detect_verify_commands(config.cwd)]
+    return checks
 
 
 @dataclass

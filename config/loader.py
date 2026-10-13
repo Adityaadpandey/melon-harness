@@ -51,15 +51,63 @@ def _get_project_config(cwd: Path) -> Path | None:
     return None
 
 
-def _get_agent_md_files(cwd: Path) -> Path | None:
-    current = cwd.resolve()
+INSTRUCTION_FILES = ("AGENTS.md", "CLAUDE.md", AGENT_MD_FILE)
+INLINE_LIMIT = 6000
+PROFILES_DIR = Path(__file__).resolve().parent.parent / "profiles"
 
-    if current.is_dir():
-        agent_md_file = current / AGENT_MD_FILE
-        if agent_md_file.is_file():
-            content = agent_md_file.read_text(encoding="utf-8")
-            return content
 
+def _outline(text: str) -> str:
+    return "\n".join(
+        f"  line {i}: {line.strip()}"
+        for i, line in enumerate(text.splitlines(), 1)
+        if line.startswith("#")
+    )
+
+
+def _instructions_for(cwd: Path) -> str | None:
+    """AGENTS.md / CLAUDE.md from cwd up to the repo root, closest first.
+
+    Short files go into the prompt as-is. A 50KB rulebook would eat the context
+    on every turn, so big ones contribute their headings and the model reads
+    only the sections it needs (read_file with offset/limit)."""
+    blocks: list[str] = []
+    seen: set[Path] = set()
+    for d in [cwd.resolve(), *cwd.resolve().parents][:8]:
+        for name in INSTRUCTION_FILES:
+            f = d / name
+            if not f.is_file() or f in seen:
+                continue
+            text = f.read_text(encoding="utf-8", errors="replace")
+            if len(text.strip()) < 40:  # a stub like "@AGENTS.md"
+                continue
+            seen.add(f)
+            if len(text) <= INLINE_LIMIT:
+                blocks.append(f"## {f}\n{text}")
+            else:
+                blocks.append(
+                    f"## {f} ({len(text)} chars, too long to inline)\n"
+                    "Read the sections relevant to your task with read_file "
+                    "(offset/limit) BEFORE editing. Section map:\n" + _outline(text)
+                )
+            break  # one instruction file per directory
+        if (d / ".git").exists():
+            break
+    return "\n\n".join(blocks) or None
+
+
+def _load_profile(name: str | None, cwd: Path) -> dict[str, Any] | None:
+    """Repository profile: extra rules/instructions for a known project.
+    Picked by name, or by a `match` entry equal to any component of cwd."""
+    if not PROFILES_DIR.is_dir():
+        return None
+    parts = {p.lower() for p in cwd.resolve().parts}
+    for f in sorted(PROFILES_DIR.glob("*.toml")):
+        data = _parse_toml(f)
+        if (name and f.stem == name) or (
+            not name and parts & {m.lower() for m in data.get("match", [])}
+        ):
+            data["profile"] = f.stem
+            return data
     return None
 
 
@@ -101,10 +149,19 @@ def load_config(cwd: Path | None) -> Config:
     if "cwd" not in config_dict:
         config_dict["cwd"] = cwd
 
+    profile = _load_profile(config_dict.get("profile"), cwd)
+    profile_text = None
+    if profile:
+        profile_text = profile.pop("instructions", None)
+        for k in ("match", "name", "version"):
+            profile.pop(k, None)
+        config_dict = _merge_dicts(profile, config_dict)  # project config wins
+
     if "developer_instructions" not in config_dict:
-        agent_md_content = _get_agent_md_files(cwd)
-        if agent_md_content:
-            config_dict["developer_instructions"] = agent_md_content
+        parts = [profile_text, _instructions_for(cwd)]
+        joined = "\n\n".join(p for p in parts if p)
+        if joined:
+            config_dict["developer_instructions"] = joined
 
     try:
         config = Config(**config_dict)

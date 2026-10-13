@@ -7,8 +7,8 @@ from agent.session import Session
 from agent.task import TaskState, TaskStatus
 from agent.verify import (
     changed_since,
-    detect_verify_commands,
     repair_prompt,
+    select_checks,
     run_check,
     snapshot,
 )
@@ -56,22 +56,20 @@ class Agent:
                 break
 
             task.changed_files = changed_since(before, await snapshot(self.config.cwd))
-            commands = self.config.verify_commands or (
-                detect_verify_commands(self.config.cwd) if self.config.auto_verify else []
-            )
+            checks = select_checks(self.config, task.changed_files)
             # outside git we can't tell what changed, so only verify when asked to
             if not task.changed_files and before is not None:
                 task.transition(TaskStatus.DONE_NO_CHANGES)
                 break
-            if not commands:
+            if not checks:
                 task.transition(TaskStatus.UNVERIFIED, "no verification commands")
                 break
 
-            task.transition(TaskStatus.VERIFYING, f"{len(commands)} check(s)")
-            yield AgentEvent.notice(f"Verifying: {' && '.join(commands)}")
+            task.transition(TaskStatus.VERIFYING, f"{len(checks)} check(s)")
+            yield AgentEvent.notice(f"Verifying: {' && '.join(c for c, _ in checks)}")
             results = []
-            for cmd in commands:
-                results.append(await run_check(cmd, self.config.cwd, self.config))
+            for cmd, sub in checks:
+                results.append(await run_check(cmd, self.config.cwd / sub, self.config))
             task.verification = [r.to_dict() for r in results]
             failures = [r for r in results if not r.ok]
             if not failures:

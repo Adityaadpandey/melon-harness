@@ -4,6 +4,7 @@ import re
 from tools.base import Tool, ToolInvocation, ToolKind, ToolResult
 from pydantic import BaseModel, Field
 
+from safety.guard import is_forbidden_path
 from utils.paths import is_binary_file, resolve_path
 
 
@@ -109,6 +110,8 @@ class GrepTool(Tool):
                     continue
 
                 file_path = Path(root) / filename
+                if is_forbidden_path(filename, self.config.forbidden_paths):
+                    continue
                 if not is_binary_file(file_path):
                     files.append(file_path)
                     if len(files) >= 500:

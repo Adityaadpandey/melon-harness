@@ -4,6 +4,7 @@ import re
 from tools.base import Tool, ToolInvocation, ToolKind, ToolResult
 from pydantic import BaseModel, Field
 
+from safety.guard import is_forbidden_path
 from utils.paths import is_binary_file, resolve_path
 
 
@@ -32,7 +33,11 @@ class GlobTool(Tool):
 
         try:
             matches = list(search_path.glob(params.pattern))
-            matches = [p for p in matches if p.is_file()]
+            matches = [
+                p
+                for p in matches
+                if p.is_file() and not is_forbidden_path(p.name, self.config.forbidden_paths)
+            ]
         except Exception as e:
             return ToolResult.error_result(f"Error searching: {e}")
 
