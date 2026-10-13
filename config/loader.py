@@ -76,23 +76,35 @@ def _outline(text: str, max_lines: int = 45) -> str:
     return "\n".join(rows[:max_lines])
 
 
-def _instructions_for(cwd: Path) -> str | None:
-    """AGENTS.md / CLAUDE.md from cwd up to the repo root, closest first.
+def _instructions_for(cwd: Path, home: Path | None = None) -> str | None:
+    """AGENTS.md / CLAUDE.md from cwd up to the repo root, closest first, then the
+    user's own ~/.claude/CLAUDE.md (their commit style, comment style, preferences).
+
+    Every file found is used, not just one per directory, so a CLAUDE.md next to an
+    AGENTS.md is not silently ignored.
 
     Short files go into the prompt as-is. A 50KB rulebook would eat the context
     on every turn, so big ones contribute their headings and the model reads
     only the sections it needs (read_file with offset/limit)."""
     blocks: list[str] = []
     seen: set[Path] = set()
+    texts: set[str] = set()
+    dirs: list[Path] = []
     for d in [cwd.resolve(), *cwd.resolve().parents][:8]:
+        dirs.append(d)
+        if (d / ".git").exists():
+            break
+    dirs.append((home or Path.home()) / ".claude")
+    for d in dirs:
         for name in INSTRUCTION_FILES:
             f = d / name
-            if not f.is_file() or f in seen:
+            if not f.is_file() or f.resolve() in seen:
                 continue
             text = f.read_text(encoding="utf-8", errors="replace")
-            if len(text.strip()) < 40:  # a stub like "@AGENTS.md"
+            if len(text.strip()) < 40 or text.strip() in texts:  # a stub like "@AGENTS.md", or a copy
                 continue
-            seen.add(f)
+            seen.add(f.resolve())
+            texts.add(text.strip())
             if len(text) <= INLINE_LIMIT:
                 blocks.append(f"## {f}\n{text}")
             else:
@@ -101,9 +113,6 @@ def _instructions_for(cwd: Path) -> str | None:
                     "Read the sections relevant to your task with read_file "
                     "(offset/limit) BEFORE editing. Section map:\n" + _outline(text)
                 )
-            break  # one instruction file per directory
-        if (d / ".git").exists():
-            break
     return "\n\n".join(blocks) or None
 
 

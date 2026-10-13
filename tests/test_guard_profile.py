@@ -103,3 +103,14 @@ async def test_symlinked_cwd_does_not_make_inside_edits_look_outside(tmp_path):
     m = ApprovalManager(ApprovalPolicy.AUTO, link)
     ctx = ApprovalContext("write_file", {}, True, [real / "a.py"])
     assert await m.check_approval(ctx) == ApprovalDecision.APPROVED
+
+
+def test_user_global_and_sibling_instruction_files_are_all_read(tmp_path):
+    repo = tmp_path / "repo"
+    (repo / ".git").mkdir(parents=True)
+    (repo / "AGENTS.md").write_text("Run the linter before finishing any change here. " * 2)
+    (repo / "CLAUDE.md").write_text("Commit messages are one short imperative line. " * 2)
+    (tmp_path / "home" / ".claude").mkdir(parents=True)
+    (tmp_path / "home" / ".claude" / "CLAUDE.md").write_text("Never put a sign-off in commit messages. " * 2)
+    out = _instructions_for(repo, home=tmp_path / "home")
+    assert "Run the linter" in out and "one short imperative" in out and "sign-off" in out
