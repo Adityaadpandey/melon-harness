@@ -2,6 +2,7 @@ from dataclasses import dataclass
 from enum import Enum
 from pathlib import Path
 import re
+import shlex
 from typing import Any, Awaitable, Callable
 from config.config import ApprovalPolicy
 from tools.base import ToolConfirmation
@@ -82,36 +83,69 @@ DANGEROUS_PATTERNS = [
     r":\(\)\s*\{\s*:\|:&\s*\}\s*;",
 ]
 
-# Patterns for safe commands (can be auto-approved)
-SAFE_PATTERNS = [
-    # Information commands
-    r"^(ls|dir|pwd|cd|echo|cat|head|tail|less|more|wc)(\s|$)",
-    r"^(find|locate|which|whereis|file|stat)(\s|$)",
-    # Development tools (read-only)
-    r"^git\s+(status|log|diff|show|branch|remote|tag)(\s|$)",
-    r"^(npm|yarn|pnpm)\s+(list|ls|outdated)(\s|$)",
-    r"^pip\s+(list|show|freeze)(\s|$)",
-    r"^cargo\s+(tree|search)(\s|$)",
-    # Text processing (usually safe)
-    r"^(grep|awk|sed|cut|sort|uniq|tr|diff|comm)(\s|$)",
-    # System info
-    r"^(date|cal|uptime|whoami|id|groups|hostname|uname)(\s|$)",
-    r"^(env|printenv|set)$",
-    # Process info
-    r"^(ps|top|htop|pgrep)(\s|$)",
-]
+# Read-only commands that may run without asking. A command is safe only when EVERY
+# piece of it is on this list: "ls; rm x", "cat a > b" or "ls $(rm x)" are not, even
+# though they start with ls/cat. Matching just the first word is how an allowlist leaks.
+# `name: reject` lists flags that turn an otherwise read-only command into a writer.
+_PLAIN_SAFE = {
+    "ls": set(), "pwd": set(), "echo": set(), "cat": set(), "head": set(), "wc": set(),
+    "tail": {"-f", "-F", "--follow"},  # follow never ends
+    "which": set(), "whereis": set(), "file": set(), "stat": set(), "basename": set(), "dirname": set(),
+    "realpath": set(), "grep": set(), "cut": set(), "uniq": set(), "tr": set(), "diff": set(), "comm": set(),
+    "sort": {"-o", "--output"}, "date": {"-s", "--set"}, "uname": set(), "whoami": set(), "id": set(),
+    "groups": set(), "uptime": set(), "ps": set(), "pgrep": set(), "cd": set(), "true": set(),
+    "find": {"-exec", "-execdir", "-ok", "-okdir", "-delete", "-fprint", "-fprint0", "-fprintf", "-fls"},
+}
+# env, printenv and set are left out on purpose: they print every secret in the environment.
+_GIT_READ = {"status", "log", "diff", "show", "blame", "rev-parse", "ls-files", "shortlog", "describe", "grep"}
+_GIT_LISTING = {"branch": {"-a", "-r", "-v", "-vv", "--list", "--show-current", "--all"},
+                "tag": {"-l", "--list"}, "remote": {"-v"}}
+_GIT_BAD_FLAGS = ("--output", "--ext-diff", "--textconv", "--open-files-in-pager", "-c", "-C", "--exec-path", "--git-dir", "--work-tree")
+_PKG_READ = {"npm": {"list", "ls", "outdated"}, "yarn": {"list", "outdated"}, "pnpm": {"list", "ls", "outdated"},
+             "pip": {"list", "show", "freeze"}, "cargo": {"tree"}}
 
 
-def is_dangerous_command(command: str) -> bool:
-    for pattern in DANGEROUS_PATTERNS:
-        if re.search(pattern, command, re.IGNORECASE):
+def split_pipeline(command: str) -> list[list[str]] | None:
+    """The commands of `a | b | c` as word lists, or None when the line does anything beyond
+    piping: chaining (; && ||), background (&), redirects (> <), substitution ($( ), ` `, ${ }),
+    or a second line. Characters inside quotes count too: a refusal here only means "ask"."""
+    if re.search(r"[;&<>`\n\\]|\$[({]|\|\|", command):
+        return None
+    out = []
+    for part in command.split("|"):
+        try:
+            words = shlex.split(part)
+        except ValueError:
+            return None
+        if not words:
+            return None
+        out.append(words)
+    return out
+
+
+def _safe_words(words: list[str]) -> bool:
+    name, args = words[0], words[1:]
+    if name in _PLAIN_SAFE:
+        return not set(args) & _PLAIN_SAFE[name]
+    if name == "git":
+        if not args or any(a.startswith(_GIT_BAD_FLAGS) for a in args):
+            return False
+        sub, rest = args[0], args[1:]
+        if sub in _GIT_READ:
             return True
-
+        return sub in _GIT_LISTING and set(rest) <= _GIT_LISTING[sub]
+    if name in _PKG_READ:
+        return bool(args) and args[0] in _PKG_READ[name]
     return False
 
 
 def is_safe_command(command: str) -> bool:
-    for pattern in SAFE_PATTERNS:
+    pipeline = split_pipeline(command.strip())
+    return bool(pipeline) and all(_safe_words(w) for w in pipeline)
+
+
+def is_dangerous_command(command: str) -> bool:
+    for pattern in DANGEROUS_PATTERNS:
         if re.search(pattern, command, re.IGNORECASE):
             return True
 
@@ -130,6 +164,12 @@ class ApprovalManager:
         self.confirmation_callback = confirmation_callback
         self.always_commands: set[str] = set()  # "don't ask again" choices made this session
 
+    def _always_allowed(self, command: str) -> bool:
+        """A remembered "don't ask again" covers the command the user saw, not whatever is chained
+        after it: `npm run build; rm -rf x` must still ask. Each piped part has to be remembered."""
+        pipeline = split_pipeline(command.strip())
+        return bool(pipeline) and all(command_key(" ".join(w)) in self.always_commands for w in pipeline)
+
     def _assess_command_safety(self, command: str) -> ApprovalDecision:
         if self.approval_policy == ApprovalPolicy.YOLO:
             return ApprovalDecision.APPROVED
@@ -137,7 +177,7 @@ class ApprovalManager:
         if is_dangerous_command(command):
             return ApprovalDecision.REJECTED
 
-        if command_key(command) in self.always_commands:
+        if self._always_allowed(command):
             return ApprovalDecision.APPROVED
 
         if self.approval_policy == ApprovalPolicy.NEVER:

