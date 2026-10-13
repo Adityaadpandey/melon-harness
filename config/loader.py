@@ -6,6 +6,7 @@ from platformdirs import user_config_dir, user_data_dir
 import tomli
 
 from config.config import Config
+from config.trust import GATED_KEYS, is_trusted, trust
 from utils.errors import ConfigError
 import logging
 
@@ -123,7 +124,7 @@ def _merge_dicts(base: dict[str, Any], override: dict[str, Any]) -> dict[str, An
     return result
 
 
-def load_config(cwd: Path | None) -> Config:
+def load_config(cwd: Path | None, trust_project: bool = False) -> Config:
     cwd = cwd or Path.cwd()
     # Only the harness's own .env (where API_KEY lives). The target repo's .env
     # is never opened: it holds that project's secrets, and loading it would
@@ -141,9 +142,17 @@ def load_config(cwd: Path | None) -> Config:
             logger.warning(f"Skipping invalid system config: {system_path}")
 
     project_path = _get_project_config(cwd)
+    ignored: list[str] = []
     if project_path:
         try:
             project_config_dict = _parse_toml(project_path)
+            gated = sorted(k for k in project_config_dict if k in GATED_KEYS)
+            if gated and not (trust_project or is_trusted(cwd, project_path, get_data_dir())):
+                # executable / safety-relaxing settings need the user's say-so first
+                ignored = gated
+                project_config_dict = {k: v for k, v in project_config_dict.items() if k not in GATED_KEYS}
+            elif gated and trust_project:
+                trust(cwd, project_path, get_data_dir())
             config_dict = _merge_dicts(config_dict, project_config_dict)
         except ConfigError:
             logger.warning(f"Skipping invalid project config: {project_path}")
@@ -169,5 +178,6 @@ def load_config(cwd: Path | None) -> Config:
         config = Config(**config_dict)
     except Exception as e:
         raise ConfigError(f"Invalid configuration: {e}") from e
+    config.ignored_project_keys = ignored
 
     return config

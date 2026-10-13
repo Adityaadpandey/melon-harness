@@ -508,6 +508,7 @@ class CLI:
 @click.option("--graph", type=click.Path(exists=True, path_type=Path), help="Task graph JSON (implies --parallel)")
 @click.option("--apply/--no-apply", default=True, help="Fast-forward the integrated result into a clean checkout")
 @click.option("--report", type=click.Path(path_type=Path), help="Write run metrics JSON here")
+@click.option("--trust", "trust_project", is_flag=True, help="Trust this project's .ai-agent/config.toml (hooks, verify commands, approval)")
 @click.option("--model", "-m", help="Model id (overrides config)")
 @click.option(
     "--approval",
@@ -517,6 +518,7 @@ class CLI:
 def main(
     prompt: str | None,
     cwd: Path | None,
+    trust_project: bool,
     parallel: bool,
     graph: Path | None,
     apply: bool,
@@ -525,7 +527,15 @@ def main(
     approval: str | None,
 ):
     try:
-        config = load_config(cwd=cwd)
+        config = load_config(cwd=cwd, trust_project=trust_project)
+        if config.ignored_project_keys:
+            if sys.stdin.isatty() and sys.stdout.isatty() and not prompt:
+                console.print(f"[warning]This project's .ai-agent/config.toml sets: {', '.join(config.ignored_project_keys)}[/warning]")
+                console.print("[dim]These can run commands or relax approvals. They are ignored unless you trust the file.[/dim]")
+                if input("Trust it? [y/N] ").strip().lower() in {"y", "yes"}:
+                    config = load_config(cwd=cwd, trust_project=True)
+            else:
+                console.print(f"[warning]Ignoring untrusted project settings: {', '.join(config.ignored_project_keys)} (use --trust to enable)[/warning]")
     except Exception as e:
         console.print(f"[error]Configuration Error: {e}[/error]")
         sys.exit(1)

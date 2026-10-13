@@ -174,6 +174,7 @@ class Config(BaseModel):
     user_instructions: str | None = None
 
     debug: bool = False
+    ignored_project_keys: list[str] = Field(default_factory=list)  # project settings skipped until trusted
 
     @property
     def api_key(self) -> str | None:
