@@ -100,7 +100,7 @@ def _get_shell_info() -> str:
 def _get_agents_md_section() -> str:
     return """# AGENTS.md
 
-Repos may contain AGENTS.md files; one governs its whole directory tree and deeper files win on conflict. Obey those covering every file you touch. Files from the working directory up to the repo root are already included below; check others when you work elsewhere. Direct user instructions take precedence."""
+Repos may contain AGENTS.md files; one governs its whole directory tree and deeper files win on conflict. Obey those covering every file you touch. Files from the working directory up to the repo root are already included below; check others when you work elsewhere. Direct user instructions take precedence. Rules about commit messages, branches, comments, naming or tests apply to every commit and edit you make; read them again before you commit and write the message the way they say."""
 
 
 def _get_security_section() -> str:
