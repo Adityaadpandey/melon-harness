@@ -107,12 +107,15 @@ class ShellTool(Tool):
                 process.communicate(),
                 timeout=params.timeout,
             )
-        except asyncio.TimeoutError:
+        except (asyncio.TimeoutError, asyncio.CancelledError) as exc:
+            # on timeout or user interrupt, never leave the process group running
             if sys.platform != "win32":
                 os.killpg(os.getpgid(process.pid), signal.SIGKILL)
             else:
                 process.kill()
             await process.wait()
+            if isinstance(exc, asyncio.CancelledError):
+                raise
             return ToolResult.error_result(f"Command timed out after {params.timeout}s")
 
         stdout = stdout_data.decode("utf-8", errors="replace")

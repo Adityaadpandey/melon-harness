@@ -12,3 +12,4 @@ httpx
 python-dotenv
 pytest
 pytest-asyncio
+prompt_toolkit

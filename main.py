@@ -1,5 +1,6 @@
 import asyncio
 import json
+import signal
 from pathlib import Path
 import sys
 import click
@@ -10,7 +11,10 @@ from agent.persistence import PersistenceManager, SessionSnapshot
 from agent.session import Session
 from config.config import ApprovalPolicy, Config
 from config.loader import load_config
+from config.loader import get_data_dir
+from ui.prompt import COMMANDS, InputSession, expand_mentions
 from ui.tui import TUI, get_console
+from utils.cost import summarize_usage
 
 console = get_console()
 
@@ -80,41 +84,116 @@ class CLI:
             )
         )
 
+    def _toolbar(self) -> str:
+        sess = self.agent.session if self.agent else None
+        parts = [self.config.model_name]
+        if sess:
+            used = sess.context_manager._latest_usage.total_tokens
+            window = sess.client.registry.get(self.config.model_name).context_length
+            if used:
+                parts.append(f"ctx {100 * used / window:.0f}%")
+            u = summarize_usage(sess.tracer.events, self.config.pricing)
+            if u["calls"]:
+                parts.append(f"{u['prompt_tokens'] / 1000:.0f}k in ({u['cache_hit_pct']:.0f}% cached) · {u['completion_tokens'] / 1000:.1f}k out")
+                if u["est_cost_usd"] is not None:
+                    parts.append(f"${u['est_cost_usd']}")
+            parts.append(sess.approval_manager.approval_policy.value)
+        if self.config.profile:
+            parts.append(f"profile {self.config.profile}")
+        return "  ·  ".join(parts)
+
     async def run_interactive(self) -> str | None:
         self.tui.print_welcome(
-            "AI Agent",
+            "mew",
             lines=[
-                f"model: {self.config.model_name}",
-                f"cwd: {self.config.cwd}",
-                "commands: /help /config /approval /model /exit",
+                f"model: {self.config.model_name}   approval: {self.config.approval.value}",
+                f"cwd: {self.config.cwd}" + (f"   profile: {self.config.profile}" if self.config.profile else ""),
+                "/help for commands · @file to attach · !cmd to run a command · Alt+Enter for a newline",
             ],
         )
 
-        async with Agent(
-            self.config,
-            confirmation_callback=self.tui.handle_confirmation,
-        ) as agent:
+        async with Agent(self.config, confirmation_callback=self.tui.confirm) as agent:
             self.agent = agent
+            reg = agent.session.client.registry
+            inputs = InputSession(
+                self.config.cwd, self.config.forbidden_paths, lambda: [m.id for m in reg.all()],
+                self._toolbar, get_data_dir() / "input_history",
+            )
 
             while True:
                 try:
-                    user_input = console.input("\n[user]>[/user] ").strip()
+                    console.print()
+                    user_input = (await inputs.read()).strip()
                     if not user_input:
                         continue
-
                     if user_input.startswith("/"):
-                        should_continue = await self._handle_command(user_input)
-                        if not should_continue:
+                        if not await self._handle_command(user_input):
                             break
                         continue
-
-                    await self._process_message(user_input)
+                    if user_input.startswith("!"):
+                        await self._run_bang(user_input)
+                        continue
+                    text, attached = expand_mentions(user_input, self.config.cwd, self.config.forbidden_paths)
+                    if attached:
+                        console.print(f"[dim]  attached: {', '.join(attached)}[/dim]")
+                    await self._run_turn(text)
                 except KeyboardInterrupt:
-                    console.print("\n[dim]Use /exit to quit[/dim]")
+                    console.print("[dim]  (Ctrl+C) type /exit to quit[/dim]")
                 except EOFError:
                     break
 
         console.print("\n[dim]Goodbye![/dim]")
+
+    async def _run_turn(self, text: str) -> None:
+        """Run one request as a task so Ctrl+C cancels the agent, not the app."""
+        task = asyncio.create_task(self._process_message(text))
+        loop = asyncio.get_running_loop()
+        try:
+            loop.add_signal_handler(signal.SIGINT, task.cancel)
+        except (NotImplementedError, RuntimeError):
+            pass
+        self.tui.start_spinner("Thinking")
+        try:
+            await task
+        except asyncio.CancelledError:
+            self.tui.stop_spinner()
+            console.print("\n[warning]Interrupted[/warning]")
+            self.agent.session.context_manager.repair_orphans()  # providers reject unanswered tool calls
+        finally:
+            self.tui.stop_spinner()
+            try:
+                loop.remove_signal_handler(signal.SIGINT)
+            except (NotImplementedError, RuntimeError, ValueError):
+                pass
+
+    async def _run_bang(self, line: str) -> None:
+        """`!cmd` runs a command for the user and shows the output to the model; `!!cmd` keeps it private."""
+        from safety.guard import violation
+        from tools.builtin.shell import build_environment
+
+        private = line.startswith("!!")
+        cmd = line.lstrip("!").strip()
+        if not cmd:
+            return
+        proc = await asyncio.create_subprocess_shell(
+            cmd, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.STDOUT,
+            cwd=self.config.cwd, env=build_environment(self.config),
+        )
+        try:
+            out, _ = await asyncio.wait_for(proc.communicate(), 120)
+        except asyncio.TimeoutError:
+            proc.kill()
+            out = b"[timed out after 120s]"
+        text = out.decode("utf-8", "replace")
+        console.print(text.rstrip(), markup=False, highlight=False)
+        if not private and violation("shell", {"command": cmd}, self.config):
+            console.print("[dim]  (protected by repository rules: output not shared with the model)[/dim]")
+            private = True
+        if not private:
+            self.agent.session.context_manager.add_user_message(
+                f"I ran `{cmd}` (exit {proc.returncode}):\n{text[:8000]}"
+            )
+            console.print("[dim]  (output added to the conversation)[/dim]")
 
     def _print_report(self, report: dict | None) -> None:
         if not report:
@@ -165,13 +244,14 @@ class CLI:
                     self.tui.end_assistant()
                     assistant_streaming = False
             elif event.type == AgentEventType.AGENT_END:
+                self.tui.stop_spinner()
                 self.last_report = event.data.get("report")
                 self._print_report(self.last_report)
             elif event.type == AgentEventType.NOTICE:
-                console.print(f"[warning]{event.data.get('message')}[/warning]")
+                self.tui.notice(event.data.get("message", ""))
+                self.tui.start_spinner("Working")
             elif event.type == AgentEventType.AGENT_ERROR:
-                error = event.data.get("error", "Unknown error")
-                console.print(f"\n[error]Error: {error}[/error]")
+                self.tui.error(event.data.get("error", "Unknown error"))
             elif event.type == AgentEventType.TOOL_CALL_START:
                 tool_name = event.data.get("name", "unknown")
                 tool_kind = self._get_tool_kind(tool_name)
@@ -196,6 +276,7 @@ class CLI:
                     event.data.get("truncated", False),
                     event.data.get("exit_code"),
                 )
+                self.tui.start_spinner("Thinking")
 
         return final_response
 
@@ -210,6 +291,26 @@ class CLI:
             return False
         elif command == "/help":
             self.tui.show_help()
+        elif cmd_name == "/compact":
+            self.tui.start_spinner("Compacting")
+            ok = await self.agent._compact()
+            self.tui.stop_spinner()
+            console.print("[success]Context compacted[/success]" if ok else "[dim]Nothing to compact yet[/dim]")
+        elif cmd_name == "/cost":
+            u = summarize_usage(self.agent.session.tracer.events, self.config.pricing)
+            w = u["cache_waste"]
+            console.print(f"  calls: {u['calls']}   in: {u['prompt_tokens']:,} ({u['cache_hit_pct']}% cached)   out: {u['completion_tokens']:,}")
+            console.print(f"  est cost: {('$' + str(u['est_cost_usd'])) if u['est_cost_usd'] is not None else 'unknown (add [pricing] to config)'}")
+            if w["misses"]:
+                console.print(f"  cache misses: {w['misses']} ({w['missed_tokens']:,} tokens re-billed: {', '.join(w['reasons'])})")
+        elif cmd_name == "/skills":
+            for sk in self.agent.session.skills:
+                console.print(f"  [accent]{sk.name}[/accent]  [dim]{sk.description}[/dim]")
+            if not self.agent.session.skills:
+                console.print("[dim]  no skills loaded[/dim]")
+        elif cmd_name == "/expand":
+            self.tui.expand = not self.tui.expand
+            console.print(f"[dim]  longer tool output: {'on' if self.tui.expand else 'off'}[/dim]")
         elif command == "/clear":
             self.agent.session.context_manager.clear()
             self.agent.session.loop_detector.clear()
@@ -239,6 +340,7 @@ class CLI:
                 try:
                     approval = ApprovalPolicy(cmd_args)
                     self.config.approval = approval
+                    self.agent.session.approval_manager.approval_policy = approval  # the manager holds its own copy
                     console.print(
                         f"[success]Approval policy changed to: {cmd_args} [/success]"
                     )

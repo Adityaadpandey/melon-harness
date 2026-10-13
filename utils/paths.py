@@ -16,10 +16,12 @@ def display_path_rel_to_cwd(path: str, cwd: Path | None) -> str:
         return path
 
     if cwd:
-        try:
-            return str(p.relative_to(cwd))
-        except ValueError:
-            pass
+        # resolve both sides: /var/... and /private/var/... name the same place on macOS
+        for a, b in ((p, Path(cwd)), (p.resolve(), Path(cwd).resolve())):
+            try:
+                return str(a.relative_to(b))
+            except ValueError:
+                continue
 
     return str(p)
 
