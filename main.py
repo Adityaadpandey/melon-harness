@@ -512,6 +512,23 @@ class CLI:
                     console.print(
                         f"[success]Resumed session: {session.session_id}[/success]"
                     )
+        elif cmd_name in ("/learn", "/lessons", "/forget"):
+            from agent.learn import Learned
+
+            learned = Learned(self.config.cwd)
+            if cmd_name == "/learn":
+                ok = bool(cmd_args) and learned.add_lesson(cmd_args)
+                console.print("[success]Learned. It applies from the next session (the prompt is fixed for this one).[/success]" if ok else "[dim]Usage: /learn <a rule, at least a few words>[/dim]")
+            elif cmd_name == "/forget":
+                gone = learned.forget(int(cmd_args)) if cmd_args.strip().isdigit() else None
+                console.print(f"[success]Forgot: {gone}[/success]" if gone else "[dim]Usage: /forget <number from /lessons>[/dim]")
+            else:
+                rows = learned.lessons()
+                for i, text in enumerate(rows, 1):
+                    console.print(f"  {i}. {text}")
+                if not rows:
+                    console.print("[dim]Nothing learned yet. Rejecting an action with feedback, or /learn <rule>, teaches mew.[/dim]")
+                console.print(f"[dim]  {len(learned.data['edits'])} past verified run(s) also guide search.[/dim]")
         elif cmd_name == "/undo":
             info = self.agent.undo_info
             if not info:

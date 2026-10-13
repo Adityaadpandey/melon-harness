@@ -31,7 +31,14 @@ class SearchTool(Tool):
         if not root.is_dir():
             return ToolResult.error_result(f"Directory does not exist: {root}")
         files = await asyncio.to_thread(list_files, root, self.config.forbidden_paths)
-        ranked = await asyncio.to_thread(rank_files, root, files, p.query, p.limit)
+        try:
+            from agent.learn import Learned
+
+            learned = Learned(self.config.cwd)
+            prior = {k: v for k, v in learned.prior(p.query).items()}
+        except Exception:
+            prior = {}
+        ranked = await asyncio.to_thread(rank_files, root, files, p.query, p.limit, 3, prior)
         if not ranked:
             return ToolResult.success_result(f"No files match '{p.query}' in {len(files)} files. Try other words or grep.")
         out = []

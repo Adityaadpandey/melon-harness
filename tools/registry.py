@@ -225,6 +225,7 @@ class ToolRegistry:
                         msg = "User rejected the operation."
                         if answer.feedback:
                             msg += f" {answer.feedback}"
+                            _learn_from_rejection(cwd, name, params, answer.feedback)
                         result = ToolResult.error_result(msg, metadata={"tool_name": name, "rejected": True})
                         await hook_system.trigger_after_tool(name, params, result)
                         return result
@@ -274,3 +275,15 @@ def _target_label(name: str, params: dict) -> str:
             base = params.get("path") if key in ("symbol", "pattern") and isinstance(params.get("path"), str) else None
             return (f"{base}:{v}" if base else v)[:80]
     return ""
+
+
+def _learn_from_rejection(cwd, tool: str, params: dict, feedback: str) -> None:
+    """What the user said when they turned an action down becomes a lesson (listed by /lessons, removable by /forget)."""
+    try:
+        from agent.learn import Learned
+
+        said = feedback.removeprefix("The user said:").strip()
+        if said:
+            Learned(cwd).add_lesson(f"After you tried {tool} {_target_label(tool, params)}, the user said: {said}", "rejection")
+    except Exception:
+        pass

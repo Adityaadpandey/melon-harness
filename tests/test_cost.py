@@ -179,3 +179,21 @@ async def test_overlapping_reads_return_only_the_lines_not_already_in_context(tm
         assert "30|line30" in out and "\n2|line2\n" not in out and "[lines 1-15 already" in out
         (tmp_path / "f.txt").write_text("changed\n" + "\n".join(f"line{i}" for i in range(2, 31)) + "\n")
         assert "1|changed" in await read(offset=1, limit=3)  # file changed: forget the map
+
+
+def test_learned_lessons_and_edit_history_shape_prompt_and_search(tmp_path):
+    from agent.learn import Learned
+
+    repo, base = tmp_path / "repo", tmp_path / "data"
+    (repo / "src").mkdir(parents=True)
+    (repo / "src" / "about.tsx").write_text("x")
+    L = Learned(repo, base)
+    assert L.add_lesson("Never edit generated files under src/generated") and not L.add_lesson("never edit generated files under src/generated")
+    assert not L.add_lesson("too short")  # fewer than four words is not a rule
+    L.record_run("Fix the blank line in the event description when no section exists", ["src/about.tsx", "src/gone.tsx"])
+    L2 = Learned(repo, base)  # a fresh process reads it back
+    assert "Never edit generated files" in L2.prompt_section()
+    boost = L2.prior("event description blank line bug")
+    assert boost == {"src/about.tsx": boost["src/about.tsx"]} and boost["src/about.tsx"] > 0.25  # deleted files are never recorded
+    assert L2.prior("payment webhook retry") == {}
+    assert L2.forget(1).startswith("Never edit") and L2.prompt_section() == ""

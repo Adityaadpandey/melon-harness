@@ -5,6 +5,7 @@ import time
 from typing import AsyncGenerator, Awaitable, Callable
 from agent.events import AgentEvent, AgentEventType
 from agent.grounding import correction_prompt, has_file_code, verify_references, wants_change
+from agent.learn import Learned
 from agent.review import review_changes
 from agent.routing_policy import classify
 from agent.session import Session
@@ -215,6 +216,11 @@ class Agent:
                 task.transition(TaskStatus.UNVERIFIED, "no verification commands")
             break
 
+        if task.status == TaskStatus.VERIFIED and task.changed_files and (task.review or {}).get("verdict") != "ISSUES":
+            try:
+                Learned(self.config.cwd).record_run(message, task.changed_files)  # which files fixed what, for next time
+            except Exception:
+                pass
         if backup_ref and task.changed_files:
             created = [f for f in task.changed_files if f not in (before or {})]
             self.undo_info = {"ref": backup_ref, "files": list(task.changed_files), "created": created}

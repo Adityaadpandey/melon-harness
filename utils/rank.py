@@ -71,7 +71,7 @@ def _index(root: Path, f: Path):
     return entry
 
 
-def rank_files(root: Path, files: list[Path], query: str, limit: int = 8, snippets: int = 3):
+def rank_files(root: Path, files: list[Path], query: str, limit: int = 8, snippets: int = 3, prior: dict[str, float] | None = None):
     """[(rel path, score, [(line no, text)])], best first."""
     q = list(dict.fromkeys(tokenize(query)))
     if not q:
@@ -108,7 +108,8 @@ def rank_files(root: Path, files: list[Path], query: str, limit: int = 8, snippe
         per_line = [(sum(idf[t] for t in idf if t in set(toks)), i) for i, toks in enumerate(line_tokens)]
         per_line.sort(key=lambda x: (-x[0], x[1]))
         top = [x for x in per_line[:snippets] if x[0] > 0]
-        out.append((s * (1 + 0.15 * sum(w for w, _ in top)), f, top))
+        boost = 1 + (prior or {}).get(f.relative_to(root).as_posix(), 0.0)  # files that fixed similar requests before
+        out.append((s * (1 + 0.15 * sum(w for w, _ in top)) * boost, f, top))
     out.sort(key=lambda x: -x[0])
     result = []
     for s, f, top in out[:limit]:
