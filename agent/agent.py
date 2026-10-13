@@ -23,6 +23,7 @@ from client.response import StreamEventType, TokenUsage, ToolCall, ToolResultMes
 from config.config import Config
 from prompts.system import create_loop_breaker_prompt
 from tools.base import ToolConfirmation, ToolKind, ToolResult
+from tools.builtin.shell import finished_jobs, kill_jobs
 
 
 class Agent:
@@ -248,6 +249,13 @@ class Agent:
                     "Budget check: about 70% of the token budget is used. Stop broad searching. Read only what "
                     "you must, then answer or make the change."
                 )
+            for job in finished_jobs():
+                state = "finished" if job.process.returncode == 0 else f"failed (exit {job.process.returncode})"
+                took = time.monotonic() - job.started
+                yield AgentEvent.notice(f"Background job {job.id} {state} in {took:.0f}s: {job.command}")
+                self.session.context_manager.add_user_message(
+                    f"[background job {job.id} `{job.command}` {state}; last output:]\n{job.tail()}"
+                )
             self.session.increment_turn()
             response_text = ""
 
@@ -466,6 +474,7 @@ class Agent:
         exc_val,
         exc_tb,
     ) -> None:
+        kill_jobs()
         if self.session and self.session.client and self.session.mcp_manager:
             await self.session.client.close()
             await self.session.mcp_manager.shutdown()
