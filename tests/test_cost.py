@@ -197,3 +197,18 @@ def test_learned_lessons_and_edit_history_shape_prompt_and_search(tmp_path):
     assert boost == {"src/about.tsx": boost["src/about.tsx"]} and boost["src/about.tsx"] > 0.25  # deleted files are never recorded
     assert L2.prior("payment webhook retry") == {}
     assert L2.forget(1).startswith("Never edit") and L2.prompt_section() == ""
+
+
+async def test_changed_file_is_answered_with_a_diff_not_the_whole_file(tmp_path):
+    body = "\n".join(f"line {i} of a long file" for i in range(200))
+    (tmp_path / "big.txt").write_text(body)
+    cfg = Config(cwd=tmp_path, approval=ApprovalPolicy.AUTO, auto_verify=False)
+    async with Agent(cfg) as a:
+        reg = a.session.tool_registry
+        await reg.invoke("read_file", {"path": "big.txt"}, tmp_path, a.session.hook_system)
+        (tmp_path / "big.txt").write_text(body.replace("line 100 ", "LINE 100 "))
+        r = await reg.invoke("read_file", {"path": "big.txt"}, tmp_path, a.session.hook_system)
+        assert "diff_only" in r.metadata and "LINE 100" in r.output and "line 50 " not in r.output
+        # after a diff the file counts as fully known again
+        r = await reg.invoke("read_file", {"path": "big.txt"}, tmp_path, a.session.hook_system)
+        assert "unchanged" in r.output

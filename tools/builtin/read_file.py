@@ -1,3 +1,4 @@
+import difflib
 import re
 from pathlib import Path
 
@@ -76,6 +77,9 @@ class ReadFileTool(Tool):
     def __init__(self, config):
         super().__init__(config)
         self._seen: dict[str, tuple[tuple, list[tuple[int, int]]]] = {}
+        # whole-file text the model last got, kept here (not in the prompt) so a changed
+        # file can be answered with a diff instead of being sent again in full
+        self._snap: dict[str, tuple[int, list[str]]] = {}
 
     def _coverage(self, path: Path, epoch: int) -> list[tuple[int, int]]:
         st = path.stat()
@@ -159,7 +163,19 @@ class ReadFileTool(Tool):
             # Per-file map of the line ranges already in context. A read only returns
             # lines the model does not have yet; changing the file (mtime/size) or
             # losing the old output (epoch: pruned or compacted) forgets the map.
+            snap = self._snap.get(str(path))
+            old_lines = snap[1] if snap and snap[0] == invocation.epoch else None
             have = self._coverage(path, invocation.epoch)
+            if old_lines is not None and not have and params.offset == 1 and params.limit is None and lines != old_lines:
+                diff = "\n".join(difflib.unified_diff(old_lines, lines, "before", "now", n=2, lineterm=""))
+                if len(diff) < 0.6 * len(content):
+                    have.append((1, total_lines))
+                    self._snap[str(path)] = (invocation.epoch, lines)
+                    return ToolResult.success_result(
+                        f"[{path.name} changed since you last read it ({total_lines} lines now); "
+                        f"only the changes are shown, the rest is as you saw it]\n{diff}",
+                        metadata={"path": str(path), "total_lines": total_lines, "diff_only": True},
+                    )
             need = _missing(have, start_idx + 1, end_idx)
             if not need:
                 return ToolResult.success_result(
@@ -193,6 +209,9 @@ class ReadFileTool(Tool):
                 last = int(shown[-1])
                 for a, b in need:
                     _add(have, a, min(b, last))
+
+            if have == [(1, total_lines)]:
+                self._snap[str(path)] = (invocation.epoch, lines)
 
             metadata_lines = []
             if start_idx > 0 or end_idx < total_lines:
