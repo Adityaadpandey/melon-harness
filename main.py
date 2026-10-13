@@ -6,6 +6,7 @@ import time
 from pathlib import Path
 import sys
 import click
+from prompt_toolkit.filters import Condition
 
 from agent.agent import Agent
 from agent.events import AgentEventType
@@ -92,6 +93,11 @@ class CLI:
 
         sess = self.agent.session if self.agent else None
         parts = []
+        from tools.builtin.shell import JOBS
+
+        running = sum(not j.done for j in JOBS.values())
+        if running:
+            parts.append(f"⚙ {running} running (/jobs)")
         if sess:
             parts.append(sess.approval_manager.approval_policy.value)
         model = (sess.client.last_model if sess and sess.client.last_model else self.config.model_name)
@@ -137,7 +143,7 @@ class CLI:
             inputs = InputSession(
                 self.config.cwd, self.config.forbidden_paths, lambda: [m.id for m in reg.all()],
                 self._toolbar, get_data_dir() / "input_history",
-                **({"body": screen.body, "extra_kb": screen.kb} if screen else {}),
+                **({"body": screen.body, "extra_kb": screen.kb, "mouse": Condition(lambda: screen.mouse_on)} if screen else {}),
             )
             self.inputs = inputs
             inputs.is_busy = lambda: self.tui._turn_active
@@ -348,6 +354,31 @@ class CLI:
                 console.print(f"  [accent]{sk.name}[/accent]{tag}  [dim]{sk.description}[/dim]")
             if not self.agent.session.skills:
                 console.print("[dim]  no skills loaded[/dim]")
+        elif cmd_name == "/copy":
+            from ui.screen import copy_to_clipboard
+
+            if self.tui.last_reply:
+                copy_to_clipboard(self.tui.last_reply)
+                console.print(f"[success]  copied {len(self.tui.last_reply)} characters[/success]")
+            else:
+                console.print("[dim]  nothing to copy yet[/dim]")
+        elif cmd_name == "/jobs":
+            from tools.builtin.shell import JOBS, kill_job
+
+            words = cmd_args.split()
+            kill = words[:1] == ["kill"]
+            job = JOBS.get(int(words[-1])) if words and words[-1].isdigit() else None
+            if kill and job:
+                kill_job(job)
+                console.print(f"[dim]  stopped job {job.id}[/dim]")
+            elif job:
+                console.print(f"[accent]job {job.id}[/accent] [dim]{job.command}[/dim]\n{job.tail(40)}")
+            elif not JOBS:
+                console.print("[dim]  no background jobs[/dim]")
+            for j in JOBS.values() if not job else []:
+                code = j.process.returncode
+                state = "running" if code is None else "done" if code == 0 else f"failed ({code})"
+                console.print(f"  [accent]{j.id}[/accent] {state:<12} [dim]{time.monotonic() - j.started:.0f}s  {j.command}[/dim]")
         elif cmd_name == "/expand":
             self.tui.show_result(int(cmd_args) if cmd_args.strip().isdigit() else 1)
         elif command == "/clear":

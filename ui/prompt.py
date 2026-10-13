@@ -32,6 +32,8 @@ COMMANDS = {
     "/tools": "list available tools",
     "/skills": "list project playbooks",
     "/mcp": "MCP server status",
+    "/copy": "copy the last reply to the clipboard",
+    "/jobs": "background commands: /jobs, /jobs 1 for output, /jobs kill 1",
     "/expand": "show the full output of the last tool call (/expand 2 for the one before)",
     "/save": "save this session",
     "/sessions": "list saved sessions",
@@ -83,7 +85,7 @@ class InputSession:
 
     def __init__(self, cwd: Path, forbidden: list[str], models: Callable[[], list[str]],
                  toolbar: Callable[[], str], history_file: Path | None = None, input=None, output=None,
-                 body=None, extra_kb: KeyBindings | None = None):
+                 body=None, extra_kb: KeyBindings | None = None, mouse=None):
         from prompt_toolkit.application import Application
         from prompt_toolkit.filters import Condition
         from prompt_toolkit.key_binding import merge_key_bindings
@@ -252,7 +254,7 @@ class InputSession:
         )
         self.app = Application(
             layout=Layout(root, focused_element=self.area), key_bindings=merge_key_bindings([kb, extra_kb] if extra_kb else [kb]),
-            erase_when_done=not self.fullscreen, full_screen=self.fullscreen, mouse_support=self.fullscreen,
+            erase_when_done=not self.fullscreen, full_screen=self.fullscreen, mouse_support=(mouse if mouse is not None else self.fullscreen),
             refresh_interval=0.1 if self.fullscreen else None,
             style=Style.from_dict({
                 "prompt": f"bg:#1d2033 {ACCENT} bold", "box": "bg:#1d2033 #d5d9ec", "statusbar": "bg:#151826", "tb.key": "bg:#2a2e48 #c5cae9", "bar": f"bg:#1d2033 {ACCENT} bold", "toolbar": MUTED, "tb.dot": "#3a3f5c",
