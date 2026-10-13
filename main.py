@@ -234,7 +234,7 @@ class CLI:
 
     def _print_heaviest(self, u: dict) -> None:
         h = u.get("heaviest") or {}
-        if u.get("calls", 0) < 6 or not h.get("top") or not u.get("prompt_tokens"):
+        if u.get("calls", 0) < 6 or not h.get("top") or h.get("tool_result_carried", 0) < 5000:  # tiny tasks have nothing worth tuning
             return
         share = round(100 * h["tool_result_carried"] / u["prompt_tokens"])
         console.print(f"[dim]    {share}% of the input tokens were earlier tool results re-sent. Biggest:[/dim]")
