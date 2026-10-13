@@ -505,6 +505,7 @@ class CLI:
 @click.option("--graph", type=click.Path(exists=True, path_type=Path), help="Task graph JSON (implies --parallel)")
 @click.option("--apply/--no-apply", default=True, help="Fast-forward the integrated result into a clean checkout")
 @click.option("--report", type=click.Path(path_type=Path), help="Write run metrics JSON here")
+@click.option("--add-dir", "add_dirs", multiple=True, type=click.Path(exists=True, file_okay=False, path_type=Path), help="Extra directory the agent may use besides the working directory (repeatable)")
 @click.option("--trust", "trust_project", is_flag=True, help="Trust this project's .ai-agent/config.toml (hooks, verify commands, approval)")
 @click.option("--model", "-m", help="Model id (overrides config)")
 @click.option(
@@ -515,6 +516,7 @@ class CLI:
 def main(
     prompt: str | None,
     cwd: Path | None,
+    add_dirs: tuple,
     trust_project: bool,
     parallel: bool,
     graph: Path | None,
@@ -537,6 +539,8 @@ def main(
         console.print(f"[error]Configuration Error: {e}[/error]")
         sys.exit(1)
 
+    if add_dirs:
+        config.allowed_dirs = [*config.allowed_dirs, *(str(d.resolve()) for d in add_dirs)]
     if model:
         config.model_name = model
         config.model_pinned = True

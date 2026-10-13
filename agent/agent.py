@@ -1,6 +1,7 @@
 from __future__ import annotations
 import asyncio
 import json
+import time
 from typing import AsyncGenerator, Awaitable, Callable
 from agent.events import AgentEvent, AgentEventType
 from agent.grounding import correction_prompt, has_file_code, verify_references, wants_change
@@ -36,6 +37,7 @@ class Agent:
         self._failed = False
         self._tier = "default"
         self._escalated = False
+        self._review_sec = 0.0
 
     async def run(self, message: str):
         await self.session.hook_system.trigger_before_agent(message)
@@ -54,6 +56,7 @@ class Agent:
         self.session.context_manager.add_user_message(message_for_model)
 
         self._escalated = False
+        self._review_sec = 0.0
         self._tier = "default"
         routing = self.config.routing
         if self.config.auto_route and not self.config.model_pinned and self.config.model_role == "default" and (
@@ -143,7 +146,9 @@ class Agent:
             if self.config.auto_review and reviews < self.config.max_reviews and not task.expired():
                 reviews += 1
                 yield AgentEvent.notice("Independent review of the diff...")
+                t_review = time.monotonic()
                 res = await review_changes(self.config, message, task.changed_files, task.verification)
+                self._review_sec += time.monotonic() - t_review
                 task.review = {"verdict": res.verdict, "findings": res.findings}
                 self.session.tracer.emit("review", task=task.id, verdict=res.verdict, findings=res.findings[:1500])
                 if res.verdict == "ISSUES" and task.repairs < task.max_repairs:
@@ -165,6 +170,14 @@ class Agent:
         await self.session.hook_system.trigger_after_agent(message, final_response)
         report = task.report()
         report["usage"] = summarize_usage(self.session.tracer.events, self.config.pricing)
+        ev = self.session.tracer.events
+        report["timings"] = {
+            "wall_sec": round(time.monotonic() - task.started, 1),
+            "model_sec": round(sum(e.get("sec", 0) for e in ev if e["event"] == "model_call" and e.get("ok")), 1),
+            "tool_sec": round(sum(e.get("sec", 0) for e in ev if e["event"] == "tool_call"), 1),  # parallel calls overlap, so this can exceed wall
+            "verify_sec": round(sum(c.get("seconds", 0) for c in task.verification), 1),
+            "review_sec": round(self._review_sec, 1),
+        }
         yield AgentEvent.agent_end(final_response, report=report)
 
     async def _agentic_loop(self, task: TaskState) -> AsyncGenerator[AgentEvent, None]:

@@ -62,7 +62,8 @@ def main() -> None:
     ap = argparse.ArgumentParser()
     ap.add_argument("--clone", required=True)
     ap.add_argument("--out", required=True)
-    ap.add_argument("--model", default="claude-sonnet-5-5")
+    ap.add_argument("--model", default="auto", help="'auto' = no -m, so the profile's routing picks models")
+    ap.add_argument("--add-dir", action="append", default=[], help="extra directory the agent may read (e.g. the real node_modules)")
     ap.add_argument("--tasks", default=",".join(TASKS))
     ap.add_argument("--wait-until")
     ap.add_argument("--timeout", type=int, default=900)
@@ -85,7 +86,8 @@ def main() -> None:
         started = time.time()
         report = d / "report.json"
         p = subprocess.run(
-            [sys.executable, str(ROOT / "main.py"), "-m", a.model, "--approval", "auto", "--report", str(report), TASKS[name]],
+            [sys.executable, str(ROOT / "main.py"), *(["-m", a.model] if a.model != "auto" else []),
+             *[x for d in a.add_dir for x in ("--add-dir", d)], "--approval", "auto", "--report", str(report), TASKS[name]],
             cwd=clone, env=env, capture_output=True, text=True, timeout=a.timeout,
         )
         (d / "output.txt").write_text(p.stdout[-20000:] + p.stderr[-3000:])
@@ -95,8 +97,11 @@ def main() -> None:
         ))
         r = json.loads(report.read_text()) if report.exists() else {}
         rep = r.get("report") or {}
+        u = rep.get("usage") or {}
         print(f"{name:<26} exit={p.returncode} status={rep.get('status')} review={(rep.get('review') or {}).get('verdict')} "
-              f"files={rep.get('changed_files')} usage={rep.get('usage')} wall={time.time() - started:.0f}s", flush=True)
+              f"files={len(rep.get('changed_files') or [])} calls={u.get('calls')} in={u.get('prompt_tokens')} cached={u.get('cache_hit_pct')}% "
+              f"models={r.get('models_used')} timings={rep.get('timings')} grounding={(rep.get('grounding') or {}).get('unverified')} "
+              f"wall={time.time() - started:.0f}s", flush=True)
     subprocess.run(["git", "checkout", "-q", "-f", base], cwd=clone)
 
 

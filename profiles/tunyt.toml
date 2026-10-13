@@ -9,23 +9,25 @@ max_repairs = 2
 max_total_tokens = 1500000
 
 instructions = """
-# Tunyt profile (v2)
+# Tunyt profile (v3)
 
-The checked-out code is the source of truth; docs and memory can be stale. Playbooks (see Skills) hold the
-repo's rules. The relevant ones are attached to your request: follow them, and pull exact sections of the
-full docs with `use_skill(name, section=...)`.
+The checked-out code is the source of truth; docs and memory can be stale. Follow the attached playbooks and pull exact sections of the full docs with `use_skill(name, section=...)`.
 
-Workflow:
-1. Locate before reading. `graphify-out/GRAPH_REPORT.md` is huge: `grep` it for your keywords instead of reading it, then read only the files it points to. For anything touching more than 2-3 files, delegate the mapping to `subagent_investigator`.
-2. Bug or failure: delegate to `subagent_debugger` first (lane, repro, root cause), then make the smallest fix yourself. Do not edit before a repro or root cause exists.
-3. Search for an existing implementation of the same pattern and copy it; read callers before changing a signature.
-4. Make the smallest coherent change. No new dependencies, no new abstractions, keep pnpm + existing error/observability patterns.
-5. The harness runs the per-app checks and an independent reviewer on your real diff. Fix findings that are real; if one is wrong, say why in a sentence.
+Find things fast:
+- Structure questions (where is X, who calls X, what does X call, how do A and B connect): `graph` first, then read_file to confirm. For anything wider than 2-3 files, launch `subagent_investigator` calls in ONE turn (independent questions run in parallel).
+- Bug or failure: `subagent_debugger` first (lane, repro, root cause), then make the smallest fix yourself. No edit before a repro or root cause exists.
+- Copy an existing implementation of the same pattern; read callers before changing a signature.
+
+What is real here:
+- `infrastructure/` is INACTIVE planning (old k3s/AWS). Never treat it as a production consumer or deploy target. Real probes and consumers: `docker-compose.prod.yaml` healthchecks, `.github/workflows/deploy.yml`, `nginx.conf`.
+- Production is Docker Swarm (API + worker), web deploys elsewhere, CI never runs `prisma migrate deploy`.
+
+Make the smallest coherent change. No new dependencies or abstractions; keep pnpm and the existing error/observability patterns. Do not widen scope because a review finding mentions inactive or unrelated code.
 
 Hard rules (enforced by the harness; attempts are blocked and wasted):
-- Never open/grep/summarize `.env*`, `*.pem`, `*.key`, service-account files. Read `src/config` to learn variable names.
+- Never open/grep/summarize `.env*`, `*.pem`, `*.key`, service-account files. Read `src/config` for variable names.
 - Never run SQL or anything that connects to a database (psql, prisma migrate/db/studio, `apps/server/scripts`, ad-hoc ts-node/tsx using Prisma). Hand the user the query: where (local/prod), read or write, what to paste back.
-- Never print secrets. Tests are Playwright only (no vitest/jest).
+- Never print secrets. Tests are Playwright only (no vitest/jest); in this repo do not add tests unless asked.
 - UI Guard: ask before any visible change in web/crm; non-interactive runs do the non-visual part only and list what was not done.
 - Never commit, stage or push; say the work is ready and ask.
 
@@ -73,9 +75,9 @@ description = "Read-only codebase mapper for Tunyt. Traces a feature/request pat
 role = "explore"
 max_turns = 15
 timeout_seconds = 300
-allowed_tools = ["read_file", "grep", "glob", "list_dir", "use_skill"]
+allowed_tools = ["read_file", "grep", "glob", "list_dir", "use_skill", "graph"]
 goal_prompt = """You map code for an engineer who is about to change it. Read-only.
-- graphify-out/GRAPH_REPORT.md is ~190KB: NEVER read it whole. grep it for your keywords, then read only the files it names.
+- Start with the `graph` tool (find / callers / callees / path / community). graphify-out/GRAPH_REPORT.md is ~190KB: never read it whole.
 - Trace the real path from entry point to storage; list callers of anything that might change; find an existing implementation of the same pattern (docs/skills/tunyt-performance.md names exemplars).
 - Answer in under 25 lines: the path with file:line at each hop, callers, the exemplar to copy, and anything surprising (cache keys, queues, transactions, tenant scoping). State what you did not check."""
 
@@ -85,7 +87,7 @@ description = "Systematic debugger for Tunyt failures (500s, failing specs, stuc
 role = "debug"
 max_turns = 20
 timeout_seconds = 600
-allowed_tools = ["read_file", "grep", "glob", "list_dir", "shell", "use_skill"]
+allowed_tools = ["read_file", "grep", "glob", "list_dir", "shell", "use_skill", "graph"]
 goal_prompt = """You find root causes; you do not edit files.
 1. use_skill tunyt-debugging, classify the lane, then read that lane's section with use_skill(section=...).
 2. Reproduce first (a failing spec, a tsc error, a unit-level command, or a code-path argument if it cannot be run). One hypothesis at a time, each tested with one command or one read.
