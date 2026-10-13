@@ -162,7 +162,7 @@ async def test_router_skips_models_known_uncallable_or_too_small(tmp_path):
     c.registry._models["m2"].callable = False
     c.registry._models["m3"].context_length = 10
     usable, skipped = c.router.candidates("review", min_context=1000)
-    assert usable == [] and len(skipped) == 2
+    assert usable == ["m1"] and len(skipped) == 2  # only the user's own model is left: last resort for every role
 
 
 async def test_explicit_main_model_is_not_skipped_by_probe(tmp_path):
@@ -192,7 +192,18 @@ async def test_unsupported_model_error_suggests_real_ids(tmp_path):
     assert "did you mean: gpt-6-luna" in evs[-1].error
 
 
-def test_plan_wide_usage_limit_is_not_retried_or_failed_over():
+def test_plan_wide_usage_limit_is_not_retried_but_another_provider_may_help():
     e = classify(429, "You've reached your 5-hour usage limit for your plan. Your limit resets at 19:12")
-    assert not e.retry and not e.fallback
+    assert not e.retry and e.fallback and e.quota
     assert classify(429, "slow down").retry  # ordinary burst limits still retry
+
+
+async def test_quota_exhausted_gateway_falls_over_to_codex_and_stays_off_the_gateway(tmp_path):
+    limit = classify(429, "You've reached your 5-hour usage limit for your plan")
+    c, fake = make_client(tmp_path, {"m1": [limit], "codex/x": ["ok", "ok"]}, routing={"default": ["m2", "codex/x"]})
+    c.registry._models["codex/x"] = ModelInfo("codex/x", 1_000_000)
+    evs = await collect(c)
+    assert any("Falling back from m1 to codex/x" in (e.notice or "") for e in evs)  # m2 shares m1's quota: skipped
+    assert [m for m, _ in fake.calls] == ["m1", "codex/x"]
+    evs = await collect(c)  # next request does not touch the gateway again
+    assert not any("Falling back" in (e.notice or "") for e in evs)

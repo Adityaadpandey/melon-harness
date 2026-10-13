@@ -16,6 +16,10 @@ from config.loader import get_data_dir
 from utils.trace import Tracer
 
 
+def _provider(model: str) -> str:
+    return "codex" if model.startswith("codex/") else "gateway"
+
+
 class LLMClient:
     """One entry point for every model call. Picks candidates through the
     router, talks to the right wire protocol, retries transient failures with
@@ -31,6 +35,7 @@ class LLMClient:
         self.registry = ModelRegistry(config, get_data_dir())
         self.router = Router(config, self.registry)
         self.last_model: str | None = None
+        self._quota_blocked: set[str] = set()  # providers out of quota this session
 
     async def initialize(self) -> None:
         await self.registry.load()
@@ -65,6 +70,7 @@ class LLMClient:
         models, skipped = self.router.candidates(
             role, need_tools=bool(tools), min_context=est_tokens
         )
+        models = [m for m in models if _provider(m) not in self._quota_blocked]
         for s in skipped:
             self.tracer.emit("model_skipped", role=role, reason=s)
         if not models:
@@ -73,12 +79,15 @@ class LLMClient:
             return
 
         last_error = "unknown error"
-        for i, model in enumerate(models):
-            if i > 0:
+        queue, prev = list(models), None
+        while queue:
+            model = queue.pop(0)
+            if prev:
                 yield StreamEvent(
                     type=StreamEventType.NOTICE,
-                    notice=f"Falling back from {models[i - 1]} to {model} ({last_error[:120]})",
+                    notice=f"Falling back from {prev} to {model} ({last_error[:120]})",
                 )
+            prev = model
             outcome: ProviderError | None = None
             collected = _Collector()
             async for ev in self._call_model(model, role, messages, tools, stream, collected):
@@ -89,6 +98,10 @@ class LLMClient:
             if outcome is None:
                 return
             last_error = f"{model}: {outcome}"
+            if outcome.quota:
+                # every model on this provider shares the quota: skip the rest of them
+                self._quota_blocked.add(_provider(model))
+                queue = [m for m in queue if _provider(m) not in self._quota_blocked]
             if "unsupported_model" in str(outcome) or "not supported on this endpoint" in str(outcome):
                 _, near = self.registry.validate(model)
                 last_error += f". Not in the model catalog" + (f"; did you mean: {', '.join(near)}?" if near else ".")

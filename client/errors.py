@@ -16,19 +16,21 @@ class ProviderError(Exception):
         retry: bool = False,
         fallback: bool = False,
         drop_temperature: bool = False,
+        quota: bool = False,
     ):
         super().__init__(message)
         self.status = status
         self.retry = retry
         self.fallback = fallback
         self.drop_temperature = drop_temperature
+        self.quota = quota  # the whole provider/plan is out of quota: only another provider can help
 
 
 def classify(status: int | None, message: str) -> ProviderError:
     m = message.lower()
     if status == 429 and ("usage limit" in m or "limit resets" in m or "upgrade your plan" in m):
-        # plan-wide quota, not a burst limit: retrying or switching model can't help
-        return ProviderError(message, status=status)
+        # plan-wide quota, not a burst limit: retrying or switching model on the same provider can't help
+        return ProviderError(message, status=status, fallback=True, quota=True)
     if status == 429:
         return ProviderError(message, status=status, retry=True, fallback=True)
     if status is None or status >= 500 or status == 408:

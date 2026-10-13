@@ -156,6 +156,8 @@ class Router:
             return [primary] + [m for m in extra if m != primary]
         configured = self.config.routing.get(role)
         chain = list(configured) if configured else self.chain("default")
+        if primary not in chain:
+            chain.append(primary)  # last resort for every role: the model the user chose
         if role == "review":
             # a reviewer that is the author's own model shares its blind spots
             chain = [m for m in chain if m != primary] + [m for m in chain if m == primary]
