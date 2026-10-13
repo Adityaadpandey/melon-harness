@@ -15,11 +15,12 @@ from rich.console import Console, ConsoleOptions, Group, RenderResult
 from rich.live import Live
 from rich.padding import Padding
 from rich.table import Table
-from rich.markdown import Markdown
+from rich.markdown import Heading, Markdown
 from rich.segment import Segment
 from rich.syntax import Syntax
 from rich.panel import Panel
-from rich.text import Text
+from rich.style import Style
+from rich.text import Span, Text
 from rich.theme import Theme
 
 from config.config import Config
@@ -101,10 +102,26 @@ PRIMARY_ARG = {
 }
 
 
-def tool_label(name: str, args: dict[str, Any], cwd: Path | None) -> str:
+KIND_COLOR = {
+    "read_file": SKY, "glob": SKY, "grep": SKY, "list_dir": SKY, "search": SKY, "graph": SKY,
+    "edit": AMBER, "write_file": AMBER,
+    "shell": LAVENDER,
+    "web_search": TEAL, "web_fetch": TEAL,
+    "memory": MINT, "todos": MINT, "use_skill": MINT,
+}
+
+
+def kind_color(name: str) -> str:
+    if name.startswith("subagent_") or name == "parallel_tasks":
+        return ACCENT
+    return KIND_COLOR.get(name, "#9aa3c7")
+
+
+def tool_parts(name: str, args: dict[str, Any], cwd: Path | None) -> tuple[str, str]:
+    """(title, argument) for a call, e.g. ("Read", "src/a.py")."""
     if name.startswith("subagent_"):
         goal = str(args.get("goal", ""))
-        return f"Agent[{name[len('subagent_'):]}]({goal[:70]}{'…' if len(goal) > 70 else ''})"
+        return f"Agent[{name[len('subagent_'):]}]", goal[:70] + ("…" if len(goal) > 70 else "")
     key = PRIMARY_ARG.get(name)
     val = args.get(key) if key else None
     if val is None and args:
@@ -116,7 +133,56 @@ def tool_label(name: str, args: dict[str, Any], cwd: Path | None) -> str:
     if len(val) > 90:
         val = val[:89] + "…"
     extra = f", {args['glob']}" if name == "grep" and args.get("glob") else ""
-    return f"{TITLES.get(name, name)}({val}{extra})"
+    return TITLES.get(name, name), val + extra
+
+
+def tool_label(name: str, args: dict[str, Any], cwd: Path | None) -> str:
+    title, arg = tool_parts(name, args, cwd)
+    return f"{title}({arg})"
+
+
+def header_text(name: str, args: dict[str, Any], cwd: Path | None) -> Text:
+    """`▍ read  src/app.py`: a coloured chip for the tool, then its argument with the
+    file name picked out of the path so it is the first thing the eye lands on."""
+    title, arg = tool_parts(name, args, cwd)
+    color = kind_color(name)
+    out = Text.assemble((" ", ""), (f" {title.lower()} ", f"bold {INK} on {color}"), "  ")
+    if PRIMARY_ARG.get(name) == "path" and "/" in arg:
+        head, _, tail = arg.rpartition("/")
+        out.append(head + "/", style=MUTED)
+        out.append(tail, style=f"bold {FG}")
+    elif name == "shell":
+        out.append("$ ", style=MUTED)
+        out.append(arg, style=f"bold {LAVENDER}")
+    else:
+        out.append(arg, style=f"bold {FG}")
+    return out
+
+
+class _Heading(Heading):
+    """Left-aligned heading with a small bar, instead of rich's centred box."""
+
+    def __rich_console__(self, console: Console, options: ConsoleOptions) -> RenderResult:
+        self.text.justify = "left"
+        yield Text.assemble(("▌ ", console.get_style(f"markdown.{self.tag}")), self.text)
+
+
+class MewMarkdown(Markdown):
+    elements = {**Markdown.elements, "heading_open": _Heading}
+
+
+class Rail:
+    """Draws a coloured bar down the left of whatever it wraps, however many lines it wraps to."""
+
+    def __init__(self, body: Any, color: str, glyph: str = "│", first: str | None = None) -> None:
+        self.body, self.color, self.glyph, self.first = body, color, glyph, first
+
+    def __rich_console__(self, console: Console, options: ConsoleOptions) -> RenderResult:
+        lines = console.render_lines(self.body, options.update_width(max(10, options.max_width - 3)), pad=False)
+        for i, line in enumerate(lines):
+            yield Segment(" " + (self.first if i == 0 and self.first else self.glyph) + " ", console.get_style(self.color))
+            yield from line
+            yield Segment.line()
 
 
 def _first_lines(text: str, n: int) -> tuple[list[str], int]:
@@ -150,20 +216,49 @@ def parse_unified_diff(diff: str) -> tuple[list[tuple[str, int | None, str]], in
     return rows, adds, dels
 
 
-def render_diff(diff: str, max_lines: int = 16) -> tuple[Text, int, int]:
+ADD_BG, DEL_BG = "#12291f", "#33161c"
+
+
+def _highlight(code: str, lexer: str) -> Text:
+    try:
+        t = Syntax(code, lexer, theme="dracula").highlight(code)
+        t.rstrip()
+        # keep the token colours but drop the theme's own background, the diff row supplies it
+        t.spans = [Span(sp.start, sp.end, Style(color=sp.style.color, bold=sp.style.bold, italic=sp.style.italic))
+                   if isinstance(sp.style, Style) else sp for sp in t.spans]
+        t.style = ""
+        return t
+    except Exception:
+        return Text(code)
+
+
+def render_diff(diff: str, max_lines: int = 16, path: str = "", width: int = 96) -> tuple[Text, int, int]:
+    """Rows with line numbers, a +/- gutter, syntax-highlighted code and a tinted background
+    that runs the full width, so added and removed lines read as blocks, not as coloured text."""
     rows, adds, dels = parse_unified_diff(diff)
+    lexer = Syntax.guess_lexer(path, "") if path else "text"
     out = Text()
     shown = shown_changed = 0
     for kind, no, txt in rows:
         if shown >= max_lines:
             break
-        style = {"+": "diff.add", "-": "diff.del"}.get(kind, "dim")
-        out.append(f"    {no if no is not None else '':>5} {kind} {txt[:160]}\n", style=style)
+        bg = {"+": ADD_BG, "-": DEL_BG}.get(kind, "")
+        row = Text(style=f"on {bg}" if bg else "")
+        row.append(f"{no if no is not None else '':>4} ", style=MUTED)
+        row.append(f"{kind} ", style=f"bold {MINT}" if kind == "+" else f"bold {CORAL}" if kind == "-" else MUTED)
+        code = _highlight(txt[:160], lexer)
+        if kind == " ":
+            code.stylize("dim")
+        row.append_text(code)
+        row.truncate(width, overflow="ellipsis", pad=bool(bg))
+        if out:
+            out.append("\n")
+        out.append_text(row)
         shown += 1
         shown_changed += kind in "+-"
     hidden = adds + dels - shown_changed
     if hidden > 0:
-        out.append(f"          … +{hidden} more changed lines\n", style="dim")
+        out.append(f"\n   ⋯ +{hidden} more changed lines", style=MUTED)
     return out, adds, dels
 
 
@@ -241,6 +336,20 @@ def context_bar(pct: float, width: int = 10) -> str:
 
 
 SPIN = "⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏"
+
+
+def _mix(a: str, b: str, t: float) -> str:
+    """Blend two #rrggbb colours: t=0 gives a, t=1 gives b."""
+    x, y = (tuple(int(c[i:i + 2], 16) for i in (1, 3, 5)) for c in (a, b))
+    return "#" + "".join(f"{round(p + (q - p) * t):02x}" for p, q in zip(x, y))
+
+
+def shimmer(text: str, now: float) -> Text:
+    """Pink-to-lavender wave that slides along the text, so a long wait still looks alive."""
+    out = Text()
+    for i, ch in enumerate(text):
+        out.append(ch, style=_mix(ACCENT, LAVENDER, (math.sin(now * 4 - i * 0.45) + 1) / 2))
+    return out
 TIPS = [
     "@path attaches a file · Tab completes",
     "!git status runs a command and shows it to the model",
@@ -277,19 +386,23 @@ class TUI:
 
     def _renderable(self):
         rows: list[Any] = []
+        now = time.monotonic()
         if self._buf.strip():
             tail = self._buf if self._buf.count("\n") < 14 else "…\n" + "\n".join(self._buf.split("\n")[-12:])
             rows.append(self._assistant_grid(tail, self._first_block))
-        elapsed = int(time.monotonic() - self._turn_started)
-        frame = SPIN[int(time.monotonic() * 10) % len(SPIN)]
-        tokens = f" · ↓ ~{self._out_chars / 4000:.1f}k tokens" if self._out_chars > 400 else ""
-        rows.append(Text.assemble((f"{frame} ", ACCENT), (f"{self._phase}…", ACCENT), (f"  ({elapsed}s{tokens} · ctrl+c to interrupt)", "dim")))
+        elapsed = int(now - self._turn_started)
+        frame = SPIN[int(now * 10) % len(SPIN)]
+        tokens = f"  ·  ↓ ~{self._out_chars / 4000:.1f}k tokens" if self._out_chars > 400 else ""
+        status = Text.assemble((f" {frame} ", f"bold {ACCENT}"), shimmer(f"{self._phase}…", now))
+        status.append(f"   {elapsed}s{tokens}  ·  ctrl+c to stop", style=MUTED)
+        rows.append(status)
         for a in self.agents.values():
-            rows.append(Text(f"  ⎿ {a['agent']} · {a['last']} · {int(time.monotonic() - a['started'])}s", style="dim"))
+            rows.append(Text.assemble(("   ╰ ◆ ", ACCENT), (a["agent"], f"bold {ACCENT}"), (f"  {a['last']}  {int(now - a['started'])}s", MUTED)))
         if self.todos:
-            rows.append(Text("  Tasks", style="dim"))
+            done_n = sum(d for _, d in self.todos)
+            rows.append(Text.assemble(("   ✦ tasks ", f"bold {LAVENDER}"), (f"{done_n}/{len(self.todos)}", MUTED)))
             for content, done in self.todos[:8]:
-                rows.append(Text(f"   {'☒' if done else '☐'} {content[:90]}", style="dim strike" if done else "default"))
+                rows.append(Text(f"     {'◼' if done else '◻'} {content[:90]}", style=f"{MUTED} strike" if done else FG))
         return Group(*rows)
 
     def _start_live(self) -> None:
@@ -341,25 +454,28 @@ class TUI:
     def print_welcome(self, title: str, lines: list[str]) -> None:
         import random
 
-        body = Text()
-        body.append("✻ ", style=ACCENT)
-        body.append(f"Welcome to {title}\n\n", style="bold")
+        cat = Text.assemble((" /\\_/\\ \n", ACCENT), ("( ", ACCENT), ("o.o", MINT), (" )\n", ACCENT), (" > ^ < ", ACCENT))
+        info = Text.assemble((title, f"bold {ACCENT}"), ("  ·  a small agent for real repos\n", MUTED))
         for ln in lines:
-            body.append(f"  {ln}\n", style="dim")
-        body.append(f"\n  tip: {random.choice(TIPS)}", style="dim italic")
-        self.console.print(Panel(body, border_style=ACCENT, box=box.ROUNDED, padding=(0, 2), expand=False))
+            # "model: x   approval: y" becomes lavender keys over soft text
+            for part in re.split(r"(\w+:)", ln):
+                info.append(part, style=LAVENDER if part.endswith(":") and " " not in part else MUTED)
+            info.append("\n")
+        info.rstrip()
+        grid = Table.grid(padding=(0, 3))
+        grid.add_row(cat, info)
+        self.console.print()
+        self.console.print(Padding(grid, (0, 2)))
+        self.console.print(Text(f"  ✦ tip  {random.choice(TIPS)}", style=f"italic {MUTED}"))
+        self.console.print()
 
     def echo_user(self, text: str) -> None:
         first, *rest = text.strip().split("\n")
         shown = first + (f"  (+{len(rest)} lines)" if rest else "")
-        self.console.print(Padding(Text.assemble(("❯ ", f"bold {ACCENT}"), (shown[:300], "default")), (0, 1), style="on #262626"))
+        self.console.print(Padding(Text.assemble(("▍ ", f"bold {ACCENT}"), (shown[:300], f"bold {FG}")), (0, 1), style="on #1d2033"))
 
     def _assistant_grid(self, md: str, first: bool):
-        grid = Table.grid(padding=(0, 1))
-        grid.add_column(width=1)
-        grid.add_column(ratio=1)
-        grid.add_row(Text("⏺" if first else " ", style=ACCENT), Markdown(md.rstrip(), code_theme="monokai"))
-        return grid
+        return Rail(MewMarkdown(md.rstrip(), code_theme="dracula"), LAVENDER, "▎", "◆" if first else None)
 
     def _print_block(self, md: str) -> None:
         if not md.strip():
@@ -384,11 +500,12 @@ class TUI:
         self._first_block = True  # the next piece of text (after a tool call) starts a new message
 
     def notice(self, message: str) -> None:
-        self.console.print(Text(f"  ✻ {message}", style="dim italic"))
+        self.console.print(Text(f"  ✦ {message}", style=f"italic {MUTED}"))
 
     def error(self, message: str) -> None:
         self.assistant_flush()
-        self.console.print(Text(f"\n✗ {message}", style="error"))
+        self.console.print()
+        self.console.print(Rail(Text(message, style=CORAL), CORAL, "┃", "✗"))
 
     def set_todos(self, todos: list[tuple[str, bool]]) -> None:
         self.todos = todos
@@ -411,7 +528,7 @@ class TUI:
 
     def _print_header(self, name: str, args: dict[str, Any]) -> None:
         self.console.print()
-        self.console.print(Text.assemble(("⏺ ", ACCENT), (tool_label(name, args, self.cwd), "bold")))
+        self.console.print(header_text(name, args, self.cwd))
 
     def tool_call_complete(self, call_id: str, name: str, tool_kind: str | None, success: bool, output: str,
                            error: str | None, metadata: dict[str, Any] | None, diff: str | None,
@@ -425,20 +542,21 @@ class TUI:
         md = metadata or {}
         self.results.append({"label": tool_label(name, args, self.cwd), "success": success, "output": output, "error": error, "diff": diff})
         summary, preview = summarize_result(name, success, output, error, md, exit_code, args)
-        style = "error" if not success else "dim"
+        color = kind_color(name) if success else CORAL
+        rows: list[Any] = []
         if name in {"edit", "write_file"} and success and diff:
-            body, adds, dels = render_diff(diff, 400 if self.expand else 14)
             path = display_path_rel_to_cwd(md.get("path", args.get("path", "")), self.cwd)
-            plus = f"{adds} addition{'s' if adds != 1 else ''}" if adds else ""
-            minus = f"{dels} removal{'s' if dels != 1 else ''}" if dels else ""
-            what = " and ".join(x for x in (plus, minus) if x) or "no line changes"
-            verb = "Created" if md.get("is_new_file") else "Updated"
-            self.console.print(Text.assemble(("  ⎿  ", "dim"), (f"{verb} {path} with {what}", style)))
-            self.console.print(body, end="")
-            return
-        self.console.print(Text.assemble(("  ⎿  ", "dim"), (summary, style)))
-        for ln in preview[: 60 if self.expand else None]:
-            self.console.print(Text(f"     {ln[:200]}", style="dim"))
+            body, adds, dels = render_diff(diff, 400 if self.expand else 14, path, min(self.console.width, 120) - 6)
+            what = Text.assemble(*(x for x in ((f"+{adds}", f"bold {MINT}"), (" ", ""), (f"−{dels}", f"bold {CORAL}")) if x[0] not in ("+0", "−0")))
+            verb = "created" if md.get("is_new_file") else "updated"
+            rows.append(Text.assemble(("✓ ", f"bold {MINT}"), (f"{verb} ", MUTED), (path, f"bold {FG}"), "  ", what))
+            rows.append(body)
+        else:
+            mark = ("✗ ", f"bold {CORAL}") if not success else ("✓ ", f"bold {MINT}")
+            rows.append(Text.assemble(mark, (summary.removeprefix("✗ "), CORAL if not success else FG)))
+            for ln in preview[: 60 if self.expand else None]:
+                rows.append(Text(f"  {ln[:200]}", style=MUTED))
+        self.console.print(Rail(Group(*rows), color, "│"))
 
     def show_result(self, n: int = 1) -> None:
         """/expand [n]: print the full output of the n-th most recent tool call."""
@@ -447,20 +565,22 @@ class TUI:
             return
         r = list(self.results)[-n]
         if r["diff"]:
-            body: Any = render_diff(r["diff"], 1000)[0]
+            body: Any = render_diff(r["diff"], 1000, width=min(self.console.width, 120) - 6)[0]
         else:
             text = (r["error"] or "") + ("\n" if r["error"] and r["output"] else "") + (r["output"] or "")
             lines = text.splitlines()
             body = Syntax("\n".join(lines[:300]) + (f"\n… +{len(lines) - 300} lines" if len(lines) > 300 else ""), "text", word_wrap=True, theme="monokai")
-        self.console.print(Panel(body, title=Text(r["label"], style="bold"), title_align="left", border_style="border", box=box.ROUNDED))
+        self.console.print(Panel(body, title=Text(f" {r['label']} ", style=f"bold {FG}"), title_align="left", border_style="border", box=box.ROUNDED))
 
     def turn_summary(self, elapsed: float, usage: dict | None, report: dict | None) -> None:
-        bits = [f"{elapsed:.0f}s"]
+        out = Text.assemble(("  ✦ ", ACCENT), (f"{elapsed:.0f}s", f"bold {FG}"))
         if usage and usage.get("calls"):
-            bits += [f"{usage['calls']} calls", f"{usage['prompt_tokens'] / 1000:.1f}k in ({usage['cache_hit_pct']:.0f}% cached)", f"{usage['completion_tokens'] / 1000:.1f}k out"]
+            out.append(f"  ·  {usage['calls']} calls  ·  {usage['prompt_tokens'] / 1000:.1f}k in ", style=MUTED)
+            out.append(f"({usage['cache_hit_pct']:.0f}% cached)", style=MINT if usage["cache_hit_pct"] >= 50 else AMBER)
+            out.append(f"  ·  {usage['completion_tokens'] / 1000:.1f}k out", style=MUTED)
             if usage.get("est_cost_usd") is not None:
-                bits.append(f"${usage['est_cost_usd']}")
-        self.console.print(Text("  ✻ " + " · ".join(bits), style="dim"))
+                out.append(f"  ·  ${usage['est_cost_usd']}", style=AMBER)
+        self.console.print(out)
 
     # -- approval ------------------------------------------------------
     async def confirm(self, confirmation: ToolConfirmation) -> Decision:
@@ -469,11 +589,11 @@ class TUI:
         self.pause()
         try:
             if confirmation.command:
-                parts: list[Any] = [Text(f"$ {confirmation.command}", style="warning")]
+                parts: list[Any] = [Syntax(confirmation.command, "bash", theme="dracula", background_color="default", word_wrap=True)]
                 title, q = "Run command", "Do you want to run this command?"
                 always = "Yes, and don't ask again for this kind of command this session"
             elif confirmation.diff:
-                parts = [render_diff(confirmation.diff.to_diff(), 40)[0]]
+                parts = [render_diff(confirmation.diff.to_diff(), 40, confirmation.diff.path, min(self.console.width, 120) - 8)[0]]
                 title, q = confirmation.description, "Do you want to make this edit?"
                 always = "Yes, and don't ask again for edits this session"
             else:
@@ -481,8 +601,9 @@ class TUI:
                 title, q, always = confirmation.tool_name, "Do you want to proceed?", "Yes, and don't ask again this session"
             self._print_header(confirmation.tool_name, confirmation.params)
             self._header_done = True
-            self.console.print(Panel(Group(*parts), title=Text(title.split("\n")[0], style="bold"), title_align="left",
-                                     border_style=ACCENT, box=box.ROUNDED, padding=(0, 1)))
+            danger = AMBER if confirmation.command else LAVENDER
+            self.console.print(Panel(Group(*parts), title=Text(f" {title.split(chr(10))[0]} ", style=f"bold {danger}"), title_align="left",
+                                     border_style=danger, box=box.ROUNDED, padding=(0, 1)))
             choice = await ask_choice(self.console, q, ["Yes", always, "No, and tell me what to do differently"])
             if choice == 0:
                 return Decision(True)
@@ -500,7 +621,7 @@ class TUI:
         from ui.prompt import COMMANDS
 
         rows = "\n".join(f"- `{c}`  {d}" for c, d in COMMANDS.items())
-        self.console.print(Markdown(
+        self.console.print(MewMarkdown(
             "## Commands\n" + rows
             + "\n\n## Input\n- `@path` attaches a file (Tab completes)\n"
             "- `!cmd` runs a shell command and shows the output to the model; `!!cmd` runs it privately\n"

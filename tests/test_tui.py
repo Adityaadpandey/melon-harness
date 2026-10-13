@@ -60,9 +60,9 @@ def test_transcript_shape(tmp_path):
     tui.tool_call_start("c4", "shell", "shell", {"command": "false"})
     tui.tool_call_complete("c4", "shell", "shell", False, "boom", "Exit code 1", {}, None, False, 1)
     out = con.export_text()
-    assert re.search(r"Search\(needle\)\n\s+⎿\s+Found 1 match.*\n.*x:1:needle\n\n⏺ Read\(b.py\)\n\s+⎿\s+Read 5 lines", out)
-    assert "⏺ Update(a.py)" in out
-    assert "Updated a.py with 2 additions and 1 removal" in out
+    assert re.search(r"search\s+needle\n.*✓ Found 1 match.*\n.*x:1:needle\n\n.*read\s+b.py\n.*✓ Read 5 lines", out)
+    assert re.search(r"update\s+a.py", out)
+    assert re.search(r"updated a.py\s+\+2 −1", out)
     assert re.search(r"2 \+ y = 20", out) and re.search(r"2 - y = 2", out)
     assert "✗ Exit code 1" in out
 
@@ -149,7 +149,7 @@ def test_assistant_text_is_committed_as_rendered_markdown_blocks_in_order(tmp_pa
     out = con.export_text()
     assert out.index("Title") < out.index("First paragraph.") < out.index("item a") < out.index("print(1)") < out.index("last")
     assert "# Title" not in out and "```" not in out  # markdown was rendered, not echoed raw
-    assert out.count("⏺") == 1  # one bullet for the whole message, not one per block
+    assert out.count("◆") == 1  # one marker for the whole message, not one per block
 
 
 def test_text_after_a_tool_call_starts_a_new_message(tmp_path):
@@ -161,8 +161,8 @@ def test_text_after_a_tool_call_starts_a_new_message(tmp_path):
     tui.assistant_delta("Found it.")
     tui.end_turn()
     out = con.export_text()
-    assert out.index("Let me look.") < out.index("Read(a.py)") < out.index("Found it.")
-    assert out.count("⏺") == 3
+    assert out.index("Let me look.") < re.search(r"read\s+a.py", out).start() < out.index("Found it.")
+    assert out.count("◆") == 2  # two messages around the tool call
 
 
 def test_live_state_todos_agents_and_phase(tmp_path):
@@ -173,8 +173,8 @@ def test_live_state_todos_agents_and_phase(tmp_path):
     tui.agent_progress("c2", {"kind": "start", "agent": "debugger", "goal": "why"})
     tui.start_turn("Thinking")
     text = "\n".join(r.plain for r in tui._renderable().renderables if hasattr(r, "plain"))
-    assert "investigator · Search(needle)" in text and "debugger · starting" in text
-    assert "☒ write tests" in text and "☐ fix bug" in text and "Thinking…" in text
+    assert "investigator  Search(needle)" in text and "debugger  starting" in text
+    assert "◼ write tests" in text and "◻ fix bug" in text and "Thinking…" in text
     tui.agent_progress("c1", {"kind": "done", "agent": "investigator"})
     assert "c1" not in tui.agents and "c2" in tui.agents
     tui.end_turn()
@@ -198,7 +198,7 @@ def test_context_bar_and_summary(tmp_path):
     assert context_bar(0) == "▱" * 10 + " 0%" and context_bar(50) == "▰" * 5 + "▱" * 5 + " 50%" and context_bar(100).startswith("▰" * 10)
     tui, con = make(tmp_path)
     tui.turn_summary(12.4, {"calls": 3, "prompt_tokens": 4100, "completion_tokens": 300, "cache_hit_pct": 78.0, "est_cost_usd": None}, None)
-    assert "12s · 3 calls · 4.1k in (78% cached) · 0.3k out" in con.export_text()
+    assert "12s  ·  3 calls  ·  4.1k in (78% cached)  ·  0.3k out" in con.export_text()
 
 
 async def test_input_box_enter_submits_alt_enter_adds_a_line_and_history_walks_back(tmp_path):
