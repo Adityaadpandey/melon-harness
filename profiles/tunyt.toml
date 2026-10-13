@@ -4,29 +4,32 @@
 name = "tunyt"
 version = "1"
 match = ["tunyt"]
+auto_review = true
+max_repairs = 2
+max_total_tokens = 1500000
 
 instructions = """
-# Tunyt profile (v1)
+# Tunyt profile (v2)
 
-The checked-out code is the source of truth. Docs and your memory of this repo can be stale.
+The checked-out code is the source of truth; docs and memory can be stale. Playbooks (see Skills) hold the
+repo's rules. The relevant ones are attached to your request: follow them, and pull exact sections of the
+full docs with `use_skill(name, section=...)`.
 
-Before changing anything:
-1. Name the app/package you are touching (apps/server, apps/web, apps/crm, packages/*) and read its nested AGENTS.md.
-2. Trace the affected request path: route -> controller -> service -> repository -> cache/queue. Read callers of anything whose signature you might change.
-3. Search for an existing implementation of the same pattern and copy it (docs/skills/tunyt-performance.md lists proven exemplars). Do not invent a new abstraction.
-4. For list/query/cache/worker work read docs/skills/tunyt-performance.md first: bounded findMany, batch instead of loop, cache-aside with invalidation at every writer, no external API call inside a $transaction, indexes for new filters.
+Workflow:
+1. Locate before reading. `graphify-out/GRAPH_REPORT.md` is huge: `grep` it for your keywords instead of reading it, then read only the files it points to. For anything touching more than 2-3 files, delegate the mapping to `subagent_investigator`.
+2. Bug or failure: delegate to `subagent_debugger` first (lane, repro, root cause), then make the smallest fix yourself. Do not edit before a repro or root cause exists.
+3. Search for an existing implementation of the same pattern and copy it; read callers before changing a signature.
+4. Make the smallest coherent change. No new dependencies, no new abstractions, keep pnpm + existing error/observability patterns.
+5. The harness runs the per-app checks and an independent reviewer on your real diff. Fix findings that are real; if one is wrong, say why in a sentence.
 
-Hard rules (also enforced by the harness; attempts are blocked):
-- Never open, grep or summarize .env*, *.pem, *.key or service-account files. Read src/config to learn which variables exist.
-- Never run SQL or anything that connects to a database (psql, prisma migrate/db/studio, apps/server/scripts, ad-hoc ts-node/tsx using Prisma). Write the query, say where to run it (local/prod), whether it is read or write, and what output to paste back.
-- Never print secrets.
-- Tests are Playwright only. Never add vitest or jest.
+Hard rules (enforced by the harness; attempts are blocked and wasted):
+- Never open/grep/summarize `.env*`, `*.pem`, `*.key`, service-account files. Read `src/config` to learn variable names.
+- Never run SQL or anything that connects to a database (psql, prisma migrate/db/studio, `apps/server/scripts`, ad-hoc ts-node/tsx using Prisma). Hand the user the query: where (local/prod), read or write, what to paste back.
+- Never print secrets. Tests are Playwright only (no vitest/jest).
+- UI Guard: ask before any visible change in web/crm; non-interactive runs do the non-visual part only and list what was not done.
+- Never commit, stage or push; say the work is ready and ask.
 
-Sensitive flows (auth, tenant isolation, payments, webhooks, payouts): state the invariant you rely on (who may do this, what must never double-apply), check idempotency/retry behaviour, and make sure ownership checks are not weakened.
-
-Make the smallest coherent change. Do not add dependencies. Keep pnpm and the existing error-handling/observability patterns. Do not claim a performance gain you did not measure; if you cannot measure, say "estimated" and why.
-
-When done, report: files changed, checks run and their results, anything you could not verify.
+Report: files changed, checks run with results, what you could not verify, anything for the user to run. Say "estimated" for any performance claim you did not measure.
 """
 
 forbidden_paths = [".env", ".env.*", "*.pem", "*.key", "*service-account*.json", "*serviceaccount*.json"]
@@ -56,4 +59,34 @@ cwd = "apps/crm"
 commands = ["pnpm typecheck", "npx biome check --no-errors-on-unmatched {files}"]
 
 [routing]
-review = ["claude-sonnet-5-5", "deepseek/deepseek-v4-pro"]
+# measured in bench/results: deepseek-v4-flash passed every fixture task at low latency
+explore   = ["deepseek/deepseek-v4-flash", "deepseek/deepseek-v4-pro"]
+summarize = ["deepseek/deepseek-v4-flash"]
+debug     = ["claude-sonnet-5-5", "deepseek/deepseek-v4-pro"]
+review    = ["deepseek/deepseek-v4-pro", "claude-sonnet-5-5"]  # the router puts non-author models first
+
+[[subagents]]
+name = "investigator"
+description = "Read-only codebase mapper for Tunyt. Traces a feature/request path (route -> controller -> service -> repository -> cache/queue), finds callers and existing exemplars, and reports file:line. Use before changing anything that spans more than 2-3 files."
+role = "explore"
+max_turns = 15
+timeout_seconds = 300
+allowed_tools = ["read_file", "grep", "glob", "list_dir", "use_skill"]
+goal_prompt = """You map code for an engineer who is about to change it. Read-only.
+- graphify-out/GRAPH_REPORT.md is ~190KB: NEVER read it whole. grep it for your keywords, then read only the files it names.
+- Trace the real path from entry point to storage; list callers of anything that might change; find an existing implementation of the same pattern (docs/skills/tunyt-performance.md names exemplars).
+- Answer in under 25 lines: the path with file:line at each hop, callers, the exemplar to copy, and anything surprising (cache keys, queues, transactions, tenant scoping). State what you did not check."""
+
+[[subagents]]
+name = "debugger"
+description = "Systematic debugger for Tunyt failures (500s, failing specs, stuck jobs, wrong amounts, stale data). Classifies the lane, reproduces, tests one hypothesis at a time and returns root cause with evidence plus a minimal fix proposal. Does not edit files."
+role = "debug"
+max_turns = 20
+timeout_seconds = 600
+allowed_tools = ["read_file", "grep", "glob", "list_dir", "shell", "use_skill"]
+goal_prompt = """You find root causes; you do not edit files.
+1. use_skill tunyt-debugging, classify the lane, then read that lane's section with use_skill(section=...).
+2. Reproduce first (a failing spec, a tsc error, a unit-level command, or a code-path argument if it cannot be run). One hypothesis at a time, each tested with one command or one read.
+3. You may not read .env* or touch any database; for data you need, write the query for the user (where: local/prod, read/write, what to paste back).
+4. Never propose a retry, timeout/TTL bump, swallowed error or cache flush as the fix.
+Reply: LANE, REPRO (command + output), ROOT CAUSE (one sentence + file:line evidence), MINIMAL FIX (what to change where), RISKS/callers affected, and USER ACTIONS (queries/commands they must run). Say plainly if you could not reproduce."""

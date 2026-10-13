@@ -44,7 +44,12 @@ _ALLOWED = {
         TaskStatus.VERIFICATION_FAILED,
         TaskStatus.FAILED,
     },
-    TaskStatus.REPAIRING: {TaskStatus.VERIFYING, TaskStatus.FAILED},
+    TaskStatus.REPAIRING: {
+        TaskStatus.VERIFYING,
+        TaskStatus.UNVERIFIED,  # review-triggered repair on a run with no checks
+        TaskStatus.DONE_NO_CHANGES,
+        TaskStatus.FAILED,
+    },
 }
 
 

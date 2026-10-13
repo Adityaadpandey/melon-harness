@@ -137,7 +137,11 @@ class Router:
             extra = self.config.routing.get("default", [])
             return [primary] + [m for m in extra if m != primary]
         configured = self.config.routing.get(role)
-        return list(configured) if configured else self.chain("default")
+        chain = list(configured) if configured else self.chain("default")
+        if role == "review":
+            # a reviewer that is the author's own model shares its blind spots
+            chain = [m for m in chain if m != primary] + [m for m in chain if m == primary]
+        return chain
 
     def candidates(
         self, role: str = "default", *, need_tools: bool = False, min_context: int = 0

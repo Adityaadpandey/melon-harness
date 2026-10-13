@@ -56,12 +56,13 @@ INLINE_LIMIT = 6000
 PROFILES_DIR = Path(__file__).resolve().parent.parent / "profiles"
 
 
-def _outline(text: str) -> str:
-    return "\n".join(
+def _outline(text: str, max_lines: int = 45) -> str:
+    rows = [
         f"  line {i}: {line.strip()}"
         for i, line in enumerate(text.splitlines(), 1)
-        if line.startswith("#")
-    )
+        if line.startswith("#") and not line.startswith("####")
+    ]
+    return "\n".join(rows[:max_lines])
 
 
 def _instructions_for(cwd: Path) -> str | None:
@@ -124,8 +125,9 @@ def _merge_dicts(base: dict[str, Any], override: dict[str, Any]) -> dict[str, An
 
 def load_config(cwd: Path | None) -> Config:
     cwd = cwd or Path.cwd()
-    # repo-local .env wins, then the harness's own (where API_KEY normally lives)
-    load_dotenv(cwd / ".env")
+    # Only the harness's own .env (where API_KEY lives). The target repo's .env
+    # is never opened: it holds that project's secrets, and loading it would
+    # also hand them to every shell command the agent runs.
     load_dotenv(Path(__file__).resolve().parent.parent / ".env")
 
     system_path = get_system_config_path()

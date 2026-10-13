@@ -149,7 +149,7 @@ Do NOT modify any files.""",
 
 def get_default_subagent_definitions(config: Config | None = None) -> list[SubagentDefinition]:
     """Built-ins, overridden/extended by subagents declared in config/profile."""
+    if config and config.subagents:
+        return [SubagentDefinition(**spec.model_dump()) for spec in config.subagents]
     defs = {d.name: d for d in (CODEBASE_INVESTIGATOR, CODE_REVIEWER)}
-    for spec in (config.subagents if config else []):
-        defs[spec.name] = SubagentDefinition(**spec.model_dump())
     return list(defs.values())
