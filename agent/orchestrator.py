@@ -123,9 +123,12 @@ class Orchestrator:
                 f"YOUR task: {node.goal}{owned}\n"
                 "Other workers handle the rest in separate checkouts; do only your task, keep the change small."
             )
+            last_text = ""
             try:
                 async with Agent(cfg, self.cb) as agent:
                     async for ev in agent.run(prompt):
+                        if ev.type == AgentEventType.TEXT_COMPLETE:
+                            last_text = ev.data.get("content") or ""
                         if ev.type == AgentEventType.AGENT_END:
                             node.task_status = (ev.data.get("report") or {}).get("status")
                 node.status = "failed" if node.task_status in ("failed", "verification_failed") else "done"
@@ -140,7 +143,8 @@ class Orchestrator:
             if node.status == "done" and not node.changed:
                 # a worker that "finished" without touching anything almost
                 # always printed code instead of writing it; never count that as success
-                node.status, node.note = "failed", "worker made no changes"
+                node.status = "failed"
+                node.note = f"worker made no changes; it said: {last_text[:200]!r}"
             node.seconds = round(time.perf_counter() - started, 2)
             self._emit("worker_done", node=node.id, status=node.status, changed=node.changed, sec=node.seconds)
 

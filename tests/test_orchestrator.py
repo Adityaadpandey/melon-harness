@@ -165,4 +165,4 @@ async def test_failed_dependency_skips_dependents(repo):
 async def test_worker_that_changes_nothing_is_not_a_success(repo):
     FakeAgent.script = {}  # agent "finishes" without editing anything
     res = await orch.Orchestrator(cfg(repo)).run("r", [orch.Node("a", "T")], apply=True)
-    assert res["status"] == "partial" and res["tasks"][0]["note"] == "worker made no changes"
+    assert res["status"] == "partial" and res["tasks"][0]["note"] .startswith("worker made no changes")

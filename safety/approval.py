@@ -97,7 +97,7 @@ class ApprovalManager:
         confirmation_callback: Callable[[ToolConfirmation], bool] | None = None,
     ) -> None:
         self.approval_policy = approval_policy
-        self.cwd = cwd
+        self.cwd = Path(cwd).resolve()  # symlinked tmp dirs (/var -> /private/var) must still match
         self.confirmation_callback = confirmation_callback
 
     def _assess_command_safety(self, command: str) -> ApprovalDecision:
@@ -137,7 +137,7 @@ class ApprovalManager:
 
         for path in context.affected_paths:
             path_decision = ApprovalDecision.NEEDS_CONFIRMATION
-            if path.is_relative_to(self.cwd):
+            if Path(path).resolve().is_relative_to(self.cwd):
                 path_decision = ApprovalDecision.APPROVED
             else:
                 return path_decision

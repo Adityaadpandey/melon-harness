@@ -91,3 +91,15 @@ def test_tunyt_profile_is_selected_by_path_and_project_config_wins(tmp_path):
     other = tmp_path / "somewhere"
     other.mkdir()
     assert load_config(other).profile is None
+
+
+async def test_symlinked_cwd_does_not_make_inside_edits_look_outside(tmp_path):
+    from safety.approval import ApprovalContext, ApprovalDecision, ApprovalManager
+
+    real = tmp_path / "real"
+    real.mkdir()
+    link = tmp_path / "link"
+    link.symlink_to(real)
+    m = ApprovalManager(ApprovalPolicy.AUTO, link)
+    ctx = ApprovalContext("write_file", {}, True, [real / "a.py"])
+    assert await m.check_approval(ctx) == ApprovalDecision.APPROVED
