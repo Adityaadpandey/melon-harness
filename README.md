@@ -148,3 +148,32 @@ System prompt ~0.7k tokens (was ~3k). Tool output is capped (`tool_output_max_ch
 deduplicated, Claude calls cache both the system prompt and the conversation prefix, `max_total_tokens` stops runaway runs, and the
 result line shows tokens, cache hit % and (if you fill `[pricing."model-id"]` with input/output/cached_input per 1M tokens) an
 estimated cost. Plan-wide usage limits (HTTP 429 "usage limit") are not retried and not failed over.
+
+## Interactive UI
+
+`python main.py` opens a Claude Code style session: `⏺ Tool(args)` lines with a `⎿` result under each, compact numbered diffs
+for edits, a spinner with the running tool, and a footer showing model, context %, tokens, cache hit rate, approval mode.
+
+- **Input:** history (Up / Ctrl+R), `/` command completion, `@path` file completion and attachment, `!cmd` runs a command and
+  shows the output to the model (`!!cmd` keeps it private), Alt+Enter for a newline, **Ctrl+C interrupts the agent** (not the app).
+- **Commands:** `/help /clear /compact /cost /model /approval /skills /expand /config /stats /tools /mcp /save /sessions /resume /exit`.
+- **Approvals:** edits ask by default with a diff preview and three choices: yes / yes and don't ask again this session /
+  no, and tell me what to do differently (your reply goes to the model). Modes: `on-request` (default), `auto-edit`
+  (edits pre-approved, commands still ask), `auto`, `never`, `yolo`. Non-interactive runs can't ask, so pass `--approval auto-edit`.
+
+## Search and edits
+
+`grep` and `glob` respect `.gitignore`, find dotfiles, never touch secrets (`.env*`, keys), and support `glob`, `context`, `limit`,
+`literal` and `files_only`; smart-case by default. `edit` takes several replacements in one call (`edits`), tolerates trailing
+whitespace and smart-quote differences, keeps CRLF files CRLF, and reports every location when a match is not unique. What you
+approve is exactly what gets written (preview and write share one planner).
+
+## Context and cost
+
+Compaction keeps the most recent ~20k tokens verbatim and folds only older messages into a running summary (plus a deterministic
+list of files read/modified). `/cost` and the result line report cache misses with a reason (idle gap, model changed, prefix changed).
+
+## Project trust
+
+A repo's `.ai-agent/config.toml` cannot enable `hooks`, `mcp_servers`, `verify_commands`, `verify_rules`, `approval` or
+`shell_environment` until you trust that exact file (interactive prompt, or `--trust`). Editing the file revokes the trust.
