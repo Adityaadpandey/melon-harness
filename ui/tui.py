@@ -398,6 +398,7 @@ class TUI:
         self.read_files: dict[str, int] = {}
         self.written: dict[str, tuple[int, int, bool]] = {}
         self.commands: list[tuple[str, bool]] = []
+        self.touched: dict[str, float] = {}  # "kind:name" -> when it last changed, so the panel can glow
 
     # -- live region -----------------------------------------------------
     def _live_ok(self) -> bool:
@@ -583,18 +584,22 @@ class TUI:
             cmd = str(args.get("command", "")).strip()
             if name == "shell" and cmd and cmd.split()[0] not in QUIET_COMMANDS:
                 self.commands.append((cmd, False))
+                self.touched[f"cmd:{len(self.commands) - 1}"] = time.monotonic()
             return
         path = display_path_rel_to_cwd(md.get("path", args.get("path", "")), self.cwd) if (md.get("path") or args.get("path")) else ""
         if name == "read_file" and path:
             self.read_files[path] = self.read_files.get(path, 0) + 1
+            self.touched["read:" + path] = time.monotonic()
         elif name in {"edit", "write_file"} and path:
             _, adds, dels = parse_unified_diff(diff) if diff else ([], 0, 0)
             old = self.written.get(path, (0, 0, False))
             self.written[path] = (old[0] + adds, old[1] + dels, old[2] or bool(md.get("is_new_file")))
+            self.touched["write:" + path] = time.monotonic()
         elif name == "shell":
             cmd = str(args.get("command", "")).strip()
             if cmd and cmd.split()[0] not in QUIET_COMMANDS:
                 self.commands.append((cmd, True))
+                self.touched[f"cmd:{len(self.commands) - 1}"] = time.monotonic()
 
     def show_result(self, n: int = 1) -> None:
         """/expand [n]: print the full output of the n-th most recent tool call."""

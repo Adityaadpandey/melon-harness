@@ -6,7 +6,9 @@ console writes into a Sink instead of the terminal, and the transcript pane show
 from __future__ import annotations
 
 import io
+import math
 import os
+import time
 from typing import Any
 
 from prompt_toolkit.application import get_app
@@ -20,7 +22,7 @@ from prompt_toolkit.layout.dimension import Dimension
 from prompt_toolkit.mouse_events import MouseEventType
 from rich.console import Console
 
-from ui.tui import ACCENT, AGENT_THEME, AMBER, CORAL, FG, LAVENDER, MINT, MUTED, SKY, TUI, redirect_console
+from ui.tui import _mix, ACCENT, AGENT_THEME, AMBER, CORAL, FG, LAVENDER, MINT, MUTED, SKY, TUI, redirect_console
 
 SIDE_WIDTH = 38
 MIN_COLUMNS = 100  # narrower terminals get the conversation only
@@ -161,12 +163,21 @@ class Screen:
         last = self._formatted()[2]
         return Point(0, last if self.anchor is None else min(self.anchor, last))
 
+    def _face(self) -> str:
+        """The cat blinks when idle and widens its eyes while the agent is working."""
+        now = time.monotonic()
+        if self.tui._turn_active:
+            return ("O.O", "o.o", "O.O", "o.O", "O.o")[int(now * 3) % 5]
+        return "-.-" if int(now * 2) % 9 == 0 else "o.o"
+
     def _header(self):
         cols = _size()[0]
-        left = f"  ✦ mew  ·  {self._title()}"
+        left = f"  =^{self._face()}^=  mew  ·  {self._title()}"
         right = "scrolled back · PageDown / ctrl+end to return  " if self.anchor is not None else "PageUp/Down scroll  "
         pad = " " * max(1, cols - len(left) - len(right))
-        return [(f"bold fg:{ACCENT}", "  ✦ mew"), (f"fg:{MUTED}", f"  ·  {self._title()}{pad}"), (f"fg:{AMBER}" if self.anchor is not None else f"fg:#4a4f73", right)]
+        busy = self.tui._turn_active
+        return [(f"bold fg:{ACCENT}", f"  =^{self._face()}^="), (f"bold fg:{LAVENDER if busy else FG}", "  mew"),
+                (f"fg:{MUTED}", f"  ·  {self._title()}{pad}"), (f"fg:{AMBER}" if self.anchor is not None else "fg:#4a4f73", right)]
 
     # -- panes ---------------------------------------------------------
     def _transcript(self):
@@ -181,9 +192,20 @@ class Screen:
         c.width = self._main_width(_size()[0])
         c.file = io.StringIO()
         c.print(self.tui._renderable())
-        out = c.file.getvalue().rstrip("\n")
+        out = c.file.getvalue().rstrip("\n") + "\n" + self._scanner(c.width)
         self._status_height = out.count("\n") + 1
         return ANSI(out)
+
+    def _scanner(self, width: int) -> str:
+        """A thin light that sweeps back and forth above the input while the agent works."""
+        w = max(10, min(width, 120))
+        pos = (math.sin(time.monotonic() * 2.2) + 1) / 2 * (w - 1)
+        cells = []
+        for i in range(w):
+            glow = max(0.0, 1 - abs(i - pos) / 7)
+            r, g, b = (int(_mix("#2a2e48", ACCENT, glow)[k:k + 2], 16) for k in (1, 3, 5))
+            cells.append(f"\x1b[38;2;{r};{g};{b}m{'━' if glow > 0.05 else '─'}")
+        return "".join(cells) + "\x1b[0m"
 
     def _section(self, kind: str):
         t = self.tui
@@ -208,19 +230,26 @@ class Screen:
             out.append((f"fg:{MUTED}", f"  ⋯ {hidden} earlier\n"))
         for i, it in enumerate(shown):
             nl = "\n" if i < len(shown) - 1 else ""
+            key = {"read": "read:" + str(it[0]), "write": "write:" + str(it[0]), "cmd": f"cmd:{items.index(it)}"}[kind]
+            fresh = time.monotonic() - t.touched.get(key, -99) < 2.0  # glows for a moment after the agent touches it
+            glow = f" bg:#2a2140" if fresh else ""
             if kind == "read":
                 path, n = it
                 tail = f" ×{n}" if n > 1 else ""
                 head, _, name = _clip(path, width - 2 - len(tail)).rpartition("/")
-                out += [(f"fg:{MUTED}", "  " + (head + "/" if head else "")), (f"bold fg:{FG}", name), (f"fg:{MUTED}", tail + nl)]
+                out += [(f"fg:{ACCENT}{glow}" if fresh else f"fg:{MUTED}", " ●" if fresh else "  "), (f"fg:{MUTED}{glow}", (head + "/" if head else "")), (f"bold fg:{FG}{glow}", name), (f"fg:{MUTED}", tail + nl)]
             elif kind == "write":
                 path, (adds, dels, new) = it
-                stat = ("new " if new else "") + (f"+{adds}" if adds else "") + (f" −{dels}" if dels else "")
-                head, _, name = _clip(path, width - 2 - len(stat) - 1).rpartition("/")
-                out += [(f"fg:{MUTED}", "  " + (head + "/" if head else "")), (f"bold fg:{FG}", name), (f"fg:{MINT}", " " + stat + nl)]
+                total = max(1, adds + dels)
+                cells = min(8, max(1, round(math.log2(total + 1) * 1.4)))  # bar length grows slowly with change size
+                a_c = round(cells * adds / total) if dels else cells
+                bar = [(f"fg:{MINT}{glow}", "█" * a_c), (f"fg:{CORAL}{glow}", "█" * (cells - a_c))]
+                stat = " new" if new else ""
+                head, _, name = _clip(path, width - 2 - cells - len(stat) - 2).rpartition("/")
+                out += [(f"fg:{ACCENT}{glow}" if fresh else f"fg:{MUTED}", " ●" if fresh else "  "), (f"fg:{MUTED}{glow}", (head + "/" if head else "")), (f"bold fg:{FG}{glow}", name), (f"fg:{AMBER}", stat + " "), *bar, ("", nl)]
             else:
                 cmd, ok = it
-                out += [(f"fg:{MINT if ok else CORAL} bold", " ✓ " if ok else " ✗ "), (f"fg:{FG}", _clip(cmd.replace("\n", " "), width - 3) + nl)]
+                out += [(f"fg:{MINT if ok else CORAL} bold{glow}", " ✓ " if ok else " ✗ "), (f"fg:{FG}{glow}", _clip(cmd.replace("\n", " "), width - 3) + nl)]
         return out
 
     def stop(self) -> None:
