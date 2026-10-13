@@ -27,14 +27,14 @@ def cache_waste(events: list[dict], pricing: dict) -> dict:
         if prev and model in reported:
             shortfall = prev[0] - cached
             if shortfall > NOISE_FLOOR:
-                idle = (e["t"] - e.get("sec", 0)) - prev[2]
+                idle = (e.get("t", 0) - e.get("sec", 0)) - prev[2]
                 why = "model changed" if prev[1] != model else ("idle > 5 min" if idle > CACHE_TTL_SEC else "prefix changed")
                 misses.append({"tokens": shortfall, "why": why})
                 tokens += shortfall
                 price = pricing.get(model)
                 if price and price.cached_input is not None:
                     cost += shortfall * (price.input - price.cached_input) / 1_000_000
-        prev = (prompt, model, e["t"])
+        prev = (prompt, model, e.get("t", 0))
     return {"missed_tokens": tokens, "misses": len(misses), "reasons": sorted({m["why"] for m in misses}),
             "extra_cost_usd": round(cost, 4) if cost else None}
 
