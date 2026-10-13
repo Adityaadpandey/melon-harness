@@ -6,6 +6,8 @@ import sys
 from tools.base import Tool, ToolConfirmation, ToolInvocation, ToolKind, ToolResult
 from pydantic import BaseModel, Field
 import fnmatch
+import tempfile
+import time
 
 BLOCKED_COMMANDS = {
     "rm -rf /",
@@ -28,12 +30,57 @@ BLOCKED_COMMANDS = {
 }
 
 
+class BackgroundJob:
+    """A command running detached, e.g. `pnpm build`. Output goes to a log file the model can tail."""
+
+    def __init__(self, job_id: int, command: str, log: Path, process):
+        self.id, self.command, self.log, self.process = job_id, command, log, process
+        self.started = time.monotonic()
+        self.announced = False
+
+    @property
+    def done(self) -> bool:
+        return self.process.returncode is not None
+
+    def tail(self, lines: int = 15) -> str:
+        text = self.log.read_text(errors="replace") if self.log.exists() else ""
+        return "\n".join(text.rstrip().splitlines()[-lines:])
+
+
+JOBS: dict[int, BackgroundJob] = {}
+
+
+def finished_jobs() -> list[BackgroundJob]:
+    """Jobs that ended since the last call, each returned once."""
+    out = [j for j in JOBS.values() if j.done and not j.announced]
+    for j in out:
+        j.announced = True
+    return out
+
+
+def kill_jobs() -> None:
+    for j in JOBS.values():
+        if not j.done and sys.platform != "win32":
+            try:
+                os.killpg(os.getpgid(j.process.pid), signal.SIGKILL)
+            except ProcessLookupError:
+                pass
+
+
 class ShellParams(BaseModel):
     command: str = Field(..., description="The shell command to execute")
     timeout: int = Field(
         120, ge=1, le=600, description="Timeout in seconds (default: 120)"
     )
     cwd: str | None = Field(None, description="Working directory for the command")
+    background: bool = Field(
+        False,
+        description=(
+            "Run detached and return at once with a log path. Use for anything slow "
+            "(builds, installs, dev servers, long test suites) so you can keep working; "
+            "you are told when it finishes. Timeout does not apply."
+        ),
+    )
 
 
 class ShellTool(Tool):
@@ -94,6 +141,28 @@ class ShellTool(Tool):
             shell_cmd = ["/bin/bash", "-c", params.command]
 
         from safety.sandbox import wrap
+
+        if params.background:
+            job_id = len(JOBS) + 1
+            log = Path(tempfile.gettempdir()) / f"mew-job-{os.getpid()}-{job_id}.log"
+            with open(log, "wb") as out:
+                process = await asyncio.create_subprocess_exec(
+                    *wrap(shell_cmd, self.config),
+                    stdout=out,
+                    stderr=asyncio.subprocess.STDOUT,
+                    stdin=asyncio.subprocess.DEVNULL,
+                    cwd=cwd,
+                    env=env,
+                    start_new_session=True,
+                )
+            JOBS[job_id] = BackgroundJob(job_id, params.command, log, process)
+            # reap it so returncode gets set even if nobody awaits the job
+            asyncio.get_running_loop().create_task(process.wait())
+            return ToolResult.success_result(
+                f"Started background job {job_id}: {params.command}\n"
+                f"Output: {log} (read it with `tail`). Stop it with `kill -- -{process.pid}`. "
+                "You will be told when it finishes; keep working on other things meanwhile."
+            )
 
         process = await asyncio.create_subprocess_exec(
             *wrap(shell_cmd, self.config),
