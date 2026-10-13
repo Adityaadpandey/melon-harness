@@ -26,6 +26,7 @@ console = get_console()
 class CLI:
     def __init__(self, config: Config):
         self.agent: Agent | None = None
+        self.resume_id: str | None = None  # --resume / --continue: picked up when the interactive session starts
         self.config = config
         self.tui = TUI(config, console)
         self.last_report: dict | None = None
@@ -148,6 +149,11 @@ class CLI:
             )
             self.inputs = inputs
             inputs.is_busy = lambda: self.tui._turn_active
+            if self.resume_id:
+                if await self._resume(self.resume_id):
+                    console.print(f"[success]Resumed {self.resume_id} ({self.agent.session.turn_count} turns). Carry on where you left off.[/success]")
+                else:
+                    console.print(f"[error]No session with id {self.resume_id}; starting a new one.[/error]")
             if screen:
                 import ui.prompt as prompt_mod
 
@@ -185,6 +191,11 @@ class CLI:
             screen.stop()
             console.file = sys.__stdout__
         console.print("\n[dim]Goodbye![/dim]")
+        if self.agent and self.agent.session.turn_count:
+            self._autosave()
+            sid = self.agent.session.session_id
+            console.print(f"[dim]Resume this session:  [/dim][bold]mew --resume {sid}[/bold]")
+            console.print("[dim]Or the newest one in this folder:  [/dim][bold]mew --continue[/bold]")
 
     async def _run_turn(self, text: str) -> None:
         """Run one request as a task so Ctrl+C cancels the agent, not the app."""
@@ -204,6 +215,7 @@ class CLI:
             console.print("\n[warning]Interrupted[/warning]")
             self.agent.session.context_manager.repair_orphans()  # providers reject unanswered tool calls
         finally:
+            self._autosave()
             if inputs:
                 inputs.on_interrupt = None
             self.tui.end_turn()
@@ -287,6 +299,47 @@ class CLI:
         tool_kind = None
         tool = self.agent.session.tool_registry.get(tool_name)
         return tool.kind.value if tool else None
+
+    def _snapshot(self) -> SessionSnapshot:
+        sess = self.agent.session
+        msgs = sess.context_manager.get_messages()
+        first = next((m["content"] for m in msgs if m["role"] == "user" and m.get("content")), "")
+        title = first.split("\n\n---\n")[0].strip().replace("\n", " ")[:70]  # drop the playbooks appended to a request
+        return SessionSnapshot(
+            session_id=sess.session_id, created_at=sess.created_at, updated_at=sess.updated_at, turn_count=sess.turn_count,
+            messages=msgs, total_usage=sess.context_manager.total_usage, cwd=str(self.config.cwd), title=title,
+        )
+
+    def _autosave(self) -> None:
+        """Written after every turn, so a crash or closed terminal still leaves something to resume."""
+        try:
+            if self.agent and self.agent.session.turn_count:
+                PersistenceManager().save_session(self._snapshot())
+        except Exception:
+            pass
+
+    async def _resume(self, session_id: str) -> bool:
+        snapshot = PersistenceManager().load_session(session_id)
+        if not snapshot:
+            return False
+        session = Session(config=self.config)
+        await session.initialize()
+        session.session_id, session.created_at = snapshot.session_id, snapshot.created_at
+        session.updated_at, session.turn_count = snapshot.updated_at, snapshot.turn_count
+        session.context_manager.total_usage = snapshot.total_usage
+        cm = session.context_manager
+        for msg in snapshot.messages:
+            if msg.get("role") == "user":
+                cm.add_user_message(msg.get("content", ""))
+            elif msg.get("role") == "assistant":
+                cm.add_assistant_message(msg.get("content", ""), msg.get("tool_calls"))
+            elif msg.get("role") == "tool":
+                cm.add_tool_result(msg.get("tool_call_id", ""), msg.get("content", ""))
+        cm.repair_orphans()  # a session saved mid-turn may end on an unanswered tool call
+        await self.agent.session.client.close()
+        await self.agent.session.mcp_manager.shutdown()
+        self.agent.session = session
+        return True
 
     async def _process_message(self, message: str) -> str | None:
         if not self.agent:
@@ -467,51 +520,16 @@ class CLI:
             sessions = persistence_manager.list_sessions()
             console.print("\n[bold]Saved Sessions[/bold]")
             for s in sessions:
-                console.print(
-                    f"  • {s['session_id']} (turns: {s['turn_count']}, updated: {s['updated_at']})"
-                )
+                here = " [dim](this folder)[/dim]" if s["cwd"] == str(self.config.cwd) else ""
+                console.print(f"  • {s['session_id']}  {s['turn_count']} turns  {s['updated_at'][:16]}{here}\n      [dim]{s['title']}[/dim]")
         elif cmd_name == "/resume":
-            if not cmd_args:
-                console.print(f"[error]Usage: /resume <session_id> [/error]")
+            sid = cmd_args.strip() or PersistenceManager().latest_for(str(self.config.cwd))
+            if not sid:
+                console.print("[dim]No saved session for this folder. /sessions lists all.[/dim]")
+            elif await self._resume(sid):
+                console.print(f"[success]Resumed {sid} ({self.agent.session.turn_count} turns)[/success]")
             else:
-                persistence_manager = PersistenceManager()
-                snapshot = persistence_manager.load_session(cmd_args)
-                if not snapshot:
-                    console.print(f"[error]Session does not exist [/error]")
-                else:
-                    session = Session(
-                        config=self.config,
-                    )
-                    await session.initialize()
-                    session.session_id = snapshot.session_id
-                    session.created_at = snapshot.created_at
-                    session.updated_at = snapshot.updated_at
-                    session.turn_count = snapshot.turn_count
-                    session.context_manager.total_usage = snapshot.total_usage
-
-                    for msg in snapshot.messages:
-                        if msg.get("role") == "system":
-                            continue
-                        elif msg["role"] == "user":
-                            session.context_manager.add_user_message(
-                                msg.get("content", "")
-                            )
-                        elif msg["role"] == "assistant":
-                            session.context_manager.add_assistant_message(
-                                msg.get("content", ""), msg.get("tool_calls")
-                            )
-                        elif msg["role"] == "tool":
-                            session.context_manager.add_tool_result(
-                                msg.get("tool_call_id", ""), msg.get("content", "")
-                            )
-
-                    await self.agent.session.client.close()
-                    await self.agent.session.mcp_manager.shutdown()
-
-                    self.agent.session = session
-                    console.print(
-                        f"[success]Resumed session: {session.session_id}[/success]"
-                    )
+                console.print(f"[error]No session with id {sid}[/error]")
         elif cmd_name in ("/learn", "/lessons", "/forget"):
             from agent.learn import Learned
 
@@ -619,6 +637,8 @@ class CLI:
 @click.option("--apply/--no-apply", default=True, help="Fast-forward the integrated result into a clean checkout")
 @click.option("--report", type=click.Path(path_type=Path), help="Write run metrics JSON here")
 @click.option("--add-dir", "add_dirs", multiple=True, type=click.Path(exists=True, file_okay=False, path_type=Path), help="Extra directory the agent may use besides the working directory (repeatable)")
+@click.option("--resume", "resume_id", help="Continue a saved session by id (shown when you exit; /sessions lists them)")
+@click.option("--continue", "continue_last", is_flag=True, help="Continue the newest saved session that ran in this folder")
 @click.option("--trust", "trust_project", is_flag=True, help="Trust this project's .ai-agent/config.toml (hooks, verify commands, approval)")
 @click.option("--model", "-m", help="Model id (overrides config)")
 @click.option(
@@ -631,6 +651,8 @@ def main(
     cwd: Path | None,
     add_dirs: tuple,
     trust_project: bool,
+    resume_id: str | None,
+    continue_last: bool,
     parallel: bool,
     graph: Path | None,
     apply: bool,
@@ -669,6 +691,11 @@ def main(
         sys.exit(1)
 
     cli = CLI(config)
+    if continue_last and not resume_id:
+        resume_id = PersistenceManager().latest_for(str(config.cwd))
+        if not resume_id:
+            console.print("[dim]No saved session for this folder; starting a new one.[/dim]")
+    cli.resume_id = resume_id
 
     if (parallel or graph) and prompt:
         ok = asyncio.run(cli.run_orchestrated(prompt, graph, apply, report))

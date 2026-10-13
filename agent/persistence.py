@@ -17,6 +17,8 @@ class SessionSnapshot:
     turn_count: int
     messages: list[dict[str, Any]]
     total_usage: TokenUsage
+    cwd: str = ""  # where it ran, so --continue can find the newest session of a folder
+    title: str = ""  # first words of the first request, to tell sessions apart
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -26,6 +28,8 @@ class SessionSnapshot:
             "turn_count": self.turn_count,
             "messages": self.messages,
             "total_usage": self.total_usage.__dict__,
+            "cwd": self.cwd,
+            "title": self.title,
         }
 
     @classmethod
@@ -37,6 +41,8 @@ class SessionSnapshot:
             turn_count=data["turn_count"],
             messages=data["messages"],
             total_usage=TokenUsage(**data["total_usage"]),
+            cwd=data.get("cwd", ""),
+            title=data.get("title", ""),
         )
 
 
@@ -78,11 +84,20 @@ class PersistenceManager:
                     "created_at": data["created_at"],
                     "updated_at": data["updated_at"],
                     "turn_count": data["turn_count"],
+                    "cwd": data.get("cwd", ""),
+                    "title": data.get("title", ""),
                 }
             )
 
         sessions.sort(key=lambda x: x["updated_at"], reverse=True)
         return sessions
+
+    def latest_for(self, cwd: str) -> str | None:
+        """Id of the newest saved session that ran in this folder."""
+        for row in self.list_sessions():
+            if row["cwd"] == str(cwd):
+                return row["session_id"]
+        return None
 
     def save_checkpoint(self, snapshot: SessionSnapshot) -> str:
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")

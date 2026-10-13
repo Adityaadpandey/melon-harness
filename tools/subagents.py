@@ -1,4 +1,5 @@
 import asyncio
+import weakref
 from typing import Any
 from config.config import Config
 from tools.base import Tool, ToolInvocation, ToolKind, ToolResult
@@ -24,12 +25,13 @@ class SubagentDefinition:
 
 
 READONLY_TOOLS = {"read_file", "grep", "search", "outline", "git", "glob", "list_dir", "use_skill", "graph", "web_search", "web_fetch"}
-_SEMAPHORES: dict[int, asyncio.Semaphore] = {}
+_SEMAPHORES: "weakref.WeakKeyDictionary[asyncio.AbstractEventLoop, dict[int, asyncio.Semaphore]]" = weakref.WeakKeyDictionary()  # keyed by the loop itself: id() of a dead loop can be reused
 
 
 def _agent_slots(limit: int) -> asyncio.Semaphore:
     """One cap shared by every sub-agent tool in this event loop."""
-    return _SEMAPHORES.setdefault(id(asyncio.get_running_loop()), asyncio.Semaphore(max(1, limit)))
+    per_loop = _SEMAPHORES.setdefault(asyncio.get_running_loop(), {})
+    return per_loop.setdefault(max(1, limit), asyncio.Semaphore(max(1, limit)))
 
 
 class SubagentTool(Tool):

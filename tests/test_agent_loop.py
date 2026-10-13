@@ -128,3 +128,46 @@ async def test_a_stalled_model_stream_ends_when_the_time_budget_does(tmp_path):
 
     got = [e async for e in _within(0.2, stalled())]
     assert got[0] == "first" and "Time budget" in got[1].error
+
+
+async def test_session_autosave_resume_and_continue_by_folder(tmp_path, monkeypatch):
+    import agent.persistence as per
+    from main import CLI
+
+    monkeypatch.setattr(per, "get_data_dir", lambda: tmp_path / "data")
+    work = tmp_path / "work"
+    work.mkdir()
+    cfg = Config(cwd=work, approval=ApprovalPolicy.AUTO, auto_verify=False)
+    async with Agent(cfg) as a:
+        cli = CLI(cfg)
+        cli.agent = a
+        cm = a.session.context_manager
+        cm.add_user_message("Fix the blank line bug in the description\n\n---\nPlaybooks selected: lots of text")
+        cm.add_assistant_message(None, [{"id": "c1", "type": "function", "function": {"name": "grep", "arguments": "{}"}}])
+        cm.add_tool_result("c1", "found it")
+        a.session.increment_turn()
+        cli._autosave()
+        sid = a.session.session_id
+    pm = per.PersistenceManager()
+    row = pm.list_sessions()[0]
+    assert row["title"] == "Fix the blank line bug in the description" and row["cwd"] == str(work)
+    assert pm.latest_for(str(work)) == sid and pm.latest_for("/elsewhere") is None
+
+    async with Agent(cfg) as b:
+        cli2 = CLI(cfg)
+        cli2.agent = b
+        assert await cli2._resume(sid) and not await cli2._resume("nope")
+        roles = [m["role"] for m in b.session.context_manager.get_messages()]
+        assert roles[1:] == ["user", "assistant", "tool"] and b.session.session_id == sid and b.session.turn_count == 1
+
+
+def test_old_session_files_without_cwd_still_load(tmp_path, monkeypatch):
+    import json
+    import agent.persistence as per
+
+    monkeypatch.setattr(per, "get_data_dir", lambda: tmp_path / "data")
+    pm = per.PersistenceManager()
+    old = {"session_id": "old1", "created_at": "2026-01-01T00:00:00", "updated_at": "2026-01-01T00:00:00", "turn_count": 2,
+           "messages": [], "total_usage": {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0, "cached_tokens": 0}}
+    (pm.sessions_dir / "old1.json").write_text(json.dumps(old))
+    assert pm.load_session("old1").cwd == "" and pm.list_sessions()[0]["title"] == ""
