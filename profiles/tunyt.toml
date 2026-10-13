@@ -60,6 +60,8 @@ commands = ["pnpm typecheck", "npx biome check --no-errors-on-unmatched {files}"
 
 [routing]
 # measured in bench/results: deepseek-v4-flash passed every fixture task at low latency
+fast      = ["deepseek/deepseek-v4-flash", "deepseek/deepseek-v4-pro"]
+strong    = ["claude-sonnet-5-5", "deepseek/deepseek-v4-pro"]
 explore   = ["deepseek/deepseek-v4-flash", "deepseek/deepseek-v4-pro"]
 summarize = ["deepseek/deepseek-v4-flash"]
 debug     = ["claude-sonnet-5-5", "deepseek/deepseek-v4-pro"]

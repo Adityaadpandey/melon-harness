@@ -10,7 +10,7 @@ DEFAULT_BASE_URL = "https://api.commandcode.ai/provider/v1"
 
 
 class ModelConfig(BaseModel):
-    name: str = "mistralai/devstral-2512:free"
+    name: str = "claude-sonnet-5-5"  # a model the default gateway serves; override per project/profile or with -m
     temperature: float = Field(default=1, ge=0.0, le=2.0)
     context_window: int = 256_000
 
@@ -161,6 +161,10 @@ class Config(BaseModel):
     disabled_skills: list[str] = Field(default_factory=list)  # e.g. ["ponytail"] to turn the built-in style policy off
     skill_dirs: list[str] = Field(default_factory=list)  # repo-relative dirs holding extra skill .md files
     model_role: str = "default"  # which routing chain this agent's own calls use
+    auto_route: bool = True  # classify each request into the fast/default/strong chains when [routing] defines them
+    model_pinned: bool = False  # set by -m or /model: the user chose, so never auto-route away from it
+    max_parallel_agents: int = 4  # concurrent sub-agents / workers
+    enable_parallel_tasks: bool = True  # expose the parallel_tasks tool (off inside workers and sub-agents)
     auto_review: bool = False  # independent reviewer pass over the real diff before finishing
     max_reviews: int = 1
     check_references: bool = True  # verify file:line citations in the final answer against the tree

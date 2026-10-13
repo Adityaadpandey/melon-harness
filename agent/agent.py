@@ -5,6 +5,7 @@ from typing import AsyncGenerator, Awaitable, Callable
 from agent.events import AgentEvent, AgentEventType
 from agent.grounding import correction_prompt, verify_references
 from agent.review import review_changes
+from agent.routing_policy import classify
 from agent.session import Session
 from agent.skills import match_skills
 from utils.cost import summarize_usage
@@ -33,6 +34,8 @@ class Agent:
         self.session.approval_manager.confirmation_callback = confirmation_callback
         self.task: TaskState | None = None
         self._failed = False
+        self._tier = "default"
+        self._escalated = False
 
     async def run(self, message: str):
         await self.session.hook_system.trigger_before_agent(message)
@@ -49,6 +52,20 @@ class Agent:
         else:
             message_for_model = message
         self.session.context_manager.add_user_message(message_for_model)
+
+        self._escalated = False
+        self._tier = "default"
+        routing = self.config.routing
+        if self.config.auto_route and not self.config.model_pinned and self.config.model_role == "default" and (
+            "fast" in routing or "strong" in routing
+        ):
+            self._tier, why = classify(message)
+            if self._tier in routing:
+                chain = routing[self._tier][0]
+                self.session.tracer.emit("route", tier=self._tier, reason=why, model=chain)
+                yield AgentEvent.notice(f"Routing to the {self._tier} model ({why}): {chain}")
+            else:
+                self._tier = "default"
 
         task = self.task = TaskState(
             request=message,
@@ -186,7 +203,7 @@ class Agent:
             async for event in self.session.client.chat_completion(
                 self.session.context_manager.get_messages(),
                 tools=tool_schemas if tool_schemas else None,
-                role=self.config.model_role,
+                role=self._role(task),
             ):
                 if event.type == StreamEventType.TEXT_DELTA:
                     if event.text_delta:
@@ -263,6 +280,7 @@ class Agent:
             loop_detection_error = self.session.loop_detector.check_for_loop()
             if loop_detection_error:
                 loop_warnings += 1
+                self._escalated = True  # stuck: bring in the strong model
                 if loop_warnings >= 3:
                     # the model was told twice and kept going; stop burning budget
                     self._failed = True
@@ -279,6 +297,17 @@ class Agent:
                 self.session.tool_registry.epoch += 1
         self._failed = True
         yield AgentEvent.agent_error(f"Maximum turns ({max_turns}) reached")
+
+    def _role(self, task: TaskState) -> str:
+        """Routing role for the next model call: a fixed role for sub-agents and
+        reviewers, otherwise the request's tier, escalated to `strong` after a
+        failed repair or a loop (if a strong chain is configured)."""
+        if self.config.model_role != "default":
+            return self.config.model_role
+        tier = self._tier
+        if (task.repairs >= 1 or self._escalated) and "strong" in self.config.routing:
+            tier = "strong"
+        return tier
 
     async def _compact(self) -> bool:
         cm = self.session.context_manager

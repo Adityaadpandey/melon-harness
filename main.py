@@ -333,6 +333,7 @@ class CLI:
                         console.print("Did you mean: " + ", ".join(near))
                 else:
                     self.config.model_name = cmd_args
+                    self.config.model_pinned = True
                     console.print(f"[success]Model changed to: {cmd_args} [/success]")
             else:
                 console.print(f"Current model: {self.config.model_name}")
@@ -543,6 +544,7 @@ def main(
 
     if model:
         config.model_name = model
+        config.model_pinned = True
     if approval:
         config.approval = ApprovalPolicy(approval)
 
