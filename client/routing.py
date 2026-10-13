@@ -99,8 +99,7 @@ class ModelRegistry:
         if info is None:
             # unknown to the catalog (offline, or a brand-new model): trust the
             # id and the configured window rather than refusing to run
-            info = _guess(model_id, self.config.model.context_window)
-            self._models[model_id] = info
+            return _guess(model_id, self.config.model.context_window)  # not cached: keeps validate() honest
         return info
 
     def validate(self, model_id: str) -> tuple[bool, list[str]]:

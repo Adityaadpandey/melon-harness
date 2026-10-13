@@ -44,9 +44,10 @@ def _tool_defs(tools: list[dict[str, Any]]) -> list[dict[str, Any]]:
 class OpenAIChatAdapter:
     endpoint = "/chat/completions"
 
-    def __init__(self, api_key: str, base_url: str):
+    def __init__(self, api_key: str, base_url: str, headers: dict[str, str] | None = None):
         self._client = AsyncOpenAI(
-            api_key=api_key, base_url=base_url, timeout=TIMEOUT, max_retries=0
+            api_key=api_key, base_url=base_url, timeout=TIMEOUT, max_retries=0,
+            default_headers=headers,
         )
 
     async def close(self) -> None:
@@ -229,14 +230,15 @@ class AnthropicAdapter:
     endpoint = "/messages"
     MAX_TOKENS = 16384
 
-    def __init__(self, api_key: str, base_url: str):
+    def __init__(self, api_key: str, base_url: str, headers: dict[str, str] | None = None):
         # the SDK appends /v1/messages itself, so strip the trailing /v1
         root = base_url.rstrip("/")
         if root.endswith("/v1"):
             root = root[:-3]
         self._client = AsyncAnthropic(
             # plain seconds: this SDK uses httpx2, so an httpx.Timeout is rejected
-            api_key=api_key, base_url=root, timeout=120.0, max_retries=0
+            api_key=api_key, base_url=root, timeout=120.0, max_retries=0,
+            default_headers=headers,
         )
 
     async def close(self) -> None:

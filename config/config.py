@@ -112,6 +112,7 @@ class Config(BaseModel):
     # model), explore, review, summarize. A missing role falls back to default.
     routing: dict[str, list[str]] = Field(default_factory=dict)
     trace: bool = True
+    zdr: bool = False  # send x-cmd-zdr: 1 (zero data retention routing; fails if a model has no ZDR upstream)
 
     # Verification gate. After a run that changed files, these commands must
     # pass before the task counts as verified. Empty = auto-detect (pytest, go

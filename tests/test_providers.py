@@ -181,3 +181,12 @@ def test_model_validation_suggests_close_matches(tmp_path):
     assert c.registry.validate("Qwen/Qwen3.8-Max") == (True, [])
     c.registry._models.clear()
     assert c.registry.validate("anything")[0]  # offline: don't block
+
+
+async def test_unsupported_model_error_suggests_real_ids(tmp_path):
+    c, fake = make_client(tmp_path, {"gpt-luna-6": [classify(400, "Model \"m1\" is not supported on this endpoint. code: unsupported_model")]})
+    c.registry._models.clear()
+    c.registry._models["gpt-6-luna"] = ModelInfo("gpt-6-luna")
+    c.config.model_name = "gpt-luna-6"
+    evs = await collect(c)
+    assert "did you mean: gpt-6-luna" in evs[-1].error

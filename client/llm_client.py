@@ -38,7 +38,8 @@ class LLMClient:
     def _adapter(self, endpoint: str):
         if endpoint not in self._adapters:
             cls = AnthropicAdapter if endpoint == "/messages" else OpenAIChatAdapter
-            self._adapters[endpoint] = cls(self.config.api_key, self.config.base_url)
+            headers = {"x-cmd-zdr": "1"} if self.config.zdr else None
+            self._adapters[endpoint] = cls(self.config.api_key, self.config.base_url, headers)
         return self._adapters[endpoint]
 
     async def close(self) -> None:
@@ -85,6 +86,9 @@ class LLMClient:
             if outcome is None:
                 return
             last_error = f"{model}: {outcome}"
+            if "unsupported_model" in str(outcome) or "not supported on this endpoint" in str(outcome):
+                _, near = self.registry.validate(model)
+                last_error += f". Not in the model catalog" + (f"; did you mean: {', '.join(near)}?" if near else ".")
             if collected.emitted or not outcome.fallback:
                 # output already reached the caller (a fallback would duplicate
                 # it), or the request itself is bad: stop here

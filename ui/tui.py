@@ -14,6 +14,7 @@ from rich.markdown import Markdown
 from config.config import Config
 from tools.base import ToolConfirmation
 from utils.paths import display_path_rel_to_cwd
+import json
 import re
 
 from utils.text import truncate_text
@@ -121,10 +122,11 @@ class TUI:
                     byte_count = len(value.encode("utf-8", errors="replace"))
                     value = f"<{line_count} lines • {byte_count} bytes>"
 
-            if isinstance(value, bool):
-                value = str(value)
+            if not isinstance(value, str):
+                # ints, lists, dicts, None... rich only renders strings/renderables
+                value = json.dumps(value, default=str) if isinstance(value, (list, dict)) else str(value)
 
-            table.add_row(key, value)
+            table.add_row(str(key), value)
 
         return table
 
