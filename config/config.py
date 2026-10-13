@@ -144,9 +144,18 @@ class Config(BaseModel):
     # Repository rules enforced by the tool layer (not just asked of the model).
     # forbidden_paths are fnmatch globs on file names; forbidden_commands are
     # regexes tried against shell commands.
-    forbidden_paths: list[str] = Field(default_factory=list)
+    forbidden_paths: list[str] = Field(
+        default_factory=lambda: [".env", ".env.local", ".env.development", ".env.production", ".env.staging",
+                                 ".env.test", ".env.*.local", "*.pem", "*.key", "id_rsa*", "id_ed25519*", "*.p12"]
+    )
     forbidden_commands: list[str] = Field(default_factory=list)
     profile: str | None = None
+
+    # Workspace guardrails. The session may not leave `cwd` (plus allowed_dirs).
+    allowed_dirs: list[str] = Field(default_factory=list)  # extra roots the agent may use (--add-dir)
+    sandbox: str = "auto"  # "auto": OS sandbox for shell commands when available; "off"
+    sandbox_write_extra: list[str] = Field(default_factory=list)  # extra dirs shell commands may write
+    allow_private_network: bool = False  # web_fetch may reach localhost / private ranges
 
     subagents: list[SubagentSpec] = Field(default_factory=list)
     disabled_skills: list[str] = Field(default_factory=list)  # e.g. ["ponytail"] to turn the built-in style policy off

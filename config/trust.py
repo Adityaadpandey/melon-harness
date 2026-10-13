@@ -9,7 +9,7 @@ import json
 from pathlib import Path
 
 # keys that execute code or relax protections when set by a project
-GATED_KEYS = {"hooks", "hooks_enabled", "mcp_servers", "verify_commands", "verify_rules", "approval", "shell_environment"}
+GATED_KEYS = {"hooks", "hooks_enabled", "mcp_servers", "verify_commands", "verify_rules", "approval", "shell_environment", "allowed_dirs", "sandbox", "sandbox_write_extra", "allow_private_network", "forbidden_paths"}
 
 
 def _store(data_dir: Path) -> Path:

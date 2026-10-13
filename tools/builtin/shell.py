@@ -93,8 +93,10 @@ class ShellTool(Tool):
         else:
             shell_cmd = ["/bin/bash", "-c", params.command]
 
+        from safety.sandbox import wrap
+
         process = await asyncio.create_subprocess_exec(
-            *shell_cmd,
+            *wrap(shell_cmd, self.config),
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
             cwd=cwd,

@@ -1,6 +1,7 @@
 from urllib.parse import urlparse
 
 import httpx
+from utils.netguard import check_url
 from tools.base import Tool, ToolInvocation, ToolKind, ToolResult
 from pydantic import BaseModel, Field
 
@@ -28,12 +29,20 @@ class WebFetchTool(Tool):
         if not parsed.scheme or parsed.scheme not in ("http", "https"):
             return ToolResult.error_result(f"Url must be http:// or https://")
 
+        url = params.url
         try:
-            async with httpx.AsyncClient(
-                timeout=httpx.Timeout(params.timeout),
-                follow_redirects=True,
-            ) as client:
-                response = await client.get(params.url)
+            async with httpx.AsyncClient(timeout=httpx.Timeout(params.timeout), follow_redirects=False) as client:
+                for _hop in range(6):
+                    # every hop is checked, so a public page cannot redirect us to localhost or cloud metadata
+                    if why := check_url(url, self.config.allow_private_network):
+                        return ToolResult.error_result(f"Blocked: {why}")
+                    response = await client.get(url)
+                    if response.is_redirect and response.headers.get("location"):
+                        url = str(httpx.URL(url).join(response.headers["location"]))
+                        continue
+                    break
+                else:
+                    return ToolResult.error_result("Too many redirects")
                 response.raise_for_status()
                 text = response.text
         except httpx.HTTPStatusError as e:

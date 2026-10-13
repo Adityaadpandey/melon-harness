@@ -111,8 +111,10 @@ class CheckResult:
 async def run_check(command: str, cwd: Path, config) -> CheckResult:
     loop = asyncio.get_event_loop()
     t = loop.time()
+    from safety.sandbox import wrap
+
     proc = await asyncio.create_subprocess_exec(
-        "/bin/bash", "-c", command, cwd=cwd, env=build_environment(config),
+        *wrap(["/bin/bash", "-c", command], config), cwd=cwd, env=build_environment(config),
         stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.STDOUT,
         start_new_session=True,
     )

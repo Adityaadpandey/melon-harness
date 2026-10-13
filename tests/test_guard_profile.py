@@ -35,7 +35,7 @@ def test_database_commands_blocked(tmp_path):
 
 
 def test_no_rules_means_no_blocking(tmp_path):
-    assert violation("shell", {"command": "cat .env"}, Config(cwd=tmp_path)) is None
+    assert violation("shell", {"command": "cat .env"}, Config(cwd=tmp_path, forbidden_paths=[], forbidden_commands=[])) is None
 
 
 async def test_guard_applies_through_registry(tmp_path):
