@@ -109,8 +109,8 @@ async def test_reviewer_findings_go_back_for_one_fix(repo, monkeypatch):
         a.session.client = ScriptedClient([write("x.py"), text("done"), write("y.py"), text("fixed")])
         evs = [e async for e in a.run("go")]
         rep = next(e for e in evs if e.type == AgentEventType.AGENT_END).data["report"]
-        assert rep["status"] == "unverified" and rep["repairs"] == 1 and len(calls) == 1
-        assert rep["review"]["verdict"] == "ISSUES"  # not hidden: the last review result stays in the report
+        assert rep["status"] == "unverified" and rep["repairs"] == 1 and len(calls) == 2  # reviewed, repaired once, reviewed again
+        assert rep["review"]["verdict"] == "PASS"  # the report carries the latest review, i.e. of the repaired change
         assert "missing guard" in a.session.client.requests[2][-1]["content"]
 
 
