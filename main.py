@@ -64,12 +64,7 @@ class CLI:
     def _get_tool_kind(self, tool_name: str) -> str | None:
         tool_kind = None
         tool = self.agent.session.tool_registry.get(tool_name)
-        if not tool:
-            tool_kind = None
-
-        tool_kind = tool.kind.value
-
-        return tool_kind
+        return tool.kind.value if tool else None
 
     async def _process_message(self, message: str) -> str | None:
         if not self.agent:
@@ -261,7 +256,7 @@ class CLI:
             console.print(f"[success]Checkpoint created: {checkpoint_id}[/success]")
         elif cmd_name == "/restore":
             if not cmd_args:
-                console.print(f"[error]Usage: /restire <checkpoint_id> [/error]")
+                console.print(f"[error]Usage: /restore <checkpoint_id> [/error]")
             else:
                 persistence_manager = PersistenceManager()
                 snapshot = persistence_manager.load_checkpoint(cmd_args)
@@ -299,7 +294,7 @@ class CLI:
 
                     self.agent.session = session
                     console.print(
-                        f"[success]Resumed session: {session.session_id}, checkpoint: {checkpoint_id}[/success]"
+                        f"[success]Restored checkpoint {cmd_args} into session {session.session_id}[/success]"
                     )
         else:
             console.print(f"[error]Unknown command: {cmd_name}[/error]")
@@ -315,14 +310,28 @@ class CLI:
     type=click.Path(exists=True, file_okay=False, path_type=Path),
     help="Current working directory",
 )
+@click.option("--model", "-m", help="Model id (overrides config)")
+@click.option(
+    "--approval",
+    type=click.Choice([p.value for p in ApprovalPolicy]),
+    help="Approval policy (overrides config)",
+)
 def main(
     prompt: str | None,
     cwd: Path | None,
+    model: str | None,
+    approval: str | None,
 ):
     try:
         config = load_config(cwd=cwd)
     except Exception as e:
         console.print(f"[error]Configuration Error: {e}[/error]")
+        sys.exit(1)
+
+    if model:
+        config.model_name = model
+    if approval:
+        config.approval = ApprovalPolicy(approval)
 
     errors = config.validate()
 
@@ -343,4 +352,5 @@ def main(
         asyncio.run(cli.run_interactive())
 
 
-main()
+if __name__ == "__main__":
+    main()

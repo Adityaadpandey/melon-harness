@@ -6,6 +6,9 @@ from typing import Any
 from pydantic import BaseModel, Field, model_validator
 
 
+DEFAULT_BASE_URL = "https://api.commandcode.ai/provider/v1"
+
+
 class ModelConfig(BaseModel):
     name: str = "mistralai/devstral-2512:free"
     temperature: float = Field(default=1, ge=0.0, le=2.0)
@@ -55,7 +58,7 @@ class ApprovalPolicy(str, Enum):
     ON_REQUEST = "on-request"
     ON_FAILURE = "on-failure"
     AUTO = "auto"
-    AUTO_EDIT = "auto-edut"
+    AUTO_EDIT = "auto-edit"
     NEVER = "never"
     YOLO = "yolo"
 
@@ -111,7 +114,7 @@ class Config(BaseModel):
 
     @property
     def base_url(self) -> str | None:
-        return os.environ.get("BASE_URL")
+        return os.environ.get("BASE_URL") or DEFAULT_BASE_URL
 
     @property
     def model_name(self) -> str:
@@ -125,8 +128,8 @@ class Config(BaseModel):
     def temperature(self) -> float:
         return self.model.temperature
 
-    @model_name.setter
-    def temperature(self, value: str) -> None:
+    @temperature.setter
+    def temperature(self, value: float) -> None:
         self.model.temperature = value
 
     def validate(self) -> list[str]:

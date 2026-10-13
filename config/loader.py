@@ -1,6 +1,7 @@
 from pathlib import Path
 from typing import Any
 
+from dotenv import load_dotenv
 from platformdirs import user_config_dir, user_data_dir
 import tomli
 
@@ -31,10 +32,10 @@ def _parse_toml(path: Path):
         with open(path, "rb") as f:
             return tomli.load(f)
     except tomli.TOMLDecodeError as e:
-        raise ConfigError("Invalid TOML in {path}: {e}", config_file=str(path)) from e
+        raise ConfigError(f"Invalid TOML in {path}: {e}", config_file=str(path)) from e
     except (OSError, IOError) as e:
         raise ConfigError(
-            "Failed to read config file {path}: {e}", config_file=str(path)
+            f"Failed to read config file {path}: {e}", config_file=str(path)
         ) from e
 
 
@@ -75,6 +76,7 @@ def _merge_dicts(base: dict[str, Any], override: dict[str, Any]) -> dict[str, An
 
 def load_config(cwd: Path | None) -> Config:
     cwd = cwd or Path.cwd()
+    load_dotenv(cwd / ".env")
 
     system_path = get_system_config_path()
 
@@ -92,7 +94,7 @@ def load_config(cwd: Path | None) -> Config:
             project_config_dict = _parse_toml(project_path)
             config_dict = _merge_dicts(config_dict, project_config_dict)
         except ConfigError:
-            logger.warning(f"Skipping invalid system config: {system_path}")
+            logger.warning(f"Skipping invalid project config: {project_path}")
 
     if "cwd" not in config_dict:
         config_dict["cwd"] = cwd

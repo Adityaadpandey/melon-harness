@@ -82,6 +82,16 @@ class ToolRegistry:
             await hook_system.trigger_after_tool(name, params, result)
             return result
 
+        if set(params) == {"raw_arguments"}:
+            # the client could not parse the model's arguments as JSON
+            result = ToolResult.error_result(
+                "Tool arguments were not valid JSON. Re-send the call with a "
+                f"well-formed JSON object. Received: {str(params['raw_arguments'])[:200]}",
+                metadata={"tool_name": name},
+            )
+            await hook_system.trigger_after_tool(name, params, result)
+            return result
+
         validation_errors = tool.validate_params(params)
         if validation_errors:
             result = ToolResult.error_result(
@@ -134,10 +144,7 @@ class ToolRegistry:
             logger.exception(f"Tool {name} raised unexpected error")
             result = ToolResult.error_result(
                 f"Internal error: {str(e)}",
-                metadata={
-                    "tool_name",
-                    name,
-                },
+                metadata={"tool_name": name},
             )
 
         await hook_system.trigger_after_tool(name, params, result)

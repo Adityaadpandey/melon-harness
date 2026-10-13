@@ -151,7 +151,7 @@ class ApprovalManager:
 
     def request_confirmation(self, confirmation: ToolConfirmation) -> bool:
         if self.confirmation_callback:
-            result = self.confirmation_callback(confirmation)
-            return result
+            return self.confirmation_callback(confirmation)
 
-        return True
+        # nobody to ask (single-run mode): fail closed instead of approving silently
+        return False
