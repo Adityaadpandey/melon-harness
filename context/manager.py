@@ -49,6 +49,7 @@ class ContextManager:
         self._messages: list[MessageItem] = []
         self._latest_usage = TokenUsage()
         self.total_usage = TokenUsage()
+        self.context_window = config.model.context_window
 
     @property
     def message_count(self) -> int:
@@ -110,10 +111,10 @@ class ContextManager:
         return messages
 
     def needs_compression(self) -> bool:
-        context_limit = self.config.model.context_window
-        current_tokens = self._latest_usage.total_tokens
-
-        return current_tokens > (context_limit * 0.8)
+        # a 1M window doesn't mean 800k tokens of history is a good idea:
+        # quality drops and every turn resends it, so cap with compact_at_tokens
+        limit = min(self.context_window * 0.8, self.config.compact_at_tokens)
+        return self._latest_usage.total_tokens > limit
 
     def set_latest_usage(self, usage: TokenUsage):
         self._latest_usage = usage

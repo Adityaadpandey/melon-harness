@@ -50,6 +50,8 @@ class SubagentTool(Tool):
 
         config_dict = self.config.to_dict()
         config_dict["max_turns"] = self.definition.max_turns
+        config_dict["auto_verify"] = False  # the parent run verifies the final tree
+        config_dict["verify_commands"] = []
         if self.definition.allowed_tools:
             config_dict["allowed_tools"] = self.definition.allowed_tools
 

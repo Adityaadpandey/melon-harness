@@ -40,12 +40,20 @@ def error(msg: str):
     return [StreamEvent(type=StreamEventType.ERROR, error=msg)]
 
 
+class _Registry:
+    def get(self, model_id):
+        from client.routing import ModelInfo
+
+        return ModelInfo(model_id, 1_000_000)
+
+
 class ScriptedClient:
     """Each chat_completion() call replays the next scripted turn."""
 
     def __init__(self, turns):
         self.turns = list(turns)
         self.requests = []
+        self.registry = _Registry()
 
     async def chat_completion(self, messages, tools=None, stream=True):
         self.requests.append(messages)

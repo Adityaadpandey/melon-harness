@@ -103,6 +103,17 @@ class Config(BaseModel):
     routing: dict[str, list[str]] = Field(default_factory=dict)
     trace: bool = True
 
+    # Verification gate. After a run that changed files, these commands must
+    # pass before the task counts as verified. Empty = auto-detect (pytest, go
+    # test, cargo test); set explicitly for anything heavier.
+    verify_commands: list[str] = Field(default_factory=list)
+    auto_verify: bool = True
+    max_repairs: int = 2
+    verify_timeout_sec: int = 600
+
+    max_seconds: float = 1800  # wall-clock budget for one user request
+    compact_at_tokens: int = 200_000  # compact earlier than the model window
+
     allowed_tools: list[str] | None = Field(
         None,
         description="If set, only these tools will be available to the agent",

@@ -19,6 +19,7 @@ class CLI:
         self.agent: Agent | None = None
         self.config = config
         self.tui = TUI(config, console)
+        self.last_report: dict | None = None
 
     async def run_single(self, message: str) -> str | None:
         async with Agent(self.config) as agent:
@@ -61,6 +62,18 @@ class CLI:
 
         console.print("\n[dim]Goodbye![/dim]")
 
+    def _print_report(self, report: dict | None) -> None:
+        if not report or report["status"] == "done_no_changes":
+            return
+        style = {"verified": "success", "unverified": "warning"}.get(report["status"], "error")
+        console.print(f"\n[{style}]Result: {report['status']}[/{style}]  "
+                      f"files changed: {len(report['changed_files'])}  repairs: {report['repairs']}")
+        for c in report["checks"]:
+            mark = "ok" if c["ok"] else "FAILED"
+            console.print(f"  [{mark}] {c['command']} ({c['seconds']}s)")
+        if report["status"] == "unverified":
+            console.print("  [dim]No verification commands found; changes were not tested.[/dim]")
+
     def _get_tool_kind(self, tool_name: str) -> str | None:
         tool_kind = None
         tool = self.agent.session.tool_registry.get(tool_name)
@@ -85,6 +98,9 @@ class CLI:
                 if assistant_streaming:
                     self.tui.end_assistant()
                     assistant_streaming = False
+            elif event.type == AgentEventType.AGENT_END:
+                self.last_report = event.data.get("report")
+                self._print_report(self.last_report)
             elif event.type == AgentEventType.NOTICE:
                 console.print(f"[warning]{event.data.get('message')}[/warning]")
             elif event.type == AgentEventType.AGENT_ERROR:
@@ -348,7 +364,8 @@ def main(
     # messages = [{"role": "user", "content": prompt}]
     if prompt:
         result = asyncio.run(cli.run_single(prompt))
-        if result is None:
+        bad = {"failed", "verification_failed"}
+        if result is None or (cli.last_report or {}).get("status") in bad:
             sys.exit(1)
     else:
         asyncio.run(cli.run_interactive())

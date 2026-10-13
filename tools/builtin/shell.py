@@ -141,20 +141,20 @@ class ShellTool(Tool):
         )
 
     def _build_environment(self) -> dict[str, str]:
-        env = os.environ.copy()
+        return build_environment(self.config)
 
-        shell_environment = self.config.shell_environment
 
-        if not shell_environment.ignore_default_excludes:
-            for pattern in shell_environment.exclude_patterns:
-                keys_to_remove = [
-                    k for k in env.keys() if fnmatch.fnmatch(k.upper(), pattern.upper())
-                ]
+def build_environment(config) -> dict[str, str]:
+    """Process env with secret-looking variables (*KEY*, *TOKEN*, ...) removed."""
+    env = os.environ.copy()
+    policy = config.shell_environment
 
-                for k in keys_to_remove:
-                    del env[k]
+    if not policy.ignore_default_excludes:
+        for pattern in policy.exclude_patterns:
+            for k in [k for k in env if fnmatch.fnmatch(k.upper(), pattern.upper())]:
+                del env[k]
 
-        if shell_environment.set_vars:
-            env.update(shell_environment.set_vars)
+    if policy.set_vars:
+        env.update(policy.set_vars)
 
-        return env
+    return env

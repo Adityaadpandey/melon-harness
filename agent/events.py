@@ -42,12 +42,14 @@ class AgentEvent:
         cls,
         response: str | None = None,
         usage: TokenUsage | None = None,
+        report: dict[str, Any] | None = None,
     ) -> AgentEvent:
         return cls(
             type=AgentEventType.AGENT_END,
             data={
                 "response": response,
                 "usage": usage.__dict__ if usage else None,
+                "report": report,
             },
         )
 
