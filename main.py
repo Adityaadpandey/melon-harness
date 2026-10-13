@@ -231,6 +231,18 @@ class CLI:
             )
             console.print("[dim]  (output added to the conversation)[/dim]")
 
+
+    def _print_heaviest(self, u: dict) -> None:
+        h = u.get("heaviest") or {}
+        if u.get("calls", 0) < 6 or not h.get("top") or not u.get("prompt_tokens"):
+            return
+        share = round(100 * h["tool_result_carried"] / u["prompt_tokens"])
+        console.print(f"[dim]    {share}% of the input tokens were earlier tool results re-sent. Biggest:[/dim]")
+        for r in h["top"][:3]:
+            console.print(f"[dim]      {r['tool']} {r['target']}: {r['tokens']:,} tokens, re-sent {r['carried'] // max(r['tokens'], 1)}x = {r['carried']:,}[/dim]")
+        if h["repeated"]:
+            console.print(f"[dim]    repeated: {'; '.join(h['repeated'])}[/dim]")
+
     def _print_report(self, report: dict | None, elapsed: float = 0.0) -> None:
         if not report:
             return
@@ -239,6 +251,7 @@ class CLI:
         w = u.get("cache_waste") or {}
         if w.get("misses"):
             console.print(f"[dim]    cache misses: {w['missed_tokens']:,} tokens re-billed ({', '.join(w['reasons'])})[/dim]")
+        self._print_heaviest(u)
         g = report.get("grounding") or {}
         if g.get("unverified"):
             console.print(f"[warning]  ⚠ {len(g['unverified'])} cited reference(s) could not be verified: {'; '.join(g['unverified'][:4])}[/warning]")
@@ -323,6 +336,7 @@ class CLI:
             w = u["cache_waste"]
             console.print(f"  calls: {u['calls']}   in: {u['prompt_tokens']:,} ({u['cache_hit_pct']}% cached)   out: {u['completion_tokens']:,}")
             console.print(f"  est cost: {('$' + str(u['est_cost_usd'])) if u['est_cost_usd'] is not None else 'unknown (add a \\[pricing] section to config)'}")
+            self._print_heaviest(u)
             if w["misses"]:
                 console.print(f"  cache misses: {w['misses']} ({w['missed_tokens']:,} tokens re-billed: {', '.join(w['reasons'])})")
         elif cmd_name == "/skills":

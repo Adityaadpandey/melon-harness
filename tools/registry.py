@@ -84,6 +84,7 @@ class ToolRegistry:
                 "tool_call", tool=name, ok=result.success,
                 sec=round(time.perf_counter() - started, 3),
                 blocked=bool(result.metadata.get("blocked")),
+                chars=len(result.output or ""), target=_target_label(name, params),
                 error=(result.error or "")[:200] if not result.success else None,
             )
         return result
@@ -263,3 +264,13 @@ def create_default_registry(config: Config) -> ToolRegistry:
         registry.register(SubagentTool(config, subagent_def))
 
     return registry
+
+
+def _target_label(name: str, params: dict) -> str:
+    """Short label for what a call looked at, for the token cost breakdown."""
+    for key in ("symbol", "path", "pattern", "query", "command", "op", "goal"):
+        v = params.get(key)
+        if isinstance(v, str) and v:
+            base = params.get("path") if key in ("symbol", "pattern") and isinstance(params.get("path"), str) else None
+            return (f"{base}:{v}" if base else v)[:80]
+    return ""

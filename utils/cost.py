@@ -63,4 +63,29 @@ def summarize_usage(events: list[dict], pricing: dict) -> dict:
         "cache_hit_pct": round(100 * cached / prompt, 1) if prompt else 0.0,
         "est_cost_usd": round(cost, 4) if cost is not None and calls else None,
         "cache_waste": cache_waste(events, pricing),
+        "heaviest": heaviest_results(events),
+    }
+
+
+def heaviest_results(events: list[dict], top: int = 5) -> dict:
+    """What made the prompts big. A tool result is re-sent with every later model
+    call, so its real cost is its size x the calls that follow it (a compaction
+    rewrites history, so it ends the count). Also lists repeated looks at one target."""
+    rows, repeats, later = [], {}, 0
+    for e in reversed(events):
+        ev = e.get("event")
+        if ev == "model_call" and e.get("ok"):
+            later += 1
+        elif ev == "compaction":
+            later = 0
+        elif ev == "tool_call" and e.get("chars"):
+            tokens = e["chars"] // 4
+            rows.append({"tool": e["tool"], "target": e.get("target", ""), "tokens": tokens, "carried": tokens * later})
+            key = (e["tool"], e.get("target", ""))
+            repeats[key] = repeats.get(key, 0) + 1
+    rows.sort(key=lambda r: -r["carried"])
+    return {
+        "top": rows[:top],
+        "tool_result_carried": sum(r["carried"] for r in rows),
+        "repeated": [f"{t} {tgt} x{n}" for (t, tgt), n in repeats.items() if n > 1 and t in ("read_file", "grep", "search")][:5],
     }

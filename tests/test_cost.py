@@ -146,3 +146,17 @@ async def test_scout_findings_start_the_main_context(tmp_path):
         [e async for e in a.run(long_task)]
         assert "route -> svc.ts:42" in a.session.client.requests[0][-1]["content"]
         [e async for e in a.run("fix typo")]  # short request: no scout
+
+
+def test_heaviest_results_weighs_size_by_how_long_it_stays_in_context():
+    from utils.cost import heaviest_results
+
+    mc = {"event": "model_call", "ok": True}
+    ev = [mc, {"event": "tool_call", "tool": "grep", "target": "x", "chars": 4000},  # 1000 tokens, 3 later calls
+          mc, {"event": "tool_call", "tool": "read_file", "target": "a.ts", "chars": 8000},  # 2000 tokens, 2 later
+          mc, {"event": "tool_call", "tool": "read_file", "target": "a.ts", "chars": 400}, mc, mc]
+    h = heaviest_results(ev)
+    assert (h["top"][0]["target"], h["top"][0]["carried"]) == ("a.ts", 6000) and h["top"][1]["carried"] == 4000
+    assert h["repeated"] == ["read_file a.ts x2"]
+    ev.insert(5, {"event": "compaction"})  # history rewritten: earlier results stop counting
+    assert heaviest_results(ev)["tool_result_carried"] < h["tool_result_carried"]
