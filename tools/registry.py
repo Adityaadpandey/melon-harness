@@ -161,6 +161,7 @@ class ToolRegistry:
                     affected_paths=confirmation.affected_paths,
                     command=confirmation.command,
                     is_dangerous=confirmation.is_dangerous,
+                    tool_kind=tool.kind.value,
                 )
 
                 decision = await approval_manager.check_approval(context)
@@ -171,12 +172,17 @@ class ToolRegistry:
                     await hook_system.trigger_after_tool(name, params, result)
                     return result
                 elif decision == ApprovalDecision.NEEDS_CONFIRMATION:
-                    approved = approval_manager.request_confirmation(confirmation)
+                    answer = await approval_manager.request_confirmation(confirmation)
 
-                    if not approved:
-                        result = ToolResult.error_result("User rejected the operation")
+                    if not answer.approved:
+                        msg = "User rejected the operation."
+                        if answer.feedback:
+                            msg += f" {answer.feedback}"
+                        result = ToolResult.error_result(msg, metadata={"tool_name": name, "rejected": True})
                         await hook_system.trigger_after_tool(name, params, result)
                         return result
+                    if answer.always:
+                        approval_manager.remember(confirmation)
 
         try:
             result = await tool.execute(invocation)
