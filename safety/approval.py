@@ -131,9 +131,9 @@ class ApprovalManager:
             return ApprovalDecision.APPROVED
 
         if context.command:
-            decision = self._assess_command_safety(context.command)
-            if decision != ApprovalDecision.NEEDS_CONFIRMATION:
-                return decision
+            # a command that needs confirmation must stay that way; falling
+            # through to the path checks below used to approve it silently
+            return self._assess_command_safety(context.command)
 
         for path in context.affected_paths:
             path_decision = ApprovalDecision.NEEDS_CONFIRMATION
