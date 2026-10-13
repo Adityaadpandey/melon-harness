@@ -18,7 +18,11 @@ class TodosTool(Tool):
 
     def __init__(self, config: Config) -> None:
         super().__init__(config)
-        self._todos: dict[str, str] = {}
+        self._todos: dict[str, dict] = {}  # id -> {content, done}
+
+    def snapshot(self) -> list[tuple[str, bool]]:
+        """(content, done) in creation order, for the live checklist in the UI."""
+        return [(t["content"], t["done"]) for t in self._todos.values()]
 
     async def execute(self, invocation: ToolInvocation) -> ToolResult:
         params = TodosParams(**invocation.params)
@@ -27,7 +31,7 @@ class TodosTool(Tool):
             if not params.content:
                 return ToolResult.error_result("`content` required for 'add' action")
             todo_id = str(uuid.uuid4())[:8]
-            self._todos[todo_id] = params.content
+            self._todos[todo_id] = {"content": params.content, "done": False}
             return ToolResult.success_result(
                 f"Added todo [{todo_id}]: {params.content}"
             )
@@ -37,15 +41,15 @@ class TodosTool(Tool):
             if params.id not in self._todos:
                 return ToolResult.error_result(f"Todo not found: {params.id}")
 
-            content = self._todos.pop(params.id)
-            return ToolResult.success_result(f"Completed todo [{params.id}]: {content}")
+            self._todos[params.id]["done"] = True  # kept, so the checklist shows what is finished
+            return ToolResult.success_result(f"Completed todo [{params.id}]: {self._todos[params.id]['content']}")
         elif params.action == "list":
             if not self._todos:
                 return ToolResult.success_result("No todos")
             lines = ["Todos:"]
 
-            for todo_id, content in self._todos.items():
-                lines.append(f"  [{todo_id}] {content}")
+            for todo_id, t in self._todos.items():
+                lines.append(f"  [{todo_id}] {'[x]' if t['done'] else '[ ]'} {t['content']}")
             return ToolResult.success_result("\n".join(lines))
         elif params.action == "clear":
             count = len(self._todos)

@@ -22,6 +22,7 @@ from functools import lru_cache
 from pathlib import Path
 
 PROFILES_DIR = Path(__file__).resolve().parent.parent / "profiles"
+BUILTIN_DIR = Path(__file__).resolve().parent.parent / "skills"  # ship with the harness, apply to every project
 SECTION_CAP = 14_000
 AUTO_LOAD_CAP = 9_000  # total chars of playbooks auto-injected per request
 
@@ -34,6 +35,7 @@ class Skill:
     triggers: list[str] = field(default_factory=list)
     canonical: str | None = None
     path: Path | None = None
+    always: bool = False  # inlined into the system prompt instead of waiting to be triggered
 
     def score(self, text: str) -> int:
         low = text.lower()
@@ -58,12 +60,13 @@ def parse_skill(text: str, path: Path | None = None) -> Skill | None:
         triggers=[t.strip() for t in meta.get("triggers", "").split(",") if t.strip()],
         canonical=meta.get("canonical") or None,
         path=path,
+        always=meta.get("always", "").lower() == "true",
     )
 
 
 @lru_cache(maxsize=16)
 def _load(profile: str | None, cwd: str, skill_dirs: tuple[str, ...]) -> tuple[Skill, ...]:
-    dirs: list[Path] = []
+    dirs: list[Path] = [BUILTIN_DIR]
     if profile:
         dirs.append(PROFILES_DIR / profile / "skills")
     root = Path(cwd)
@@ -79,12 +82,13 @@ def _load(profile: str | None, cwd: str, skill_dirs: tuple[str, ...]) -> tuple[S
 
 
 def load_skills(config) -> list[Skill]:
-    return list(_load(config.profile, str(config.cwd), tuple(config.skill_dirs)))
+    off = set(config.disabled_skills)
+    return [s for s in _load(config.profile, str(config.cwd), tuple(config.skill_dirs)) if s.name not in off]
 
 
 def match_skills(skills: list[Skill], request: str, limit: int = 2) -> list[Skill]:
     """Deterministic keyword routing: no model call, so it is free, instant and testable."""
-    scored = sorted(((s.score(request), s) for s in skills), key=lambda x: -x[0])
+    scored = sorted(((s.score(request), s) for s in skills if not s.always), key=lambda x: -x[0])
     picked, used = [], 0
     for score, s in scored:
         if score < 1 or len(picked) >= limit:

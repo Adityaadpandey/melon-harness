@@ -305,7 +305,8 @@ class CLI:
                 console.print(f"  cache misses: {w['misses']} ({w['missed_tokens']:,} tokens re-billed: {', '.join(w['reasons'])})")
         elif cmd_name == "/skills":
             for sk in self.agent.session.skills:
-                console.print(f"  [accent]{sk.name}[/accent]  [dim]{sk.description}[/dim]")
+                tag = " [dim](always on)[/dim]" if sk.always else ""
+                console.print(f"  [accent]{sk.name}[/accent]{tag}  [dim]{sk.description}[/dim]")
             if not self.agent.session.skills:
                 console.print("[dim]  no skills loaded[/dim]")
         elif cmd_name == "/expand":

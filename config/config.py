@@ -149,6 +149,7 @@ class Config(BaseModel):
     profile: str | None = None
 
     subagents: list[SubagentSpec] = Field(default_factory=list)
+    disabled_skills: list[str] = Field(default_factory=list)  # e.g. ["ponytail"] to turn the built-in style policy off
     skill_dirs: list[str] = Field(default_factory=list)  # repo-relative dirs holding extra skill .md files
     model_role: str = "default"  # which routing chain this agent's own calls use
     auto_review: bool = False  # independent reviewer pass over the real diff before finishing

@@ -20,8 +20,12 @@ def get_system_prompt(
     if tools and (section := _get_tool_guidelines_section(tools)):
         parts.append(section)
 
-    if skills:
-        parts.append(_get_skills_section(skills))
+    always = [sk for sk in (skills or []) if getattr(sk, "always", False)]
+    if always:
+        parts.append("\n\n".join(sk.body for sk in always))
+    optional = [sk for sk in (skills or []) if not getattr(sk, "always", False)]
+    if optional:
+        parts.append(_get_skills_section(optional))
 
     # AGENTS.md spec
     parts.append(_get_agents_md_section())

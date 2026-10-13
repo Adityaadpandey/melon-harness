@@ -171,3 +171,18 @@ async def test_subagent_from_profile_runs_with_its_role_and_tools(tmp_path, monk
         done = next(e for e in evs if e.type == AgentEventType.TOOL_CALL_COMPLETE)
         assert done.data["success"] and "child answer: auth.ts:12" in done.data["output"]
     assert seen["role"] == "explore" and seen["tool_names"] == ["grep", "read_file"]
+
+
+def test_ponytail_is_on_by_default_inlined_not_indexed_and_can_be_disabled(tmp_path):
+    from agent.skills import load_skills
+    from prompts.system import get_system_prompt
+    from tools.registry import create_default_registry
+
+    cfg = Config(cwd=tmp_path)
+    sk = load_skills(cfg)
+    assert any(s.name == "ponytail" and s.always for s in sk)
+    prompt = get_system_prompt(cfg, None, create_default_registry(cfg).get_tools(), sk)
+    assert "the least that fully works" in prompt and "- **ponytail**" not in prompt  # inlined, not an index entry
+    off = Config(cwd=tmp_path, disabled_skills=["ponytail"])
+    assert "the least that fully works" not in get_system_prompt(off, None, [], load_skills(off))
+    assert match_skills(sk, "fix this bug") == []  # always-on skills are never 'triggered' a second time
