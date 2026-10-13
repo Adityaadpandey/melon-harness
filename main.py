@@ -182,6 +182,9 @@ class CLI:
                     console.print("[dim]  (Ctrl+C) type /exit to quit[/dim]")
                 except EOFError:
                     break
+            self._autosave()  # the agent (and its session) is released when this block ends
+            sess = self.agent.session
+            self._exit_info = (sess.session_id, sess.turn_count)
 
         if screen:
             import ui.prompt as prompt_mod
@@ -191,9 +194,8 @@ class CLI:
             screen.stop()
             console.file = sys.__stdout__
         console.print("\n[dim]Goodbye![/dim]")
-        if self.agent and self.agent.session.turn_count:
-            self._autosave()
-            sid = self.agent.session.session_id
+        sid, turns = getattr(self, "_exit_info", (None, 0))
+        if turns:
             console.print(f"[dim]Resume this session:  [/dim][bold]mew --resume {sid}[/bold]")
             console.print("[dim]Or the newest one in this folder:  [/dim][bold]mew --continue[/bold]")
 

@@ -181,6 +181,12 @@ Before each request mew records the working tree as a commit object (`refs/mew/b
 before are never deleted. Token budget per request (`max_total_tokens`): warning at 70%, then one tool-free call so the work
 so far becomes an answer.
 
+## Resuming
+
+Every turn autosaves the session. On exit mew prints `mew --resume <id>` and `mew --continue`. `--resume <id>` reopens that session
+with its full history (tool calls included); `--continue` picks the newest session that ran in the current folder. Inside a
+session: `/sessions` lists saved ones (title, turns, whether it is this folder), `/resume [id]` switches to one (no id: newest here).
+
 ## Learning between sessions
 
 Per repo, stored outside it (data dir). Only things that can't be hallucinated are kept: what you told it and what verified runs
