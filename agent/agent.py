@@ -37,6 +37,10 @@ class Agent:
         self._failed = False
         self._tier = "default"
         self._escalated = False
+        self._budget_hit = False
+        self._budget_warned = False
+        self._uncached_streak = 0
+        self._usage_base = 0
         self._review_sec = 0.0
 
     async def run(self, message: str):
@@ -56,6 +60,9 @@ class Agent:
         self.session.context_manager.add_user_message(message_for_model)
 
         self._escalated = False
+        self._budget_hit = False
+        self._budget_warned = False
+        self._usage_base = self.session.context_manager.total_usage.total_tokens  # budget is per request
         self._review_sec = 0.0
         self._tier = "default"
         routing = self.config.routing
@@ -91,6 +98,10 @@ class Agent:
 
             if self._failed:
                 task.transition(TaskStatus.FAILED, "agent loop aborted")
+                break
+
+            if self._budget_hit:
+                task.transition(TaskStatus.UNVERIFIED, "token budget reached")
                 break
 
             if final_response and self.config.check_references:
@@ -189,13 +200,36 @@ class Agent:
                 self._failed = True
                 yield AgentEvent.agent_error(f"Time budget of {self.config.max_seconds:.0f}s exhausted")
                 return
-            if self.session.context_manager.total_usage.total_tokens > self.config.max_total_tokens:
-                self._failed = True
-                yield AgentEvent.agent_error(
-                    f"Token budget exhausted ({self.config.max_total_tokens:,} tokens processed). "
-                    "Raise max_total_tokens or narrow the task."
+            used = self.session.context_manager.total_usage.total_tokens - self._usage_base
+            budget = self.config.max_total_tokens
+            if used > budget:
+                # out of budget: one last tool-free call so the work done so far
+                # becomes an answer instead of a bare failure
+                self._budget_hit = True
+                yield AgentEvent.notice(f"Token budget reached ({budget:,}); wrapping up with what is known")
+                self.session.context_manager.add_user_message(
+                    "Token budget is spent. No more tool calls. Answer now from what you have already verified: "
+                    "what you found (file:line), what is still unknown, and the next step you would take."
                 )
+                text = ""
+                async for event in self.session.client.chat_completion(
+                    self.session.context_manager.get_messages(), tools=None, role=self._role(task)
+                ):
+                    if event.type == StreamEventType.TEXT_DELTA and event.text_delta:
+                        text += event.text_delta.content
+                        yield AgentEvent.text_delta(event.text_delta.content)
+                    elif event.type == StreamEventType.MESSAGE_COMPLETE and event.usage:
+                        self.session.context_manager.add_usage(event.usage)
+                self.session.context_manager.add_assistant_message(text or None, None)
+                if text:
+                    yield AgentEvent.text_complete(text)
                 return
+            if used > 0.7 * budget and not self._budget_warned:
+                self._budget_warned = True
+                self.session.context_manager.add_user_message(
+                    "Budget check: about 70% of the token budget is used. Stop broad searching. Read only what "
+                    "you must, then answer or make the change."
+                )
             self.session.increment_turn()
             response_text = ""
 
@@ -305,6 +339,13 @@ class Agent:
             if usage:
                 self.session.context_manager.set_latest_usage(usage)
                 self.session.context_manager.add_usage(usage)
+                # big prompts that never hit the cache are re-billed in full every call
+                self._uncached_streak = self._uncached_streak + 1 if usage.prompt_tokens > 15_000 and not usage.cached_tokens else 0
+                if self._uncached_streak == 3:
+                    yield AgentEvent.notice(
+                        f"{self.config.model_name} is not reusing its prompt cache (3 large calls, 0 cached tokens). "
+                        "Every call re-bills the whole context; a Claude or deepseek model is much cheaper here."
+                    )
 
             if self.session.context_manager.prune_tool_outputs():
                 self.session.tool_registry.epoch += 1

@@ -118,3 +118,17 @@ def search(
             out.append(f"{rel}{':' if i in hit_set else '-'}{i + 1}{':' if i in hit_set else '-'}{text}")
             prev = i
     return out, total, hit_files
+
+
+def similar_paths(root: Path, missing: Path, forbidden: list[str] | None = None, limit: int = 5) -> str:
+    """Hint for a guessed path: real files with the same name (or stem) under
+    root, e.g. 'DescriptionText.tsx' -> 'apps/mobile/src/DescriptionText.tsx'."""
+    try:
+        files = list_files(root, forbidden)
+    except Exception:
+        return ""
+    same = [f for f in files if f.name == missing.name] or [f for f in files if f.stem == missing.stem and missing.stem]
+    if not same:
+        return " Don't guess paths: locate it with glob or grep files_only first."
+    shown = ", ".join(str(f.relative_to(root)) if f.is_relative_to(root) else str(f) for f in same[:limit])
+    return f" Files with that name: {shown}"

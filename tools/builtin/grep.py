@@ -1,11 +1,12 @@
 import asyncio
 import re
+from pathlib import Path
 
 from pydantic import BaseModel, Field
 
 from tools.base import Tool, ToolInvocation, ToolKind, ToolResult
 from utils.paths import resolve_path
-from utils.search import list_files, search
+from utils.search import list_files, search, similar_paths
 
 
 class GrepParams(BaseModel):
@@ -34,7 +35,9 @@ class GrepTool(Tool):
         p = GrepParams(**invocation.params)
         target = resolve_path(invocation.cwd, p.path)
         if not target.exists():
-            return ToolResult.error_result(f"Path does not exist: {target}")
+            return ToolResult.error_result(
+                f"Path does not exist: {target}." + similar_paths(Path(invocation.cwd), target, self.config.forbidden_paths)
+            )
 
         smart = p.case_insensitive if p.case_insensitive is not None else not any(c.isupper() for c in p.pattern)
         try:
@@ -47,6 +50,13 @@ class GrepTool(Tool):
         lines, total, hit_files = await asyncio.to_thread(
             search, files, root, regex, context=p.context, limit=p.limit, glob=p.glob, files_only=p.files_only
         )
+        if not p.files_only and total > p.limit and hit_files > 15:
+            # too broad to read line by line: show where matches live instead
+            lines, total, hit_files = await asyncio.to_thread(
+                search, files, root, regex, context=0, limit=40, glob=p.glob, files_only=True
+            )
+            lines.append(f"{total} matches across {hit_files} files is too broad to list. Narrow with path/glob or a more specific pattern, then read.")
+            return ToolResult.success_result("\n".join(lines), metadata={"matches": total, "files_with_matches": hit_files, "files_searched": len(files)})
         meta = {"matches": total, "files_with_matches": hit_files, "files_searched": len(files)}
         if not lines:
             return ToolResult.success_result(f"No matches for '{p.pattern}' in {len(files)} files", metadata=meta)

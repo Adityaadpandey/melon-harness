@@ -73,14 +73,16 @@ async def test_tool_output_is_capped_head_and_tail(tmp_path):
         assert len(r.output) < 1300 and r.output.startswith("AAAA") and "THE-END" in r.output and r.truncated
 
 
-async def test_token_budget_stops_a_runaway_run(tmp_path):
-    cfg = Config(cwd=tmp_path, approval=ApprovalPolicy.AUTO, auto_verify=False, max_total_tokens=3)
-    same = [call("list_dir", {"path": f"d{i}"}, f"c{i}") for i in range(10)]
+async def test_token_budget_ends_with_a_final_answer_not_a_bare_failure(tmp_path):
+    cfg = Config(cwd=tmp_path, approval=ApprovalPolicy.AUTO, auto_verify=False, max_total_tokens=1)
+    explore = [call("list_dir", {"path": f"d{i}"}, f"c{i}") for i in range(3)]
     async with Agent(cfg) as a:
-        a.session.client = ScriptedClient(same)
+        a.session.client = ScriptedClient(explore[:1] + [text("Found X at a.py:1; Y unknown.")])
         evs = [e async for e in a.run("go")]
-        errs = [e.data["error"] for e in evs if e.type == AgentEventType.AGENT_ERROR]
-        assert any("budget" in e.lower() for e in errs)
+        assert not any(e.type == AgentEventType.AGENT_ERROR for e in evs)
+        end = evs[-1]
+        assert "Found X" in end.data["response"] and end.data["report"]["status"] == "unverified"
+        assert a.session.client.requests[-1][-1]["content"].startswith("Token budget is spent")
 
 
 def test_anthropic_marks_history_for_caching():

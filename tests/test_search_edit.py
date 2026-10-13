@@ -56,6 +56,15 @@ async def test_grep_smart_case_context_glob_and_limit(repo):
     assert r.output.count("many.txt:") == 5 and "25 more matches" in r.output
 
 
+async def test_grep_too_broad_lists_files_and_missing_path_suggests_real_one(repo):
+    for i in range(20):
+        (repo / f"f{i}.txt").write_text("hit\n" * 6)
+    r = await run(GrepTool(Config(cwd=repo)), repo, pattern="hit", limit=10)
+    assert "too broad" in r.output and "f3.txt" in r.output and "hit\n" not in r.output
+    r = await run(GrepTool(Config(cwd=repo)), repo, pattern="x", path="nope/a.py")
+    assert r.success is False and "src/a.py" in r.error
+
+
 async def test_grep_literal_and_bad_regex(repo):
     t = GrepTool(Config(cwd=repo))
     assert (await run(t, repo, pattern="(", literal=True)).success is True

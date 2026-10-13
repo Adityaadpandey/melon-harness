@@ -1,7 +1,10 @@
+from pathlib import Path
+
 from pydantic import BaseModel, Field
 
 from tools.base import Tool, ToolInvocation, ToolKind, ToolResult
 from utils.paths import is_binary_file, resolve_path
+from utils.search import similar_paths
 from utils.text import count_tokens, truncate_text
 
 
@@ -48,7 +51,9 @@ class ReadFileTool(Tool):
         path = resolve_path(invocation.cwd, params.path)
 
         if not path.exists():
-            return ToolResult.error_result(f"File not found: {path}")
+            return ToolResult.error_result(
+                f"File not found: {path}." + similar_paths(Path(invocation.cwd), path, self.config.forbidden_paths)
+            )
 
         # Re-reading an unchanged slice is pure token waste: say so instead, as
         # long as the earlier read is still in context (epoch bumps when old
