@@ -1,6 +1,7 @@
 """Input line (history, completion, status footer) and small interactive helpers."""
 from __future__ import annotations
 
+import asyncio
 import re
 import time
 from pathlib import Path
@@ -80,9 +81,11 @@ class InputSession:
     walks history with Up/Down, Alt+Enter for a newline, with a status footer."""
 
     def __init__(self, cwd: Path, forbidden: list[str], models: Callable[[], list[str]],
-                 toolbar: Callable[[], str], history_file: Path | None = None, input=None, output=None):
+                 toolbar: Callable[[], str], history_file: Path | None = None, input=None, output=None,
+                 body=None, extra_kb: KeyBindings | None = None):
         from prompt_toolkit.application import Application
         from prompt_toolkit.filters import Condition
+        from prompt_toolkit.key_binding import merge_key_bindings
         from prompt_toolkit.layout import Float, FloatContainer, HSplit, Layout, Window
         from prompt_toolkit.layout.controls import FormattedTextControl
         from prompt_toolkit.layout.dimension import Dimension
@@ -101,6 +104,12 @@ class InputSession:
             history = InMemoryHistory()
 
         self._toolbar = toolbar
+        self.fullscreen = body is not None
+        self.queue: asyncio.Queue = asyncio.Queue()  # full-screen mode: submitted lines wait here
+        self.choice: tuple[int, asyncio.Future] | None = None
+        self.line_future: asyncio.Future | None = None
+        self.on_interrupt: Callable[[], None] | None = None
+        self._task: asyncio.Task | None = None
         self.area = TextArea(
             prompt=[("class:bar", "▍ "), ("class:prompt", "✦ ")], style="class:box", dont_extend_height=True, multiline=True, wrap_lines=True, history=history,
             completer=ThreadedCompleter(MewCompleter(cwd, forbidden, models)), complete_while_typing=True,
@@ -114,6 +123,17 @@ class InputSession:
             cs = buf.complete_state
             if cs and cs.current_completion:  # a highlighted suggestion: take it instead of submitting
                 buf.apply_completion(cs.current_completion)
+                return
+            if self.fullscreen:
+                text = buf.text
+                if self.line_future:  # an answer to a question the agent asked
+                    fut, self.line_future = self.line_future, None
+                    buf.reset()
+                    fut.set_result(text.strip())
+                elif text.strip():
+                    buf.append_to_history()
+                    buf.reset()
+                    self.queue.put_nowait(text)
                 return
             if buf.text.strip():
                 buf.append_to_history()
@@ -156,6 +176,16 @@ class InputSession:
 
         @kb.add("c-c")
         def _ctrl_c(event):
+            if self.fullscreen:
+                if self.choice:
+                    self._pick(self.choice[0] - 1)
+                elif buf.text:
+                    buf.reset()
+                elif self.on_interrupt:
+                    self.on_interrupt()
+                else:
+                    self.queue.put_nowait(KeyboardInterrupt())
+                return
             if buf.text:
                 buf.reset()  # first Ctrl+C clears the line, like a shell
             else:
@@ -163,7 +193,9 @@ class InputSession:
 
         @kb.add("c-d")
         def _ctrl_d(event):
-            if not buf.text:
+            if self.fullscreen and not buf.text:
+                self.queue.put_nowait(EOFError())
+            elif not buf.text:
                 event.app.exit(exception=EOFError)
 
         def footer_text():
@@ -185,13 +217,26 @@ class InputSession:
                     frags.append(("class:toolbar", part))
             return frags
 
+        # single-key answers while an approval question is open (they win over typing)
+        asking = Condition(lambda: self.choice is not None)
+        for i in range(9):
+            kb.add(str(i + 1), filter=asking & Condition(lambda i=i: self.choice is not None and i < self.choice[0]))(lambda e, i=i: self._pick(i))
+        kb.add("y", filter=asking)(lambda e: self._pick(0))
+        kb.add("enter", filter=asking)(lambda e: self._pick(0))
+        for key in ("n", "escape"):
+            kb.add(key, filter=asking)(lambda e: self._pick(self.choice[0] - 1))
+        kb.add("<any>", filter=asking)(lambda e: None)  # swallow stray typing while a question is open
+
         footer = Window(FormattedTextControl(footer_text), height=1)
+        input_box = [Window(height=1, style="class:box"), self.area, Window(height=1, style="class:box"), footer]
         root = FloatContainer(
-            content=HSplit([Window(height=1, style="class:box"), self.area, Window(height=1, style="class:box"), footer]),
+            content=HSplit(([body] if body is not None else []) + input_box),
             floats=[Float(xcursor=True, ycursor=True, content=CompletionsMenu(max_height=8, scroll_offset=1))],
         )
         self.app = Application(
-            layout=Layout(root, focused_element=self.area), key_bindings=kb, erase_when_done=True,
+            layout=Layout(root, focused_element=self.area), key_bindings=merge_key_bindings([kb, extra_kb] if extra_kb else [kb]),
+            erase_when_done=not self.fullscreen, full_screen=self.fullscreen, mouse_support=self.fullscreen,
+            refresh_interval=0.1 if self.fullscreen else None,
             style=Style.from_dict({
                 "prompt": f"bg:#1d2033 {ACCENT} bold", "box": "bg:#1d2033 #d5d9ec", "bar": f"bg:#1d2033 {ACCENT} bold", "toolbar": MUTED, "tb.dot": "#3a3f5c",
                 "tb.chip": f"bg:{LAVENDER} #14161f bold", "tb.model": f"{ACCENT} bold", "tb.ok": "#6ee7b7", "tb.warn": "#fbbf6a", "tb.bad": "#ff6b7f",
@@ -201,9 +246,47 @@ class InputSession:
             input=input, output=output,
         )
 
+    def _pick(self, i: int) -> None:
+        if self.choice:
+            fut, self.choice = self.choice[1], None
+            fut.set_result(i)
+
+    async def choose(self, n: int) -> int:
+        """Full-screen: wait for a single keypress picking one of n options."""
+        fut = asyncio.get_running_loop().create_future()
+        self.choice = (n, fut)
+        self.app.invalidate()
+        return await fut
+
+    async def line(self) -> str:
+        """Full-screen: the next line typed, as the answer to a question."""
+        self.line_future = asyncio.get_running_loop().create_future()
+        return await self.line_future
+
     async def read(self) -> str:
-        self.area.buffer.reset()
-        return await self.app.run_async()
+        if not self.fullscreen:
+            self.area.buffer.reset()
+            return await self.app.run_async()
+        if self._task is None:
+            self._task = asyncio.create_task(self.app.run_async())
+        getter = asyncio.ensure_future(self.queue.get())
+        done, _ = await asyncio.wait({getter, self._task}, return_when=asyncio.FIRST_COMPLETED)
+        if getter not in done:
+            getter.cancel()
+            raise EOFError
+        item = getter.result()
+        if isinstance(item, BaseException):
+            raise item
+        return item
+
+    async def close(self) -> None:
+        if self._task is not None:
+            if self.app.is_running:
+                self.app.exit()
+            await asyncio.gather(self._task, return_exceptions=True)
+
+
+ACTIVE: InputSession | None = None  # the full-screen input, when there is one
 
 
 async def ask_choice(console, question: str, options: list[str], *, input=None, output=None) -> int:
@@ -212,6 +295,8 @@ async def ask_choice(console, question: str, options: list[str], *, input=None, 
     for i, opt in enumerate(options, 1):
         key = "#ff6b7f" if i == len(options) else ACCENT
         console.print(f"  [bold {key}]\\[{i}][/] {opt}" + ("  [dim](enter)[/dim]" if i == 1 else ""))
+    if ACTIVE is not None:
+        return await ACTIVE.choose(len(options))
     kb = KeyBindings()
     for i in range(len(options)):
         kb.add(str(i + 1))(lambda e, i=i: e.app.exit(result=i))
@@ -226,6 +311,11 @@ async def ask_choice(console, question: str, options: list[str], *, input=None, 
 
 
 async def read_line(prompt: str) -> str:
+    if ACTIVE is not None:
+        from ui.tui import get_console
+
+        get_console().print(f"  [dim]{prompt.strip()}[/dim]")
+        return await ACTIVE.line()
     try:
         return (await PromptSession().prompt_async(prompt)).strip()
     except (EOFError, KeyboardInterrupt):

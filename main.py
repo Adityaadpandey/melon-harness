@@ -1,5 +1,6 @@
 import asyncio
 import json
+import os
 import signal
 import time
 from pathlib import Path
@@ -116,6 +117,11 @@ class CLI:
         return text if len(text) <= width else text[: width - 1] + "…"
 
     async def run_interactive(self) -> str | None:
+        screen = None
+        if sys.stdout.isatty() and sys.stdin.isatty() and not os.environ.get("MEW_PLAIN"):
+            from ui.screen import Screen
+
+            screen = Screen(self.tui, console)  # MEW_PLAIN=1 keeps the old scrolling layout
         self.tui.print_welcome(
             "mew",
             lines=[
@@ -131,7 +137,13 @@ class CLI:
             inputs = InputSession(
                 self.config.cwd, self.config.forbidden_paths, lambda: [m.id for m in reg.all()],
                 self._toolbar, get_data_dir() / "input_history",
+                **({"body": screen.body, "extra_kb": screen.kb} if screen else {}),
             )
+            self.inputs = inputs
+            if screen:
+                import ui.prompt as prompt_mod
+
+                prompt_mod.ACTIVE = inputs
 
             while True:
                 try:
@@ -155,11 +167,21 @@ class CLI:
                 except EOFError:
                     break
 
+        if screen:
+            import ui.prompt as prompt_mod
+
+            prompt_mod.ACTIVE = None
+            await inputs.close()
+            screen.stop()
+            console.file = sys.__stdout__
         console.print("\n[dim]Goodbye![/dim]")
 
     async def _run_turn(self, text: str) -> None:
         """Run one request as a task so Ctrl+C cancels the agent, not the app."""
         task = asyncio.create_task(self._process_message(text))
+        inputs = getattr(self, "inputs", None)
+        if inputs:
+            inputs.on_interrupt = task.cancel  # full-screen mode gets Ctrl+C as a key, not a signal
         loop = asyncio.get_running_loop()
         try:
             loop.add_signal_handler(signal.SIGINT, task.cancel)
@@ -172,6 +194,8 @@ class CLI:
             console.print("\n[warning]Interrupted[/warning]")
             self.agent.session.context_manager.repair_orphans()  # providers reject unanswered tool calls
         finally:
+            if inputs:
+                inputs.on_interrupt = None
             self.tui.end_turn()
             try:
                 loop.remove_signal_handler(signal.SIGINT)

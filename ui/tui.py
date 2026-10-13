@@ -81,6 +81,20 @@ AGENT_THEME = Theme(
 
 _console: Console | None = None
 
+# shell commands that only look around; the side panel skips them like it skips grep
+QUIET_COMMANDS = {"grep", "rg", "find", "ls", "cat", "head", "tail", "wc", "tree", "pwd", "echo", "fd", "which"}
+
+
+def redirect_console(console: Console, sink: Any, width: int) -> None:
+    """Point the shared console at a full-screen pane. It keeps emitting colour codes even though
+    its file is not a terminal, and wraps to the pane's width."""
+    from rich.color import ColorSystem
+
+    console.file = sink
+    console._force_terminal = True
+    console._color_system = ColorSystem.TRUECOLOR
+    console.width = width
+
 
 def get_console() -> Console:
     global _console
@@ -379,10 +393,15 @@ class TUI:
         self.todos: list[tuple[str, bool]] = []
         self.agents: dict[str, dict[str, Any]] = {}
         self.results: deque = deque(maxlen=30)  # full tool results for /expand
+        self.fullscreen = False  # a full-screen pane shows the status line, so no Live region
+        # what the side panel lists: files read, files written, commands run
+        self.read_files: dict[str, int] = {}
+        self.written: dict[str, tuple[int, int, bool]] = {}
+        self.commands: list[tuple[str, bool]] = []
 
     # -- live region -----------------------------------------------------
     def _live_ok(self) -> bool:
-        return self.console.is_terminal and not getattr(self.console, "record", False)
+        return not self.fullscreen and self.console.is_terminal and not getattr(self.console, "record", False)
 
     def _renderable(self):
         rows: list[Any] = []
@@ -540,6 +559,7 @@ class TUI:
         else:
             self._print_header(name, args)
         md = metadata or {}
+        self._track(name, args, success, md, diff)
         self.results.append({"label": tool_label(name, args, self.cwd), "success": success, "output": output, "error": error, "diff": diff})
         summary, preview = summarize_result(name, success, output, error, md, exit_code, args)
         color = kind_color(name) if success else CORAL
@@ -557,6 +577,24 @@ class TUI:
             for ln in preview[: 60 if self.expand else None]:
                 rows.append(Text(f"  {ln[:200]}", style=MUTED))
         self.console.print(Rail(Group(*rows), color, "│"))
+
+    def _track(self, name: str, args: dict[str, Any], success: bool, md: dict, diff: str | None) -> None:
+        if not success:
+            cmd = str(args.get("command", "")).strip()
+            if name == "shell" and cmd and cmd.split()[0] not in QUIET_COMMANDS:
+                self.commands.append((cmd, False))
+            return
+        path = display_path_rel_to_cwd(md.get("path", args.get("path", "")), self.cwd) if (md.get("path") or args.get("path")) else ""
+        if name == "read_file" and path:
+            self.read_files[path] = self.read_files.get(path, 0) + 1
+        elif name in {"edit", "write_file"} and path:
+            _, adds, dels = parse_unified_diff(diff) if diff else ([], 0, 0)
+            old = self.written.get(path, (0, 0, False))
+            self.written[path] = (old[0] + adds, old[1] + dels, old[2] or bool(md.get("is_new_file")))
+        elif name == "shell":
+            cmd = str(args.get("command", "")).strip()
+            if cmd and cmd.split()[0] not in QUIET_COMMANDS:
+                self.commands.append((cmd, True))
 
     def show_result(self, n: int = 1) -> None:
         """/expand [n]: print the full output of the n-th most recent tool call."""
