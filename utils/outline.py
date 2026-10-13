@@ -16,6 +16,7 @@ class Symbol:
     start: int
     end: int
     indent: int = 0
+    marker: bool = False  # comment-derived, ends where the next symbol begins
 
 
 _JS = re.compile(
@@ -27,6 +28,8 @@ _METHOD = re.compile(r"^(?P<i>\s{2,4})(?:(?:public|private|protected|static|asyn
 _GO = re.compile(r"^(?P<k>func|type)\s+(?:\([^)]*\)\s*)?(?P<n>\w+)")
 _RS = re.compile(r"^(?P<i>\s*)(?:pub(?:\([^)]*\))?\s+)?(?:async\s+)?(?P<k>fn|struct|enum|trait|impl|mod)\s+(?P<n>\w+)")
 _MD = re.compile(r"^(?P<h>#{1,4})\s+(?P<n>.+)")
+_JSX_NOTE = re.compile(r"^(?P<i>\s*)\{/\*\s*(?P<n>[^*]{3,80}?)\s*\*/\}\s*$")
+_BANNER = re.compile(r"^(?P<i>\s*)//\s*[─\-=]{2,}\s*(?P<n>[^─\-=][^─=]{2,70}?)\s*[─\-=]*\s*$")
 _NOT_METHODS = {"if", "for", "while", "switch", "catch", "return", "function", "constructor_"}
 
 
@@ -67,6 +70,10 @@ def outline(path: str, src: str) -> list[Symbol]:
             m = _METHOD.match(line)
             if m and m.group("n") not in _NOT_METHODS:
                 syms.append(Symbol(m.group("n"), "method", no, no, len(m.group("i"))))
+                continue
+            m = _JSX_NOTE.match(line) or _BANNER.match(line)
+            if m:  # markers inside huge components: the only map of where things render
+                syms.append(Symbol(m.group("n"), "section", no, no, len(m.group("i")), marker=True))
         elif ext == "go":
             m = _GO.match(line)
             if m:
@@ -80,8 +87,28 @@ def outline(path: str, src: str) -> list[Symbol]:
             if m:
                 syms.append(Symbol(m.group("n").strip(), "h" + str(len(m.group("h"))), no, no, len(m.group("h"))))
     for i, s in enumerate(syms):
-        nxt = next((t.start for t in syms[i + 1:] if t.indent <= s.indent), len(lines) + 1)
-        s.end = max(s.start, nxt - 1)
+        bound = next((t.start for t in syms[i + 1:] if t.indent <= s.indent), len(lines) + 1) - 1
+        end = bound
+        if not s.marker:
+            end = _close(lines, s.start, bound)
+        s.end = max(s.start, end)
         while s.end > s.start and not lines[s.end - 1].strip():
             s.end -= 1  # don't count trailing blank lines
     return syms
+
+
+def _close(lines: list[str], start: int, bound: int) -> int:
+    """Line where the declaration's brackets balance out (approximate: braces in strings are not parsed)."""
+    bal, opened = 0, False
+    for no in range(start, min(bound, len(lines)) + 1):
+        line = lines[no - 1]
+        for ch in line:
+            if ch in "{([":
+                bal, opened = bal + 1, True
+            elif ch in "})]":
+                bal -= 1
+        if opened and bal <= 0:
+            return no
+        if not opened and line.rstrip().endswith(";"):
+            return no
+    return bound

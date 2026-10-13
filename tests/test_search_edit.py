@@ -174,3 +174,11 @@ async def test_git_tool_is_read_only_and_finds_changes(repo):
     from pydantic import ValidationError
     with pytest.raises(ValidationError):
         await run(t, repo, op="commit")
+
+
+def test_outline_maps_jsx_sections_inside_a_big_component():
+    from utils.outline import outline
+
+    src = "export default function Page() {\n  return (\n    <div>\n      {/* About the Event */}\n      {x && (\n        <A />\n      )}\n\n      {/* Footer */}\n      <B />\n    </div>\n  );\n}\n"
+    names = {s.name: (s.start, s.end) for s in outline("Page.tsx", src)}
+    assert names["Page"] == (1, 13) and names["About the Event"] == (4, 8) and names["Footer"][0] == 9

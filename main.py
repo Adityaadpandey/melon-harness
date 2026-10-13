@@ -121,7 +121,7 @@ class CLI:
         if sys.stdout.isatty() and sys.stdin.isatty() and not os.environ.get("MEW_PLAIN"):
             from ui.screen import Screen
 
-            screen = Screen(self.tui, console)  # MEW_PLAIN=1 keeps the old scrolling layout
+            screen = Screen(self.tui, console, lambda: f"{self.config.model_name}  ·  {str(self.config.cwd).replace(str(Path.home()), '~')}")  # MEW_PLAIN=1 keeps the old scrolling layout
         self.tui.print_welcome(
             "mew",
             lines=[

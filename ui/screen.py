@@ -11,7 +11,8 @@ from typing import Any
 
 from prompt_toolkit.application import get_app
 from prompt_toolkit.filters import Condition
-from prompt_toolkit.formatted_text import ANSI
+from prompt_toolkit.data_structures import Point
+from prompt_toolkit.formatted_text import ANSI, to_formatted_text
 from prompt_toolkit.key_binding import KeyBindings
 from prompt_toolkit.layout import ConditionalContainer, HSplit, VSplit, Window
 from prompt_toolkit.layout.controls import FormattedTextControl
@@ -23,7 +24,8 @@ from ui.tui import ACCENT, AGENT_THEME, AMBER, CORAL, FG, LAVENDER, MINT, MUTED,
 
 SIDE_WIDTH = 38
 MIN_COLUMNS = 100  # narrower terminals get the conversation only
-MAX_LINES = 6000
+MAX_LINES = 3000
+MARGIN = 2
 
 
 class Sink:
@@ -62,10 +64,10 @@ def _clip(path: str, width: int) -> str:
 
 
 class _Pane(FormattedTextControl):
-    """Transcript text that reacts to the mouse wheel."""
+    """Text that scrolls the transcript when the mouse wheel moves over it."""
 
-    def __init__(self, text, on_scroll) -> None:
-        super().__init__(text)
+    def __init__(self, text, on_scroll, cursor=None) -> None:
+        super().__init__(text, show_cursor=False, get_cursor_position=cursor)
         self._on_scroll = on_scroll
 
     def mouse_handler(self, mouse_event):
@@ -78,10 +80,11 @@ class _Pane(FormattedTextControl):
 
 
 class Screen:
-    def __init__(self, tui: TUI, console: Console) -> None:
-        self.tui, self.console = tui, console
+    def __init__(self, tui: TUI, console: Console, title=lambda: "") -> None:
+        self.tui, self.console, self._title = tui, console, title
+        self._cache: tuple[int, Any, int] = (-1, [], 0)  # (text length, formatted text, line count)
+        self.anchor: int | None = None  # line kept in view while scrolled back; None follows new output
         self.sink = Sink()
-        self.offset = 0  # lines scrolled up from the bottom; 0 follows new output
         self.kb = KeyBindings()
         self._status_height = 0
         self._status_console = Console(file=io.StringIO(), force_terminal=True, color_system="truecolor", theme=AGENT_THEME, highlight=False)
@@ -97,24 +100,37 @@ class Screen:
         def _pgdn(event):
             self.scroll(-(self._main_rows() - 2))
 
-        self.main = Window(_Pane(self._transcript, self.scroll), wrap_lines=False)
-        self.status = Window(FormattedTextControl(self._status), height=lambda: Dimension.exact(self._status_height))
-        self.sections = [Window(FormattedTextControl(lambda k=k: self._section(k)), wrap_lines=False, style="bg:#151826") for k in ("read", "write", "cmd")]
+        @self.kb.add("c-home")
+        def _top(event):
+            self.anchor = 0
+
+        @self.kb.add("c-end")
+        def _bottom(event):
+            self.anchor = None
+
+        # the Window keeps the cursor line visible, so parking the cursor on the last line follows
+        # the output and parking it higher up holds the view still while new lines arrive below
+        self.main = Window(_Pane(self._transcript, self.scroll, self._cursor), wrap_lines=False)
+        self.status = Window(_Pane(self._status, self.scroll), height=lambda: Dimension.exact(self._status_height))
+        self.sections = [Window(_Pane(lambda k=k: self._section(k), self.scroll), wrap_lines=False, style="bg:#151826") for k in ("read", "write", "cmd")]
+        rule = lambda: Window(height=1, char="─", style="fg:#3a3f5c bg:#151826")
         side = VSplit([
             Window(width=1, char="│", style="fg:#3a3f5c"),
-            HSplit([self.sections[0], Window(height=1, char="─", style="fg:#3a3f5c bg:#151826"), self.sections[1],
-                    Window(height=1, char="─", style="fg:#3a3f5c bg:#151826"), self.sections[2]], width=SIDE_WIDTH, style="bg:#151826"),
+            HSplit([self.sections[0], rule(), self.sections[1], rule(), self.sections[2]], width=SIDE_WIDTH, style="bg:#151826"),
         ])
         wide = Condition(lambda: _size()[0] >= MIN_COLUMNS)
+        header = Window(_Pane(self._header, self.scroll), height=1, style="bg:#1d2033")
+        margin = Window(width=MARGIN)
         self.body = HSplit([
-            VSplit([self.main, ConditionalContainer(side, filter=wide)]),
-            self.status,
+            header,
+            VSplit([margin, self.main, ConditionalContainer(side, filter=wide)]),
+            VSplit([margin, self.status]),
         ])
         self.sink.on_write = self._poke
 
     # -- layout helpers ------------------------------------------------
     def _main_width(self, cols: int) -> int:
-        return max(40, cols - (SIDE_WIDTH + 1 if cols >= MIN_COLUMNS else 0) - 1)
+        return max(40, cols - MARGIN - (SIDE_WIDTH + 1 if cols >= MIN_COLUMNS else 0) - 1)
 
     def _main_rows(self) -> int:
         info = self.main.render_info
@@ -126,22 +142,36 @@ class Screen:
         except Exception:
             pass
 
+    def _formatted(self):
+        """The transcript as formatted text, parsed again only when something new was printed."""
+        text = self.sink.text
+        if len(text) != self._cache[0]:
+            body = text[:-1] if text.endswith("\n") else text
+            self._cache = (len(text), to_formatted_text(ANSI(body)), body.count("\n"))
+        return self._cache
+
     def scroll(self, delta: int) -> None:
-        total = self.sink.text.count("\n")
-        self.offset = max(0, min(total, self.offset + delta))
+        """Positive goes back in time. Scrolling past the newest line goes back to following."""
+        last = self._formatted()[2]
+        at = last if self.anchor is None else self.anchor
+        at = max(0, min(last, at - delta))
+        self.anchor = None if at >= last else at
+
+    def _cursor(self) -> Point:
+        last = self._formatted()[2]
+        return Point(0, last if self.anchor is None else min(self.anchor, last))
+
+    def _header(self):
+        cols = _size()[0]
+        left = f"  ✦ mew  ·  {self._title()}"
+        right = "scrolled back · PageDown / ctrl+end to return  " if self.anchor is not None else "PageUp/Down scroll  "
+        pad = " " * max(1, cols - len(left) - len(right))
+        return [(f"bold fg:{ACCENT}", "  ✦ mew"), (f"fg:{MUTED}", f"  ·  {self._title()}{pad}"), (f"fg:{AMBER}" if self.anchor is not None else f"fg:#4a4f73", right)]
 
     # -- panes ---------------------------------------------------------
     def _transcript(self):
         self.console.width = self._main_width(_size()[0])  # follows terminal resizes
-        rows = self._main_rows()
-        lines = self.sink.text.split("\n")
-        if lines and lines[-1] == "":
-            lines.pop()
-        end = max(0, len(lines) - self.offset)
-        shown = lines[max(0, end - rows):end]
-        if self.offset:
-            shown = shown[:-1] + [f"\x1b[38;2;251;191;106m  ↓ {self.offset} lines below · PageDown or scroll to return\x1b[0m"] if shown else shown
-        return ANSI("\n".join(shown))
+        return self._formatted()[1]
 
     def _status(self):
         if not self.tui._turn_active:
