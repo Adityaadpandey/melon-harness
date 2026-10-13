@@ -93,6 +93,8 @@ class ToolInvocation:
     params: dict[str, Any]
     cwd: Path
     epoch: int = 0  # bumps when earlier tool output leaves the context (see ReadFileTool)
+    call_id: str = ""
+    progress: Any = None  # callable(call_id, info dict): long-running tools report live status here
 
 
 @dataclass

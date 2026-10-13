@@ -15,6 +15,7 @@ logger = logging.getLogger(__name__)
 class ToolRegistry:
     tracer = None  # set by Session; tool timing/outcome go to the trace
     epoch = 0
+    progress = None  # set by the UI: callable(call_id, info)
     _read_state: dict = {}
 
     def __init__(self, config: Config):
@@ -71,11 +72,11 @@ class ToolRegistry:
     def get_schemas(self) -> list[dict[str, Any]]:
         return [tool.to_openai_schema() for tool in self.get_tools()]
 
-    async def invoke(self, name, params, cwd, hook_system, approval_manager=None):
+    async def invoke(self, name, params, cwd, hook_system, approval_manager=None, call_id=""):
         import time
 
         started = time.perf_counter()
-        result = self._unread_edit_error(name, params, cwd) or await self._invoke(name, params, cwd, hook_system, approval_manager)
+        result = self._unread_edit_error(name, params, cwd) or await self._invoke(name, params, cwd, hook_system, approval_manager, call_id)
         self._note_file_state(name, params, cwd, result)
         self._cap_output(result)
         if self.tracer:
@@ -149,6 +150,7 @@ class ToolRegistry:
         cwd: Path,
         hook_system: HookSystem,
         approval_manager: ApprovalManager | None = None,
+        call_id: str = "",
     ) -> ToolResult:
         tool = self.get(name)
         if tool is None:
@@ -194,7 +196,7 @@ class ToolRegistry:
             return result
 
         await hook_system.trigger_before_tool(name, params)
-        invocation = ToolInvocation(params=params, cwd=cwd, epoch=self.epoch)
+        invocation = ToolInvocation(params=params, cwd=cwd, epoch=self.epoch, call_id=call_id, progress=self.progress)
         if approval_manager:
             confirmation = await tool.get_confirmation(invocation)
             if confirmation:
@@ -248,7 +250,11 @@ def create_default_registry(config: Config) -> ToolRegistry:
         registry.register(tool_class(config))
 
     from tools.builtin.graph import GraphTool
+    from tools.builtin.parallel_tasks import ParallelTasksTool
     from utils.codegraph import locate
+
+    if config.enable_parallel_tasks and any((d / ".git").exists() for d in [config.cwd.resolve(), *config.cwd.resolve().parents][:6]):
+        registry.register(ParallelTasksTool(config))
 
     if locate(config.cwd):  # only advertise the tool when there is a graph to query
         registry.register(GraphTool(config))

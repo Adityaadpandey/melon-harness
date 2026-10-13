@@ -335,6 +335,7 @@ class Agent:
             self.config.cwd,
             self.session.hook_system,
             self.session.approval_manager,
+            tool_call.call_id,
         )
 
     async def _run_tool_calls(self, tool_calls: list[ToolCall]):

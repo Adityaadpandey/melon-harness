@@ -1,7 +1,7 @@
 import asyncio
 from typing import Any
 from config.config import Config
-from tools.base import Tool, ToolInvocation, ToolResult
+from tools.base import Tool, ToolInvocation, ToolKind, ToolResult
 from dataclasses import dataclass
 from pydantic import BaseModel, Field
 
@@ -23,10 +23,24 @@ class SubagentDefinition:
     role: str = "default"
 
 
+READONLY_TOOLS = {"read_file", "grep", "glob", "list_dir", "use_skill", "graph", "web_search", "web_fetch"}
+_SEMAPHORES: dict[int, asyncio.Semaphore] = {}
+
+
+def _agent_slots(limit: int) -> asyncio.Semaphore:
+    """One cap shared by every sub-agent tool in this event loop."""
+    return _SEMAPHORES.setdefault(id(asyncio.get_running_loop()), asyncio.Semaphore(max(1, limit)))
+
+
 class SubagentTool(Tool):
     def __init__(self, config: Config, definition: SubagentDefinition):
         super().__init__(config)
         self.definition = definition
+        # A sub-agent that can only read cannot conflict with anything, so several of
+        # them run concurrently and need no approval. One that can run commands is serialized.
+        tools = definition.allowed_tools
+        self.readonly = bool(tools) and set(tools) <= READONLY_TOOLS
+        self.kind = ToolKind.READ if self.readonly else ToolKind.SHELL
 
     @property
     def name(self) -> str:
@@ -39,7 +53,7 @@ class SubagentTool(Tool):
     schema = SubagentParams
 
     def is_mutating(self, params: dict[str, Any]) -> bool:
-        return True
+        return not self.readonly
 
     async def execute(self, invocation: ToolInvocation) -> ToolResult:
         from agent.agent import Agent
@@ -54,6 +68,7 @@ class SubagentTool(Tool):
         config_dict["model_role"] = self.definition.role
         config_dict["auto_review"] = False
         config_dict["subagents"] = []  # no recursive delegation
+        config_dict["enable_parallel_tasks"] = False
         config_dict["auto_verify"] = False  # the parent run verifies the final tree
         config_dict["verify_commands"] = []
         if self.definition.allowed_tools:
@@ -80,8 +95,13 @@ class SubagentTool(Tool):
         error = None
         terminate_response = "goal"
 
+        def report(info: dict) -> None:
+            if invocation.progress:
+                invocation.progress(invocation.call_id, {"agent": self.definition.name, **info})
+
         try:
-            async with Agent(subagent_config) as agent:
+            async with _agent_slots(self.config.max_parallel_agents), Agent(subagent_config) as agent:
+                report({"kind": "start", "goal": params.goal})
                 deadline = (
                     asyncio.get_event_loop().time() + self.definition.timeout_seconds
                 )
@@ -94,6 +114,7 @@ class SubagentTool(Tool):
 
                     if event.type == AgentEventType.TOOL_CALL_START:
                         tool_calls.append(event.data.get("name"))
+                        report({"kind": "tool", "name": event.data.get("name"), "args": event.data.get("arguments", {})})
                     elif event.type == AgentEventType.TEXT_COMPLETE:
                         final_response = event.data.get("content")
                     elif event.type == AgentEventType.AGENT_END:
@@ -109,6 +130,7 @@ class SubagentTool(Tool):
             error = str(e)
             final_response = f"Sub-agent failed: {e}"
 
+        report({"kind": "done", "ok": not error})
         result = f"""Sub-agent '{self.definition.name}' completed. 
         Termination: {terminate_response}
         Tools called: {', '.join(tool_calls) if tool_calls else 'None'}

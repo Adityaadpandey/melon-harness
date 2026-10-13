@@ -116,7 +116,9 @@ class Orchestrator:
             started = time.perf_counter()
             node.branch = f"mew/{self.run_id}/{node.id}"
             wt = await self._worktree(node.id, base)
-            cfg = Config(**{**self.config.to_dict(), "cwd": str(wt)})
+            git_dir = str((self.repo / ".git").resolve())  # a worktree's git metadata lives in the main repo's .git
+            cfg = Config(**{**self.config.to_dict(), "cwd": str(wt),
+                            "sandbox_write_extra": [*self.config.sandbox_write_extra, git_dir]})
             owned = f"\nFiles you own: {', '.join(node.files)}. Do not edit other files." if node.files else ""
             prompt = (
                 f"You are one worker in a parallel job. Overall request (for context only):\n{request}\n\n"
