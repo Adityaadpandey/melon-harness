@@ -14,7 +14,9 @@ from prompt_toolkit.styles import Style
 
 from utils.search import list_files
 
-ACCENT = "#d97757"
+ACCENT = "#ff7eb6"
+LAVENDER = "#b49cff"
+MUTED = "#6c7393"
 MAX_ATTACH_BYTES = 60_000
 
 COMMANDS = {
@@ -100,7 +102,7 @@ class InputSession:
 
         self._toolbar = toolbar
         self.area = TextArea(
-            prompt=[("class:prompt", "❯ ")], multiline=True, wrap_lines=True, history=history,
+            prompt=[("class:prompt", "✦ ")], multiline=True, wrap_lines=True, history=history,
             completer=ThreadedCompleter(MewCompleter(cwd, forbidden, models)), complete_while_typing=True,
             height=lambda: Dimension(min=1, max=12, preferred=max(1, self.area.document.line_count)),
         )
@@ -164,7 +166,16 @@ class InputSession:
             if not buf.text:
                 event.app.exit(exception=EOFError)
 
-        footer = Window(FormattedTextControl(lambda: [("class:toolbar", " " + self._toolbar())]), height=1)
+        def footer_text():
+            # model in lavender, the rest soft, with dim dots between the pieces
+            frags: list[tuple[str, str]] = [("", " ")]
+            for i, part in enumerate(self._toolbar().split("  ·  ")):
+                if i:
+                    frags.append(("class:tb.dot", "  ·  "))
+                frags.append(("class:tb.first" if i == 0 else "class:toolbar", part))
+            return frags
+
+        footer = Window(FormattedTextControl(footer_text), height=1)
         root = FloatContainer(
             content=HSplit([Frame(self.area, style="class:frame"), footer]),
             floats=[Float(xcursor=True, ycursor=True, content=CompletionsMenu(max_height=8, scroll_offset=1))],
@@ -172,8 +183,9 @@ class InputSession:
         self.app = Application(
             layout=Layout(root, focused_element=self.area), key_bindings=kb, erase_when_done=True,
             style=Style.from_dict({
-                "prompt": f"{ACCENT} bold", "frame.border": "#5f5f5f", "toolbar": "#7f7f7f",
-                "completion-menu.completion": "bg:#262626 #bbbbbb", "completion-menu.completion.current": f"bg:{ACCENT} #000000",
+                "prompt": f"{ACCENT} bold", "frame.border": "#4a4f73", "toolbar": MUTED, "tb.first": LAVENDER, "tb.dot": "#3a3f5c",
+                "completion-menu.completion": "bg:#1d2033 #c5cae9", "completion-menu.completion.current": f"bg:{ACCENT} #14161f bold",
+                "completion-menu.meta.completion": "bg:#1d2033 #6c7393", "completion-menu.meta.completion.current": f"bg:{ACCENT} #14161f",
             }),
             input=input, output=output,
         )
@@ -185,9 +197,10 @@ class InputSession:
 
 async def ask_choice(console, question: str, options: list[str], *, input=None, output=None) -> int:
     """Numbered choice answered with a single keypress. Esc / Ctrl+C pick the last option (No)."""
-    console.print(f"[bold]{question}[/bold]")
+    console.print(f"\n [bold {LAVENDER}]?[/] [bold]{question}[/bold]")
     for i, opt in enumerate(options, 1):
-        console.print(f"  [accent]{'❯' if i == 1 else ' '}[/accent] {i}. {opt}")
+        key = "#ff6b7f" if i == len(options) else ACCENT
+        console.print(f"  [bold {key}]\\[{i}][/] {opt}" + ("  [dim](enter)[/dim]" if i == 1 else ""))
     kb = KeyBindings()
     for i in range(len(options)):
         kb.add(str(i + 1))(lambda e, i=i: e.app.exit(result=i))
