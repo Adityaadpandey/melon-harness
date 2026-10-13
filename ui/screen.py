@@ -21,6 +21,7 @@ from prompt_toolkit.layout.controls import FormattedTextControl
 from prompt_toolkit.layout.dimension import Dimension
 from prompt_toolkit.mouse_events import MouseEventType
 from rich.console import Console
+from rich.text import Text
 
 from ui.tui import _mix, ACCENT, AGENT_THEME, AMBER, CORAL, FG, LAVENDER, MINT, MUTED, SKY, TUI, redirect_console
 
@@ -343,13 +344,22 @@ class Screen:
         at, ansi, rows = self._status_cache
         if time.monotonic() - at < 0.05:
             return ansi, rows
-        if not self.tui._turn_active:
+        import ui.prompt as prompt_mod
+
+        asking = prompt_mod.ACTIVE.question if prompt_mod.ACTIVE else None
+        if not self.tui._turn_active and not asking:
             self._status_cache = (time.monotonic(), "", 0)
             return "", 0
         c = self._status_console
         c.width = self._main_width(_size()[0])
         c.file = io.StringIO()
-        c.print(self.tui._renderable())
+        if self.tui._turn_active:
+            c.print(self.tui._renderable())
+        if asking:
+            q, opts = asking
+            c.print(Text.assemble((" ? ", f"bold {LAVENDER}"), (q, "bold")))
+            for i, opt in enumerate(opts, 1):
+                c.print(Text.assemble((f"   [{i}] ", f"bold {CORAL if i == len(opts) else ACCENT}"), (opt, FG), ("  (enter)" if i == 1 else "", MUTED)))
         out = c.file.getvalue().rstrip("\n") + "\n" + self._scanner(c.width)
         self._status_cache = (time.monotonic(), out, out.count("\n") + 1)
         return out, out.count("\n") + 1

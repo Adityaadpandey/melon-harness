@@ -111,6 +111,7 @@ class InputSession:
         self.fullscreen = body is not None
         self.queue: asyncio.Queue = asyncio.Queue()  # full-screen mode: submitted lines wait here
         self.choice: tuple[int, asyncio.Future] | None = None
+        self.question: tuple[str, list[str]] | None = None  # shown by the full-screen status area
         self.line_future: asyncio.Future | None = None
         self.on_interrupt: Callable[[], None] | None = None
         self.is_busy: Callable[[], bool] = lambda: False
@@ -310,12 +311,16 @@ ACTIVE: InputSession | None = None  # the full-screen input, when there is one
 
 async def ask_choice(console, question: str, options: list[str], *, input=None, output=None) -> int:
     """Numbered choice answered with a single keypress. Esc / Ctrl+C pick the last option (No)."""
+    if ACTIVE is not None:  # full-screen: the options live above the input and vanish once answered
+        ACTIVE.question = (question, options)
+        try:
+            return await ACTIVE.choose(len(options))
+        finally:
+            ACTIVE.question = None
     console.print(f"\n [bold {LAVENDER}]?[/] [bold]{question}[/bold]")
     for i, opt in enumerate(options, 1):
         key = "#ff6b7f" if i == len(options) else ACCENT
         console.print(f"  [bold {key}]\\[{i}][/] {opt}" + ("  [dim](enter)[/dim]" if i == 1 else ""))
-    if ACTIVE is not None:
-        return await ACTIVE.choose(len(options))
     kb = KeyBindings()
     for i in range(len(options)):
         kb.add(str(i + 1))(lambda e, i=i: e.app.exit(result=i))
