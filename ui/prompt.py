@@ -87,7 +87,7 @@ class InputSession:
         from prompt_toolkit.layout.controls import FormattedTextControl
         from prompt_toolkit.layout.dimension import Dimension
         from prompt_toolkit.layout.menus import CompletionsMenu
-        from prompt_toolkit.widgets import Frame, TextArea
+        from prompt_toolkit.widgets import TextArea
         from prompt_toolkit.widgets.base import Border
 
         # rounded corners, like the rest of the UI
@@ -102,7 +102,7 @@ class InputSession:
 
         self._toolbar = toolbar
         self.area = TextArea(
-            prompt=[("class:prompt", "✦ ")], multiline=True, wrap_lines=True, history=history,
+            prompt=[("class:bar", "▍ "), ("class:prompt", "✦ ")], style="class:box", dont_extend_height=True, multiline=True, wrap_lines=True, history=history,
             completer=ThreadedCompleter(MewCompleter(cwd, forbidden, models)), complete_while_typing=True,
             height=lambda: Dimension(min=1, max=12, preferred=max(1, self.area.document.line_count)),
         )
@@ -167,23 +167,34 @@ class InputSession:
                 event.app.exit(exception=EOFError)
 
         def footer_text():
-            # model in lavender, the rest soft, with dim dots between the pieces
+            # approval mode as a chip, model in pink, context bar tinted by how full it is
             frags: list[tuple[str, str]] = [("", " ")]
             for i, part in enumerate(self._toolbar().split("  ·  ")):
                 if i:
                     frags.append(("class:tb.dot", "  ·  "))
-                frags.append(("class:tb.first" if i == 0 else "class:toolbar", part))
+                if i == 0:
+                    frags.append(("class:tb.chip", f" {part} "))
+                elif i == 1:
+                    frags.append(("class:tb.model", part))
+                elif part.startswith("ctx"):
+                    pct = int(re.search(r"(\d+)%", part).group(1)) if re.search(r"(\d+)%", part) else 0
+                    frags.append(("class:tb.ok" if pct < 60 else "class:tb.warn" if pct < 85 else "class:tb.bad", part))
+                elif part.startswith("$"):
+                    frags.append(("class:tb.warn", part))
+                else:
+                    frags.append(("class:toolbar", part))
             return frags
 
         footer = Window(FormattedTextControl(footer_text), height=1)
         root = FloatContainer(
-            content=HSplit([Frame(self.area, style="class:frame"), footer]),
+            content=HSplit([Window(height=1, style="class:box"), self.area, Window(height=1, style="class:box"), footer]),
             floats=[Float(xcursor=True, ycursor=True, content=CompletionsMenu(max_height=8, scroll_offset=1))],
         )
         self.app = Application(
             layout=Layout(root, focused_element=self.area), key_bindings=kb, erase_when_done=True,
             style=Style.from_dict({
-                "prompt": f"{ACCENT} bold", "frame.border": "#4a4f73", "toolbar": MUTED, "tb.first": LAVENDER, "tb.dot": "#3a3f5c",
+                "prompt": f"bg:#1d2033 {ACCENT} bold", "box": "bg:#1d2033 #d5d9ec", "bar": f"bg:#1d2033 {ACCENT} bold", "toolbar": MUTED, "tb.dot": "#3a3f5c",
+                "tb.chip": f"bg:{LAVENDER} #14161f bold", "tb.model": f"{ACCENT} bold", "tb.ok": "#6ee7b7", "tb.warn": "#fbbf6a", "tb.bad": "#ff6b7f",
                 "completion-menu.completion": "bg:#1d2033 #c5cae9", "completion-menu.completion.current": f"bg:{ACCENT} #14161f bold",
                 "completion-menu.meta.completion": "bg:#1d2033 #6c7393", "completion-menu.meta.completion.current": f"bg:{ACCENT} #14161f",
             }),

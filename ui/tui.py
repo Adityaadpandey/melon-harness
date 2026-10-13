@@ -575,7 +575,7 @@ class TUI:
     def turn_summary(self, elapsed: float, usage: dict | None, report: dict | None) -> None:
         out = Text.assemble(("  ✦ ", ACCENT), (f"{elapsed:.0f}s", f"bold {FG}"))
         if usage and usage.get("calls"):
-            out.append(f"  ·  {usage['calls']} calls  ·  {usage['prompt_tokens'] / 1000:.1f}k in ", style=MUTED)
+            out.append(f"  ·  {usage['calls']} call{'s' if usage['calls'] != 1 else ''}  ·  {usage['prompt_tokens'] / 1000:.1f}k in ", style=MUTED)
             out.append(f"({usage['cache_hit_pct']:.0f}% cached)", style=MINT if usage["cache_hit_pct"] >= 50 else AMBER)
             out.append(f"  ·  {usage['completion_tokens'] / 1000:.1f}k out", style=MUTED)
             if usage.get("est_cost_usd") is not None:
