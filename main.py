@@ -191,7 +191,9 @@ class CLI:
         cmd = command.lower().strip()
         parts = cmd.split(maxsplit=1)
         cmd_name = parts[0]
-        cmd_args = parts[1] if len(parts) > 1 else ""
+        # args keep their original case: model ids like Qwen/Qwen3.8-Max are case-sensitive
+        raw_parts = command.strip().split(maxsplit=1)
+        cmd_args = raw_parts[1] if len(raw_parts) > 1 else ""
         if cmd_name == "/exit" or cmd_name == "/quit":
             return False
         elif command == "/help":
@@ -210,8 +212,14 @@ class CLI:
             console.print(f"  Hooks Enabled: {self.config.hooks_enabled}")
         elif cmd_name == "/model":
             if cmd_args:
-                self.config.model_name = cmd_args
-                console.print(f"[success]Model changed to: {cmd_args} [/success]")
+                known, near = self.agent.session.client.registry.validate(cmd_args)
+                if not known:
+                    console.print(f"[error]Unknown model: {cmd_args}[/error]")
+                    if near:
+                        console.print("Did you mean: " + ", ".join(near))
+                else:
+                    self.config.model_name = cmd_args
+                    console.print(f"[success]Model changed to: {cmd_args} [/success]")
             else:
                 console.print(f"Current model: {self.config.model_name}")
         elif cmd_name == "/approval":

@@ -169,3 +169,15 @@ async def test_explicit_main_model_is_not_skipped_by_probe(tmp_path):
     c, _ = make_client(tmp_path, {})
     c.registry._models["m1"].callable = False
     assert c.router.candidates("default")[0] == ["m1"]
+
+
+def test_model_validation_suggests_close_matches(tmp_path):
+    c, _ = make_client(tmp_path, {})
+    c.registry._models.clear()
+    for mid in ("gpt-6-luna", "gpt-5.6-luna", "Qwen/Qwen3.8-Max"):
+        c.registry._models[mid] = ModelInfo(mid)
+    ok, near = c.registry.validate("openai/gpt-luna-6")
+    assert not ok and "gpt-6-luna" in near
+    assert c.registry.validate("Qwen/Qwen3.8-Max") == (True, [])
+    c.registry._models.clear()
+    assert c.registry.validate("anything")[0]  # offline: don't block

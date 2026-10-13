@@ -103,6 +103,18 @@ class ModelRegistry:
             self._models[model_id] = info
         return info
 
+    def validate(self, model_id: str) -> tuple[bool, list[str]]:
+        """(known?, close matches). With no catalog (offline) anything goes."""
+        if not self._models or model_id in self._models:
+            return True, []
+        import difflib
+
+        ids = list(self._models)
+        near = difflib.get_close_matches(model_id, ids, n=4, cutoff=0.5)
+        tail = model_id.split("/")[-1].lower()
+        near += [i for i in ids if tail in i.lower() and i not in near][:4]
+        return False, near[:5]
+
     def all(self) -> list[ModelInfo]:
         return list(self._models.values())
 

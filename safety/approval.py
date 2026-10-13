@@ -29,6 +29,13 @@ DANGEROUS_PATTERNS = [
     r"rm\s+(-rf?|--recursive)\s+[/~]",
     r"rm\s+-rf?\s+\*",
     r"rmdir\s+[/~]",
+    # Git history / uncommitted work
+    r"rm\s+(-\S+\s+)*\S*\.git(/|\s|$)",
+    r"git\s+reset\s+--hard",
+    r"git\s+clean\s+-\S*f",
+    r"git\s+push\s+.*(--force|\s-f(\s|$))",
+    r"git\s+(checkout|restore)\s+(--\s+)?\.(\s|$)",
+    r"git\s+branch\s+(?-i:-D)",  # -d (safe delete) is fine, -D is not
     # Disk operations
     r"dd\s+if=",
     r"mkfs",
