@@ -58,13 +58,21 @@ def finished_jobs() -> list[BackgroundJob]:
     return out
 
 
+def kill_job(j: BackgroundJob) -> None:
+    if j.done:
+        return
+    try:
+        if sys.platform != "win32":
+            os.killpg(os.getpgid(j.process.pid), signal.SIGKILL)
+        else:
+            j.process.kill()
+    except ProcessLookupError:
+        pass
+
+
 def kill_jobs() -> None:
     for j in JOBS.values():
-        if not j.done and sys.platform != "win32":
-            try:
-                os.killpg(os.getpgid(j.process.pid), signal.SIGKILL)
-            except ProcessLookupError:
-                pass
+        kill_job(j)
 
 
 class ShellParams(BaseModel):
