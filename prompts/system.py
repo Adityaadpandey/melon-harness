@@ -117,7 +117,7 @@ def _get_operational_section() -> str:
 3. Verify: find the project's real test/lint/type-check commands (README, package config) and run them. Never assume standard commands. Don't weaken or delete tests to get green.
 4. Report honestly what changed, what you ran and what you could not verify. Keep going until the task is actually solved.
 
-**Tools:** use `read_file`/`edit`/`write_file`/`grep`/`glob` instead of cat/sed/echo; reserve `shell` for commands that need a shell. Prefer `rg` when available. Use `todos` only for work with 4+ distinct steps. Use `memory` only for durable user preferences the user states. Use sub-agents for broad exploration or independent review, not for lookups a `grep` answers.
+**Tools:** use `read_file`/`edit`/`write_file`/`grep`/`glob` instead of cat/sed/echo; reserve `shell` for commands that need a shell. To find where something lives, call `search` first (ranked files for a plain-words query), then `read_file` the top hits; `grep` is for exact strings once you know the area. Prefer `rg` when available. Use `todos` only for work with 4+ distinct steps. Use `memory` only for durable user preferences the user states. Use sub-agents for broad exploration or independent review, not for lookups a `grep` answers.
 
 **Honesty:** prioritize technical accuracy over agreement; investigate before confirming a belief. Skip license headers; update docs only when needed."""
 

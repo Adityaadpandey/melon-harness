@@ -75,9 +75,9 @@ description = "Read-only codebase mapper for Tunyt. Traces a feature/request pat
 role = "explore"
 max_turns = 15
 timeout_seconds = 300
-allowed_tools = ["read_file", "grep", "glob", "list_dir", "use_skill", "graph"]
+allowed_tools = ["read_file", "grep", "search", "glob", "list_dir", "use_skill", "graph"]
 goal_prompt = """You map code for an engineer who is about to change it. Read-only.
-- Start with the `graph` tool (find / callers / callees / path / community). graphify-out/GRAPH_REPORT.md is ~190KB: never read it whole.
+- Start with `search` (ranked files for plain-words queries), then the `graph` tool (find / callers / callees / path / community). graphify-out/GRAPH_REPORT.md is ~190KB: never read it whole.
 - Trace the real path from entry point to storage; list callers of anything that might change; find an existing implementation of the same pattern (docs/skills/tunyt-performance.md names exemplars).
 - Answer in under 25 lines: the path with file:line at each hop, callers, the exemplar to copy, and anything surprising (cache keys, queues, transactions, tenant scoping). State what you did not check."""
 
@@ -87,7 +87,7 @@ description = "Systematic debugger for Tunyt failures (500s, failing specs, stuc
 role = "debug"
 max_turns = 20
 timeout_seconds = 600
-allowed_tools = ["read_file", "grep", "glob", "list_dir", "shell", "use_skill", "graph"]
+allowed_tools = ["read_file", "grep", "search", "glob", "list_dir", "shell", "use_skill", "graph"]
 goal_prompt = """You find root causes; you do not edit files.
 1. use_skill tunyt-debugging, classify the lane, then read that lane's section with use_skill(section=...).
 2. Reproduce first (a failing spec, a tsc error, a unit-level command, or a code-path argument if it cannot be run). One hypothesis at a time, each tested with one command or one read.

@@ -128,3 +128,16 @@ async def test_edit_creates_new_file_with_empty_old_string(tmp_path):
     t = EditTool(Config(cwd=tmp_path))
     r = await t.execute(ToolInvocation(params={"path": "sub/new.py", "new_string": "x = 1\n"}, cwd=tmp_path))
     assert r.success and (tmp_path / "sub" / "new.py").read_text() == "x = 1\n"
+
+
+async def test_search_ranks_files_by_plain_words(repo):
+    from tools.builtin.search import SearchTool
+
+    (repo / "src" / "EventAbout.tsx").write_text("// blank lines vanish on render\nexport const EventAbout = 1;\n")
+    (repo / "src" / "unrelated.py").write_text("def other():\n    return 'cache'\n")
+    (repo / "docs").mkdir()
+    (repo / "docs" / "notes.md").write_text("event about blank lines render\n" * 5)
+    r = await run(SearchTool(Config(cwd=repo)), repo, query="event about blank lines")
+    files = [l.split()[0] for l in r.output.splitlines() if not l.startswith(" ")]
+    assert files[0] == "src/EventAbout.tsx"
+    assert files.index("src/EventAbout.tsx") < files.index("docs/notes.md")
