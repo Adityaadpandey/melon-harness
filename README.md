@@ -1,10 +1,17 @@
 # mew
 
-A terminal coding agent built around one idea: **every token and every tool call should earn its place.**
+**The coding agent that proves its work.**
 
-mew is a Python harness that works with Claude, GPT/Codex, DeepSeek and anything else behind an OpenAI-style API. It is fast on
+Most agents tell you they are done. mew shows you: the checks that passed, a second model's review of the real diff, and every
+file reference in the answer checked against your tree. Underneath, one rule: **every token and every tool call should earn its place.**
+
+mew is a terminal harness that works with Claude, GPT/Codex, DeepSeek and anything else behind an OpenAI-style API. It is fast on
 big repos because it finds code before it reads it, cheap because it never sends the same thing twice, and safe because its
 guardrails live in code, not in a prompt asking the model to behave.
+
+| Fast | Cheap | Honest | Safe |
+|---|---|---|---|
+| search and scout before reading | incremental reads, diffs, caching that hits | verify, review, citation check | confined tools, OS sandbox, project trust |
 
 ```
 $ mew
@@ -35,6 +42,32 @@ Most harnesses make the model do the hard parts and then hope. mew moves the har
 | Safety | "please don't touch ~/.ssh" in the prompt | confined file tools, path-scanning shell, and an OS sandbox |
 | Provider quota hits | the session dies | fails over to another provider and says so out loud |
 | A bad edit | `git checkout` and hope | pre-run backup and `/undo` |
+
+## How a request flows
+
+```
+ your request
+      │
+      ▼
+ classify difficulty (no model call) ──► fast / default / strong model chain
+      │
+      ▼
+ scout (read-only, cheap) ── search · outline · git · graph ──► findings
+      │
+      ▼
+ main model: read symbols, edit (read-before-edit enforced, diff approved by you)
+      │
+      ▼
+ verification gate ── fail ──► repair (up to max_repairs) ──┐
+      │ pass                                                │
+      ▼                                                     │
+ independent review on a different model ── findings ──► one fix, then re-review
+      │ clean
+      ▼
+ citation check on the answer ──► verified · unverified · verification_failed ...
+```
+
+Every arrow that can fail has a defined next step. Nothing ends in "the model said it was fine".
 
 ## Contents
 
@@ -248,6 +281,16 @@ Per repo, stored outside it. mew only keeps what can't be invented: what *you* t
 Benchmarks hit the real API. Runs that cannot execute (plan, quota, key) are recorded as `blocked`, not as failures. Reports include
 a timing breakdown. Real-repo tasks run only in a scratch clone, never in your working copy. Traces: one JSONL per session under
 the user data dir (`traces/`).
+
+## Not there yet
+
+Said plainly, so you know what you are getting:
+
+- No plan mode (a read-only phase ending in an approved plan).
+- No image input (pasting a screenshot).
+- No structured JSON output for CI, and no custom slash-command files.
+- The OS sandbox is macOS only; on Linux you get the confined tools and shell path checks, not the kernel layer.
+- No reasoning-effort setting, no rewind to an earlier message (`/undo` reverts the last request), no LSP diagnostics, no IDE extension.
 
 ### On "better than the others"
 
