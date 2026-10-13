@@ -145,3 +145,29 @@ def test_target_repo_env_file_is_never_loaded(tmp_path, monkeypatch):
     import os
 
     assert "SECRET_FROM_TARGET_REPO" not in os.environ
+
+
+async def test_subagent_from_profile_runs_with_its_role_and_tools(tmp_path, monkeypatch):
+    """Config round-trips into the child agent, the child uses the spec's role,
+    and the parent gets the child's final answer back."""
+    from client.llm_client import LLMClient
+    from tests.fakes import text as scripted_text
+
+    seen = {}
+
+    async def fake_chat(self, messages, tools=None, stream=True, role="default"):
+        seen["role"] = role
+        seen["tool_names"] = sorted(t["name"] for t in tools or [])
+        for ev in scripted_text("child answer: auth.ts:12"):
+            yield ev
+
+    monkeypatch.setattr(LLMClient, "chat_completion", fake_chat)
+    spec = SubagentSpec(name="investigator", description="maps code", goal_prompt="map it", role="explore",
+                        allowed_tools=["read_file", "grep"])
+    cfg = Config(cwd=tmp_path, approval=ApprovalPolicy.AUTO, auto_verify=False, subagents=[spec])
+    async with Agent(cfg) as a:
+        a.session.client = ScriptedClient([call("subagent_investigator", {"goal": "where is auth"}), text("thanks")])
+        evs = [e async for e in a.run("explore")]
+        done = next(e for e in evs if e.type == AgentEventType.TOOL_CALL_COMPLETE)
+        assert done.data["success"] and "child answer: auth.ts:12" in done.data["output"]
+    assert seen["role"] == "explore" and seen["tool_names"] == ["grep", "read_file"]
