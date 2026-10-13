@@ -8,6 +8,8 @@ from pathlib import Path
 from typing import Callable
 
 from prompt_toolkit import PromptSession
+from prompt_toolkit.application import get_app
+from prompt_toolkit.layout.dimension import Dimension
 from prompt_toolkit.completion import Completer, Completion, ThreadedCompleter
 from prompt_toolkit.history import FileHistory, InMemoryHistory
 from prompt_toolkit.key_binding import KeyBindings
@@ -122,7 +124,7 @@ class InputSession:
         self.area = TextArea(
             prompt=[("class:prompt", " ✦ ")], style="class:box", dont_extend_height=True, multiline=True, wrap_lines=True, history=history,
             completer=ThreadedCompleter(MewCompleter(cwd, forbidden, models)), complete_while_typing=True,
-            height=lambda: Dimension(min=1, max=12, preferred=max(1, self.area.document.line_count)),
+            height=self._input_height, scrollbar=True,
         )
         kb = KeyBindings()
         buf = self.area.buffer
@@ -268,6 +270,17 @@ class InputSession:
             }),
             input=input, output=output,
         )
+
+    def _input_height(self) -> Dimension:
+        """Rows the typed text needs once long lines wrap, up to ~40% of the screen; past that it scrolls."""
+        try:
+            size = get_app().output.get_size()
+            cols, rows = max(20, size.columns - 6), size.rows
+        except Exception:
+            cols, rows = 100, 30
+        need = sum(max(1, -(-len(ln) // cols)) for ln in self.area.text.split("\n"))
+        cap = max(3, int(rows * 0.4)) if self.fullscreen else 12
+        return Dimension(min=1, max=cap, preferred=min(need, cap))
 
     def _pick(self, i: int) -> None:
         if self.choice:
