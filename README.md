@@ -166,7 +166,20 @@ for edits, a spinner with the running tool, and a footer showing model, context 
 `grep` and `glob` respect `.gitignore`, find dotfiles, never touch secrets (`.env*`, keys), and support `glob`, `context`, `limit`,
 `literal` and `files_only`; smart-case by default. `edit` takes several replacements in one call (`edits`), tolerates trailing
 whitespace and smart-quote differences, keeps CRLF files CRLF, and reports every location when a match is not unique. What you
-approve is exactly what gets written (preview and write share one planner).
+approve is exactly what gets written (preview and write share one planner). Writes are atomic (temp file + rename), so a kill
+mid-write never leaves a truncated source file.
+
+Finding code cheaply, in the order to reach for them: `search` (BM25-ranked files for a plain-words query), `outline` (symbols
+and JSX section markers with line ranges), `read_file(path, symbol=...)` (one function), `git` (read-only: blame, log,
+`find_change` = `git log -S`), then `grep` for exact strings. A non-trivial request starts with a read-only scout
+(`auto_scout`), so the main context begins from findings instead of searches.
+
+## Safety net
+
+Before each request mew records the working tree as a commit object (`refs/mew/backup`, nothing in your index or stash).
+`/undo` restores the files the last request changed to that state and removes files it created; untracked files that existed
+before are never deleted. Token budget per request (`max_total_tokens`): warning at 70%, then one tool-free call so the work
+so far becomes an answer.
 
 ## Context and cost
 
