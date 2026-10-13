@@ -222,26 +222,8 @@ class Agent:
             used = self.session.context_manager.total_usage.total_tokens - self._usage_base
             budget = self.config.max_total_tokens
             if used > budget:
-                # out of budget: one last tool-free call so the work done so far
-                # becomes an answer instead of a bare failure
-                self._budget_hit = True
-                yield AgentEvent.notice(f"Token budget reached ({budget:,}); wrapping up with what is known")
-                self.session.context_manager.add_user_message(
-                    "Token budget is spent. No more tool calls. Answer now from what you have already verified: "
-                    "what you found (file:line), what is still unknown, and the next step you would take."
-                )
-                text = ""
-                async for event in self.session.client.chat_completion(
-                    self.session.context_manager.get_messages(), tools=None, role=self._role(task)
-                ):
-                    if event.type == StreamEventType.TEXT_DELTA and event.text_delta:
-                        text += event.text_delta.content
-                        yield AgentEvent.text_delta(event.text_delta.content)
-                    elif event.type == StreamEventType.MESSAGE_COMPLETE and event.usage:
-                        self.session.context_manager.add_usage(event.usage)
-                self.session.context_manager.add_assistant_message(text or None, None)
-                if text:
-                    yield AgentEvent.text_complete(text)
+                async for ev in self._wrap_up(task, f"Token budget reached ({budget:,})", "Token budget is spent"):
+                    yield ev
                 return
             if used > 0.7 * budget and not self._budget_warned:
                 self._budget_warned = True
@@ -375,8 +357,8 @@ class Agent:
 
             if self.session.context_manager.prune_tool_outputs():
                 self.session.tool_registry.epoch += 1
-        self._failed = True
-        yield AgentEvent.agent_error(f"Maximum turns ({max_turns}) reached")
+        async for ev in self._wrap_up(task, f"Turn limit reached ({max_turns})", "Turn limit reached"):
+            yield ev
 
     async def _scout(self, message: str) -> str:
         """Search in a throwaway read-only context so the main (pricier, ever-growing)
@@ -394,6 +376,28 @@ class Agent:
             self._scout_error = (res.error or "unknown error").splitlines()[0]
             return ""
         return (res.output or "")[:6000]
+
+    async def _wrap_up(self, task: TaskState, notice: str, why: str) -> AsyncGenerator[AgentEvent, None]:
+        """Out of budget or turns: one last tool-free call, so the work done so far
+        becomes an answer (or a verdict, for a reviewer) instead of a bare failure."""
+        self._budget_hit = True
+        yield AgentEvent.notice(f"{notice}; wrapping up with what is known")
+        self.session.context_manager.add_user_message(
+            f"{why}. No more tool calls. Answer now from what you have already read: what you found (file:line), "
+            "what is still unknown, and the next step. If you were asked for a specific reply format, use it."
+        )
+        text = ""
+        async for event in self.session.client.chat_completion(
+            self.session.context_manager.get_messages(), tools=None, role=self._role(task)
+        ):
+            if event.type == StreamEventType.TEXT_DELTA and event.text_delta:
+                text += event.text_delta.content
+                yield AgentEvent.text_delta(event.text_delta.content)
+            elif event.type == StreamEventType.MESSAGE_COMPLETE and event.usage:
+                self.session.context_manager.add_usage(event.usage)
+        self.session.context_manager.add_assistant_message(text or None, None)
+        if text:
+            yield AgentEvent.text_complete(text)
 
     def _role(self, task: TaskState) -> str:
         """Routing role for the next model call: a fixed role for sub-agents and
