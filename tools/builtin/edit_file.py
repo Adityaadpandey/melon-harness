@@ -1,211 +1,92 @@
 from pathlib import Path
-from tools.base import (
-    FileDiff,
-    Tool,
-    ToolConfirmation,
-    ToolInvocation,
-    ToolKind,
-    ToolResult,
-)
+
 from pydantic import BaseModel, Field
 
+from tools.base import FileDiff, Tool, ToolConfirmation, ToolInvocation, ToolKind, ToolResult
+from utils.edits import plan_edits
 from utils.paths import ensure_parent_directory, resolve_path
 
 
+class EditItem(BaseModel):
+    old_string: str = Field(..., description="Exact text to replace; unique in the file")
+    new_string: str = Field(..., description="Replacement text (may be empty to delete)")
+
+
 class EditParams(BaseModel):
-    path: str = Field(
-        ...,
-        description="Path to the file to edit (relative to working directory or absolute path)",
+    path: str = Field(..., description="File to edit (relative to the working directory, or absolute)")
+    old_string: str = Field("", description="Exact text to replace. Empty only when creating a new file.")
+    new_string: str = Field("", description="Replacement text. Empty deletes the matched text.")
+    replace_all: bool = Field(False, description="Replace every occurrence of old_string")
+    edits: list[EditItem] | None = Field(
+        None,
+        description="Several replacements in ONE call (preferred when changing multiple places in a file). "
+        "Each is matched against the original file, must be unique, and must not overlap another. "
+        "When given, old_string/new_string are ignored.",
     )
-    old_string: str = Field(
-        "",
-        description="The exact text to find and replace. Must match exactly including all whitespace and indentation. For new files, leave this empty.",
-    )
-    new_string: str = Field(
-        ...,
-        description="The text to replace old_string with. Can be empty to delete text",
-    )
-    replace_all: bool = Field(
-        False, description="Replace all occurrences of old_string (default: false)"
-    )
+
+
+def _read(path: Path) -> str:
+    # newline="" keeps CRLF intact; read_text() would silently normalise it
+    with open(path, encoding="utf-8", errors="replace", newline="") as f:
+        return f.read()
 
 
 class EditTool(Tool):
     name = "edit"
     description = (
-        "Edit a file by replacing text. The old_string must match exactly "
-        "(including whitespace and indentation) and must be unique in the file "
-        "unless replace_all is true. Use this for precise, surgical edits. "
-        "For creating new files or complete rewrites, use write_file instead."
+        "Edit a file by exact text replacement. Use `edits` for several changes in one call. "
+        "Trailing-whitespace and smart-quote differences are tolerated; anything else must match exactly. "
+        "To create or fully rewrite a file use write_file."
     )
     kind = ToolKind.WRITE
     schema = EditParams
 
-    async def get_confirmation(
-        self,
-        invocation: ToolInvocation,
-    ) -> ToolConfirmation | None:
-        params = EditParams(**invocation.params)
-        path = resolve_path(invocation.cwd, params.path)
+    def _pairs(self, p: EditParams) -> list[tuple[str, str]]:
+        return [(e.old_string, e.new_string) for e in p.edits] if p.edits else [(p.old_string, p.new_string)]
 
-        is_new_file = not path.exists()
+    def _plan(self, invocation: ToolInvocation):
+        """(path, old_content, new_content, error, count) shared by preview and execution."""
+        p = EditParams(**invocation.params)
+        path = resolve_path(invocation.cwd, p.path)
+        if not path.exists():
+            if p.old_string and not p.edits:
+                return path, "", None, f"File does not exist: {path}. To create a file, leave old_string empty (or use write_file).", 0
+            return path, "", p.new_string, None, 1  # new file
+        if not path.is_file():
+            return path, "", None, f"Not a file: {path}", 0
+        old = _read(path)
+        new, err, n = plan_edits(old, self._pairs(p), p.replace_all)
+        return path, old, new, err, n
 
-        if is_new_file:
-            diff = FileDiff(
-                path=path,
-                old_content="",
-                new_content=params.new_string,
-                is_new_file=True,
-            )
-
-            return ToolConfirmation(
-                tool_name=self.name,
-                params=invocation.params,
-                description=f"Create new file: {path}",
-                diff=diff,
-                affected_paths=[path],
-            )
-
-        old_content = path.read_text(encoding="utf-8")
-
-        if params.replace_all:
-            new_content = old_content.replace(params.old_string, params.new_string)
-        else:
-            new_content = old_content.replace(params.old_string, params.new_string, 1)
-
-        diff = FileDiff(
-            path=path,
-            old_content=old_content,
-            new_content=new_content,
-        )
-
+    async def get_confirmation(self, invocation: ToolInvocation) -> ToolConfirmation | None:
+        path, old, new, err, _ = self._plan(invocation)
+        if err:
+            return None  # nothing will be written, so there is nothing to approve; execute() reports the error
+        is_new = not path.exists()
         return ToolConfirmation(
             tool_name=self.name,
             params=invocation.params,
-            description=f"Edit file: {path}",
-            diff=diff,
+            description=f"{'Create' if is_new else 'Edit'} {path}",
+            diff=FileDiff(path=path, old_content=old, new_content=new, is_new_file=is_new),
             affected_paths=[path],
         )
 
     async def execute(self, invocation: ToolInvocation) -> ToolResult:
-        params = EditParams(**invocation.params)
-        path = resolve_path(invocation.cwd, params.path)
-
-        if not path.exists():
-            if params.old_string:
-                return ToolResult.error_result(
-                    f"File does not exist: {path}. To create a new file, use an empty old_string."
-                )
-
-            ensure_parent_directory(path)
-            path.write_text(params.new_string, encoding="utf-8")
-
-            line_count = len(params.new_string.splitlines())
-
-            return ToolResult.success_result(
-                f"Created {path} {line_count} lines",
-                diff=FileDiff(
-                    path=path,
-                    old_content="",
-                    new_content=params.new_string,
-                    is_new_file=True,
-                ),
-                metadata={
-                    "path": str(path),
-                    "is_new_file": True,
-                    "lines": line_count,
-                },
-            )
-
-        old_content = path.read_text(encoding="utf-8")
-
-        if not params.old_string:
-            return ToolResult.error_result(
-                "old_string is empty but file exists. Provide old_string to edit, or use write_file to overwrite."
-            )
-
-        occurrence_count = old_content.count(params.old_string)
-
-        if occurrence_count == 0:
-            return self._no_match_error(params.old_string, old_content, path)
-
-        if occurrence_count > 1 and not params.replace_all:
-            return ToolResult.error_result(
-                f"old_string found {occurrence_count} times in {path}. "
-                f"Either: \n"
-                f"1. Provide more context to make the match unique or\n"
-                f"2. Set replace_all=true to replace all occurrences",
-                metadata={
-                    "occurence_count": occurrence_count,
-                },
-            )
-
-        if params.replace_all:
-            new_content = old_content.replace(params.old_string, params.new_string)
-            replace_count = occurrence_count
-        else:
-            new_content = old_content.replace(params.old_string, params.new_string, 1)
-            replace_count = 1
-
-        if new_content == old_content:
-            return ToolResult.error_result(
-                "No change made - old_string equals new_string"
-            )
-
+        path, old, new, err, n = self._plan(invocation)
+        if err:
+            return ToolResult.error_result(err)
+        is_new = not path.exists()
         try:
-            path.write_text(new_content, encoding="utf-8")
-        except IOError as e:
-            return ToolResult.error_result(f"failed to write file: {e}")
-
-        old_lines = len(old_content.splitlines())
-        new_lines = len(new_content.splitlines())
-        line_diff = new_lines - old_lines
-
-        diff_msg = ""
-
-        if line_diff > 0:
-            diff_msg = f" (+{line_diff} lines)"
-        elif line_diff < 0:
-            diff_msg = f" ({line_diff} lines)"
-
+            ensure_parent_directory(path)
+            with open(path, "w", encoding="utf-8", newline="") as f:
+                f.write(new)
+        except OSError as e:
+            return ToolResult.error_result(f"Failed to write file: {e}")
+        delta = len(new.splitlines()) - len(old.splitlines())
+        note = f" ({delta:+d} lines)" if delta else ""
+        verb = "Created" if is_new else f"Edited ({n} replacement{'s' if n != 1 else ''})"
         return ToolResult.success_result(
-            f"Edited {path}: replaced {replace_count} occurrence(s){diff_msg}",
-            diff=FileDiff(path=path, old_content=old_content, new_content=new_content),
-            metadata={
-                "path": str(path),
-                "replaced_count": replace_count,
-                "line_diff": line_diff,
-            },
+            f"{verb} {path}{note}",
+            diff=FileDiff(path=path, old_content=old, new_content=new, is_new_file=is_new),
+            metadata={"path": str(path), "replaced_count": n, "line_diff": delta, "is_new_file": is_new},
         )
-
-    def _no_match_error(self, old_string: str, content: str, path: Path) -> ToolResult:
-        lines = content.splitlines()
-
-        partial_matches = []
-        search_terms = old_string.split()[:5]
-
-        if search_terms:
-            first_term = search_terms[0]
-            for i, line in enumerate(lines, 1):
-                if first_term in line:
-                    partial_matches.append((i, line.strip()[:80]))
-                    if len(partial_matches) >= 3:
-                        break
-
-        error_msg = f"old_string not found in {path}."
-
-        if partial_matches:
-            error_msg += "\n\nPossible similar lines:"
-            for line_num, line_preview in partial_matches:
-                error_msg += f"\n  Line {line_num}: {line_preview}"
-            error_msg += "\n\nMake sure old_string matches exactly (including whitespace and indentation)."
-        else:
-            error_msg += (
-                " Make sure the text matches exactly, including:\n"
-                "- All whitespace and indentation\n"
-                "- Line breaks\n"
-                "- Any invisible characters\n"
-                "Try re-reading the file using read_file tool and then editing."
-            )
-
-        return ToolResult.error_result(error_msg)

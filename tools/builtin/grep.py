@@ -1,120 +1,55 @@
-import os
-from pathlib import Path
+import asyncio
 import re
-from tools.base import Tool, ToolInvocation, ToolKind, ToolResult
+
 from pydantic import BaseModel, Field
 
-from safety.guard import is_forbidden_path
-from utils.paths import is_binary_file, resolve_path
+from tools.base import Tool, ToolInvocation, ToolKind, ToolResult
+from utils.paths import resolve_path
+from utils.search import list_files, search
 
 
 class GrepParams(BaseModel):
-    pattern: str = Field(..., description="Regular expression pattern to search for")
-    path: str = Field(
-        ".", description="File or directory to search in (default: current directory)"
+    pattern: str = Field(..., description="Regex (or literal text with literal=true) to search for")
+    path: str = Field(".", description="File or directory to search (default: working directory)")
+    glob: str | None = Field(None, description="Only search files matching this glob, e.g. '*.ts' or 'src/**/*.spec.ts'")
+    case_insensitive: bool | None = Field(
+        None, description="Default is smart case: insensitive unless the pattern has an uppercase letter"
     )
-    case_insensitive: bool = Field(
-        False,
-        description="Case-insensitive search (default: false)",
-    )
+    literal: bool = Field(False, description="Treat pattern as plain text, not a regex")
+    context: int = Field(0, ge=0, le=10, description="Lines of context before and after each match")
+    limit: int = Field(100, ge=1, le=1000, description="Maximum matches to return (default 100)")
+    files_only: bool = Field(False, description="Return only the files that match, with counts (cheap way to locate things)")
 
 
 class GrepTool(Tool):
     name = "grep"
-    description = "Search for a regex pattern in file contents. Returns matching lines with file paths and line numbers."
+    description = (
+        "Search file contents. Respects .gitignore, finds dotfiles, never reads secrets. "
+        "Output: path:line:text (context lines use '-'). Use files_only to locate, then read what matters."
+    )
     kind = ToolKind.READ
     schema = GrepParams
 
     async def execute(self, invocation: ToolInvocation) -> ToolResult:
-        params = GrepParams(**invocation.params)
+        p = GrepParams(**invocation.params)
+        target = resolve_path(invocation.cwd, p.path)
+        if not target.exists():
+            return ToolResult.error_result(f"Path does not exist: {target}")
 
-        search_path = resolve_path(invocation.cwd, params.path)
-
-        if not search_path.exists():
-            return ToolResult.error_result(f"Path does not exist: {search_path}")
-
+        smart = p.case_insensitive if p.case_insensitive is not None else not any(c.isupper() for c in p.pattern)
         try:
-            flags = re.IGNORECASE if params.case_insensitive else 0
-            pattern = re.compile(params.pattern, flags)
+            regex = re.compile(re.escape(p.pattern) if p.literal else p.pattern, re.IGNORECASE if smart else 0)
         except re.error as e:
-            return ToolResult.error_result(f"Invalid regex pattern: {e}")
+            return ToolResult.error_result(f"Invalid regex: {e}. Use literal=true for plain text.")
 
-        if search_path.is_dir():
-            files = self._find_files(search_path)
-        else:
-            files = [search_path]
-
-        output_lines = []
-        matches = 0
-
-        for file_path in files:
-            try:
-                content = file_path.read_text(encoding="utf-8")
-            except Exception:
-                continue
-
-            lines = content.splitlines()
-            file_matches = False
-
-            # === path.py ===
-            # 1: async def execute()
-            # 30: async def execute()
-
-            # === path2.py ===
-            # 1: async def execute()
-            # 30: async def execute()
-            for i, line in enumerate(lines, start=1):
-                if pattern.search(line):
-                    matches += 1
-                    if not file_matches:
-                        rel_path = file_path.relative_to(invocation.cwd)
-                        output_lines.append(f"=== {rel_path} ===")
-                        file_matches = True
-
-                    output_lines.append(f"{i}:{line}")
-
-            if file_matches:
-                output_lines.append("")
-
-        if not output_lines:
-            return ToolResult.success_result(
-                f"No matches found for pattern '{params.pattern}'",
-                metadata={
-                    "path": str(search_path),
-                    "matches": 0,
-                    "files_searched": len(files),
-                },
-            )
-
-        return ToolResult.success_result(
-            "\n".join(output_lines),
-            metadata={
-                "path": str(search_path),
-                "matches": matches,
-                "files_searched": len(files),
-            },
+        root = target if target.is_dir() else target.parent
+        files = await asyncio.to_thread(list_files, root, self.config.forbidden_paths) if target.is_dir() else [target]
+        lines, total, hit_files = await asyncio.to_thread(
+            search, files, root, regex, context=p.context, limit=p.limit, glob=p.glob, files_only=p.files_only
         )
-
-    def _find_files(self, search_path: Path) -> list[Path]:
-        files = []
-
-        for root, dirs, filenames in os.walk(search_path):
-            dirs[:] = [
-                d
-                for d in dirs
-                if d not in {"node_modules", "__pycache__", ".git", ".venv", "venv"}
-            ]
-
-            for filename in filenames:
-                if filename.startswith("."):
-                    continue
-
-                file_path = Path(root) / filename
-                if is_forbidden_path(filename, self.config.forbidden_paths):
-                    continue
-                if not is_binary_file(file_path):
-                    files.append(file_path)
-                    if len(files) >= 500:
-                        return files
-
-        return files
+        meta = {"matches": total, "files_with_matches": hit_files, "files_searched": len(files)}
+        if not lines:
+            return ToolResult.success_result(f"No matches for '{p.pattern}' in {len(files)} files", metadata=meta)
+        if not p.files_only and total > p.limit:
+            lines.append(f"... {total - p.limit} more matches in {hit_files} files not shown; narrow the pattern, path or glob")
+        return ToolResult.success_result("\n".join(lines), metadata=meta)
