@@ -33,7 +33,10 @@ class CLI:
         self.last_report: dict | None = None
 
     async def run_single(self, message: str, report_path: Path | None = None) -> str | None:
-        async with Agent(self.config) as agent:
+        # On a real terminal, ask when something needs approval instead of refusing it.
+        # Piped or CI runs have nobody to answer, so they keep failing closed.
+        ask = self.tui.confirm if sys.stdin.isatty() and sys.stdout.isatty() else None
+        async with Agent(self.config, confirmation_callback=ask) as agent:
             self.agent = agent
             result = await self._process_message(message)
             if report_path:
