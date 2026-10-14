@@ -131,11 +131,19 @@ def kind_color(name: str) -> str:
     return KIND_COLOR.get(name, "#9aa3c7")
 
 
+AGENT_NAMES = {"investigator": "Scout", "codebase_investigator": "Scout", "code_reviewer": "Reviewer"}
+
+
+def agent_title(agent: str) -> str:
+    """Friendly name for a sub-agent: "investigator" reads as "Scout", "my_helper" as "My helper"."""
+    return AGENT_NAMES.get(agent) or agent.replace("_", " ").capitalize()
+
+
 def tool_parts(name: str, args: dict[str, Any], cwd: Path | None) -> tuple[str, str]:
     """(title, argument) for a call, e.g. ("Read", "src/a.py")."""
     if name.startswith("subagent_"):
         goal = str(args.get("goal", ""))
-        return f"Agent[{name[len('subagent_'):]}]", goal[:70] + ("…" if len(goal) > 70 else "")
+        return f"{agent_title(name[len('subagent_'):])} agent", goal[:70] + ("…" if len(goal) > 70 else "")
     key = PRIMARY_ARG.get(name)
     val = args.get(key) if key else None
     if val is None and args:
@@ -418,7 +426,7 @@ class TUI:
         status.append(f"   {elapsed}s{tokens}  ·  ctrl+c to stop", style=MUTED)
         rows.append(status)
         for a in self.agents.values():
-            rows.append(Text.assemble(("   ╰ ◆ ", ACCENT), (a["agent"], f"bold {ACCENT}"), (f"  {a['last']}  {int(now - a['started'])}s", MUTED)))
+            rows.append(Text.assemble(("   ╰ ◆ ", ACCENT), (agent_title(a["agent"]), f"bold {ACCENT}"), (f"  {a['last']}  {int(now - a['started'])}s", MUTED)))
         if self.todos:
             done_n = sum(d for _, d in self.todos)
             rows.append(Text.assemble(("   ✦ tasks ", f"bold {LAVENDER}"), (f"{done_n}/{len(self.todos)}", MUTED)))
@@ -540,7 +548,12 @@ class TUI:
         if kind == "start":
             self.agents[call_id] = {"agent": info["agent"], "last": "starting", "started": time.monotonic()}
         elif kind == "tool" and call_id in self.agents:
-            self.agents[call_id]["last"] = tool_label(info.get("name", ""), info.get("args", {}), self.cwd)
+            name, args = info.get("name", ""), info.get("args", {})
+            self.agents[call_id]["last"] = tool_label(name, args, self.cwd)
+            if name == "read_file" and args.get("path"):  # files a sub-agent opens count as read too
+                path = display_path_rel_to_cwd(str(args["path"]), self.cwd)
+                self.read_files[path] = self.read_files.get(path, 0) + 1
+                self.touched["read:" + path] = time.monotonic()
         elif kind == "done":
             self.agents.pop(call_id, None)
 

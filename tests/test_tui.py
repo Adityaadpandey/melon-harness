@@ -26,7 +26,7 @@ def test_tool_labels_are_short_and_readable(tmp_path):
     assert tool_label("read_file", {"path": str(tmp_path / "src/a.py"), "limit": 50}, tmp_path) == "Read(src/a.py)"
     assert tool_label("shell", {"command": "pnpm test\n--filter x"}, tmp_path) == "Bash(pnpm test --filter x)"
     assert tool_label("grep", {"pattern": "load", "glob": "*.ts"}, tmp_path) == "Search(load, *.ts)"
-    assert tool_label("subagent_debugger", {"goal": "why 500"}, tmp_path) == "Agent[debugger](why 500)"
+    assert tool_label("subagent_debugger", {"goal": "why 500"}, tmp_path) == "Debugger agent(why 500)"
     assert tool_label("mystery", {"n": 3}, tmp_path) == "mystery(3)"  # non-string args must not crash
 
 
@@ -170,10 +170,13 @@ def test_live_state_todos_agents_and_phase(tmp_path):
     tui.set_todos([("write tests", True), ("fix bug", False)])
     tui.agent_progress("c1", {"kind": "start", "agent": "investigator", "goal": "map it"})
     tui.agent_progress("c1", {"kind": "tool", "agent": "investigator", "name": "grep", "args": {"pattern": "needle"}})
+    tui.agent_progress("c1", {"kind": "tool", "agent": "investigator", "name": "read_file", "args": {"path": "a.py"}})
+    assert "a.py" in tui.read_files  # a sub-agent's reads show in the READ panel too
+    tui.agent_progress("c1", {"kind": "tool", "agent": "investigator", "name": "grep", "args": {"pattern": "needle"}})
     tui.agent_progress("c2", {"kind": "start", "agent": "debugger", "goal": "why"})
     tui.start_turn("Thinking")
     text = "\n".join(r.plain for r in tui._renderable().renderables if hasattr(r, "plain"))
-    assert "investigator  Search(needle)" in text and "debugger  starting" in text
+    assert "Scout  Search(needle)" in text and "Debugger  starting" in text
     assert "◼ write tests" in text and "◻ fix bug" in text and "Thinking…" in text
     tui.agent_progress("c1", {"kind": "done", "agent": "investigator"})
     assert "c1" not in tui.agents and "c2" in tui.agents
