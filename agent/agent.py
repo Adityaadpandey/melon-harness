@@ -74,6 +74,7 @@ class Agent:
         self.undo_info: dict | None = None
         self._root_hint: Path | None = None  # the repo the last request worked in, when mew starts above it
         self._scout_error = ""
+        self._no_approver = False
 
     def _adopt_root(self, root: Path | None) -> bool:
         """Work from the repo itself. The folder mew started in stays reachable for other repos next to it."""
@@ -100,6 +101,7 @@ class Agent:
         else:
             message_for_model = message
         self._scout_error = ""
+        self._no_approver = False
         scout = await self._scout(message)
         if self._scout_error:
             yield AgentEvent.notice(f"Scout failed, continuing without it: {self._scout_error[:160]}")
@@ -399,6 +401,15 @@ class Agent:
                     tool_result.content,
                 )
 
+            if self._no_approver:
+                # nobody can answer the approval prompt in this run, so retrying cannot succeed: stop instead of burning the budget
+                self._failed = True
+                yield AgentEvent.agent_error(
+                    "Stopped: this change needs approval and the run cannot ask. Re-run with --approval auto-edit "
+                    "(edits) or --approval auto (edits and commands), or start mew interactively."
+                )
+                return
+
             loop_detection_error = self.session.loop_detector.check_for_loop()
             if loop_detection_error:
                 loop_warnings += 1
@@ -543,6 +554,7 @@ class Agent:
             results = await asyncio.gather(*(self._invoke(tc) for tc in batch))
 
             for tc, result in zip(batch, results):
+                self._no_approver = self._no_approver or bool(result.metadata.get("no_approver"))
                 yield AgentEvent.tool_call_complete(tc.call_id, tc.name, result)
                 yield ToolResultMessage(
                     tool_call_id=tc.call_id,

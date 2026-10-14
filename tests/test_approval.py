@@ -127,8 +127,9 @@ async def test_shell_always_remembers_the_command_not_all_edits(tmp_path):
 
 async def test_non_interactive_message_says_how_to_proceed(tmp_path):
     a, evs = await run_agent(tmp_path, None, [write("a.py"), text("ok")])
-    tool_msg = next(m for m in a.requests[1] if m["role"] == "tool")
-    assert "--approval auto-edit" in tool_msg["content"]
+    errors = [e for e in evs if e.type.value == "agent_error"]  # the run stops at the first refusal and says how to proceed
+    assert errors and "--approval auto-edit" in str(errors[0].data)
+    assert len(a.requests) == 1
 
 
 def test_safe_commands_run_without_asking_but_only_when_every_part_is_safe():

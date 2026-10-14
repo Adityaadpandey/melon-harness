@@ -259,7 +259,9 @@ class ToolRegistry:
                         if answer.feedback:
                             msg += f" {answer.feedback}"
                             _learn_from_rejection(cwd, name, params, answer.feedback)
-                        result = ToolResult.error_result(msg, metadata={"tool_name": name, "rejected": True})
+                        result = ToolResult.error_result(
+                            msg, metadata={"tool_name": name, "rejected": True, "no_approver": approval_manager.confirmation_callback is None}
+                        )
                         await hook_system.trigger_after_tool(name, params, result)
                         return result
                     if answer.always:

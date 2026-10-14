@@ -269,3 +269,15 @@ async def test_a_budget_stop_runs_the_checks_and_reports_a_broken_tree(tmp_path)
         agent.session.client = ScriptedClient([ev, text("partial answer")])
         report = next(e for e in await run(agent) if e.type == AgentEventType.AGENT_END).data["report"]
         assert report["status"] == "verification_failed" and report["checks"][0]["exit_code"] == 3
+
+
+async def test_a_run_that_cannot_ask_for_approval_stops_at_the_first_refusal(tmp_path):
+    cfg = Config(cwd=tmp_path, approval=ApprovalPolicy.ON_REQUEST, auto_verify=False)
+    turns = [call("write_file", {"path": "n.txt", "content": "x"}, call_id=f"w{i}") for i in range(5)]
+    async with Agent(cfg) as agent:  # no confirmation callback: single-run mode
+        agent.session.client = ScriptedClient(turns + [text("done")])
+        events = await run(agent)
+        errs = [e for e in events if e.type == AgentEventType.AGENT_ERROR]
+        assert errs and "--approval auto-edit" in errs[0].data["error"]
+        assert len(agent.session.client.requests) == 1  # one model call, not a retry loop
+        assert not (tmp_path / "n.txt").exists()
