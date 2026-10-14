@@ -1,10 +1,10 @@
 import hashlib
 import json
 import os
-import tempfile
 from pathlib import Path
 from config.config import Config
 from config.loader import get_data_dir
+from utils.paths import atomic_write
 from tools.base import Tool, ToolInvocation, ToolKind, ToolResult
 from pydantic import BaseModel, Field
 
@@ -40,11 +40,7 @@ class MemoryTool(Tool):
     def _save_memory(self, memory: dict) -> None:
         path = self._path()
         path.parent.mkdir(parents=True, exist_ok=True)
-        # write beside the target then rename, so a crash never leaves half a file
-        fd, tmp = tempfile.mkstemp(dir=path.parent, suffix=".tmp")
-        with os.fdopen(fd, "w", encoding="utf-8") as f:
-            json.dump(memory, f, indent=2, ensure_ascii=False)
-        os.replace(tmp, path)
+        atomic_write(path, json.dumps(memory, indent=2, ensure_ascii=False))
 
     async def execute(self, invocation: ToolInvocation) -> ToolResult:
         params = MemoryParams(**invocation.params)
