@@ -155,3 +155,16 @@ def test_always_allow_does_not_cover_chained_commands():
     assert m._assess_command_safety("npm run build; rm -rf x") == ApprovalDecision.NEEDS_CONFIRMATION
     assert m._assess_command_safety("npm run build > out.log") == ApprovalDecision.NEEDS_CONFIRMATION
     assert m._assess_command_safety("npm run build | tee x") == ApprovalDecision.NEEDS_CONFIRMATION
+
+
+async def test_verify_commands_run_without_asking_but_chains_still_ask(tmp_path):
+    m = ApprovalManager(ApprovalPolicy.ON_REQUEST, tmp_path, verify_commands=["pnpm check-types"])
+
+    def decide(cmd):
+        return m.check_approval(ApprovalContext("shell", {}, True, [], command=cmd, tool_kind="shell"))
+
+    assert await decide("pnpm check-types") == ApprovalDecision.APPROVED
+    assert await decide("pnpm check-types 2>&1 | tail -20") == ApprovalDecision.APPROVED
+    assert await decide("pnpm check-types | sh") == ApprovalDecision.NEEDS_CONFIRMATION
+    assert await decide("pnpm check-types && rm -rf build") == ApprovalDecision.NEEDS_CONFIRMATION
+    assert await decide("pnpm install") == ApprovalDecision.NEEDS_CONFIRMATION

@@ -158,11 +158,23 @@ class ApprovalManager:
         approval_policy: ApprovalPolicy,
         cwd: Path,
         confirmation_callback: Callable[[ToolConfirmation], bool] | None = None,
+        verify_commands: list[str] | None = None,
     ) -> None:
         self.approval_policy = approval_policy
         self.cwd = Path(cwd).resolve()  # symlinked tmp dirs (/var -> /private/var) must still match
         self.confirmation_callback = confirmation_callback
         self.always_commands: set[str] = set()  # "don't ask again" choices made this session
+        self.verify_commands = {c.strip() for c in verify_commands or [] if c.strip()}
+
+    def _is_verify_command(self, command: str) -> bool:
+        """The repo's own check, e.g. `pnpm check-types`, optionally followed by `2>&1` and a safe
+        pipe like `| tail -20`. The commands come from trusted config, so they run without asking.
+        ponytail: exact match only; `cd dir && pnpm test` still asks."""
+        first, _, rest = command.strip().partition("|")
+        first = first.strip().removesuffix("2>&1").strip()
+        if first not in self.verify_commands:
+            return False
+        return not rest or is_safe_command(rest)
 
     def _always_allowed(self, command: str) -> bool:
         """A remembered "don't ask again" covers the command the user saw, not whatever is chained
@@ -177,7 +189,7 @@ class ApprovalManager:
         if is_dangerous_command(command):
             return ApprovalDecision.REJECTED
 
-        if self._always_allowed(command):
+        if self._always_allowed(command) or self._is_verify_command(command):
             return ApprovalDecision.APPROVED
 
         if self.approval_policy == ApprovalPolicy.NEVER:

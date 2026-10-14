@@ -41,6 +41,10 @@ class Session:
         self.approval_manager = ApprovalManager(
             self.config.approval,
             self.config.cwd,
+            verify_commands=[
+                *self.config.verify_commands,
+                *(c for r in self.config.verify_rules for c in r.commands if "{" not in c),
+            ],
         )
         self.loop_detector = LoopDetector()
         self.hook_system = HookSystem(config)
