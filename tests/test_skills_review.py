@@ -202,3 +202,12 @@ def test_builtin_skills_load_with_the_right_always_on_core_and_profile_overrides
     assert "tunyt-debugging" in tunyt and "debugging" not in tunyt  # specialised playbook replaces the generic one
     assert "refactor" in tunyt  # generic ones without a Tunyt twin remain
     assert [s.name for s in match_skills(list(sk.values()), "please refactor this module and rename the helper")][:1] == ["refactor"]
+
+
+def test_answer_size_limits_are_in_the_prompt_and_the_review_skill(tmp_path):
+    from agent.skills import load_skills
+    from prompts.system import get_system_prompt
+
+    sk = {s.name: s for s in load_skills(Config(cwd=tmp_path))}
+    assert "under 150 words" in sk["code-review"].body
+    assert "Under 120 words" in get_system_prompt(Config(cwd=tmp_path), None, [], [])

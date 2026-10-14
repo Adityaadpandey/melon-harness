@@ -508,7 +508,7 @@ class CLI:
             self.tui.quiet = not self.tui.quiet
             console.print(f"[dim]  output: {'quiet' if self.tui.quiet else 'verbose'}[/dim]")
         elif cmd_name == "/more":
-            self.agent.extra_calls += 10
+            self.agent.extra_calls = 10
             await self._run_turn("Continue from where you stopped. You may use 10 more tool calls; spend them on what is still unknown, then answer.")
         elif cmd_name == "/challenge":
             if not cmd_args:

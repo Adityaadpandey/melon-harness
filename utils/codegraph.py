@@ -140,13 +140,13 @@ class CodeGraph:
         A call link counts only when the source text shows the other side really calls in; other links
         (imports, references) are taken as they are. Example: editing delTicketTypeCache() lists the
         services that call it, so a reviewer reads those call sites instead of hunting for them."""
-        want = {f.lstrip("./") for f in files}
+        want = {f.removeprefix("./") for f in files}
         seeds = {nid for nid, n in self.nodes.items() if self.rel(n.get("source_file", "")) in want}
         hits: dict[str, set[str]] = defaultdict(set)
         for nid in seeds:
             for other, e in self.out[nid] + self.inc[nid]:
                 f = self.rel(self.nodes[other].get("source_file", ""))
-                if other in seeds or f in want or e.get("relation") == "contains":
+                if other in seeds or f in want or f.startswith("/") or e.get("relation") == "contains":  # "/" = a path outside this workspace
                     continue
                 if e.get("relation") == "calls" and self.call_direction(nid, other) != "caller":
                     continue

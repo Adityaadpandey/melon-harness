@@ -357,3 +357,28 @@ async def test_requests_that_change_files_are_not_capped_by_the_read_budget(cfg)
         agent.session.client = ScriptedClient([call("read_file", {"path": "a.txt"}, f"c{i}") for i in range(3)] + [text("done")])
         events = await run(agent, "fix the typo in a.txt")
         assert sum(e.type == AgentEventType.TOOL_CALL_START for e in events) == 3
+
+
+async def test_a_run_that_starts_read_only_but_edits_is_no_longer_capped(cfg):
+    cfg.read_call_budget = 2
+    (cfg.cwd / "a.txt").write_text("hi")
+    async with Agent(cfg) as agent:
+        agent.session.client = ScriptedClient([
+            call("edit", {"path": "a.txt", "old_string": "hi", "new_string": "yo"}, "e1"),
+            call("read_file", {"path": "a.txt"}, "r1"), call("read_file", {"path": "a.txt"}, "r2"),
+            call("read_file", {"path": "a.txt"}, "r3"), text("done"),
+        ])
+        events = await run(agent, "explain a.txt and why it is short")  # reads as read-only, then edits
+        assert sum(e.type == AgentEventType.TOOL_CALL_START for e in events) == 4
+
+
+async def test_more_allows_exactly_that_many_calls_for_one_request_only(cfg):
+    cfg.read_call_budget = 20
+    async with Agent(cfg) as agent:
+        agent.extra_calls = 10
+        agent.session.client = ScriptedClient([text("ok")])
+        await run(agent, "explain things")
+        assert agent._call_limit() == 10 and agent.extra_calls == 0
+        agent.session.client = ScriptedClient([text("ok")])
+        await run(agent, "explain more")
+        assert agent._call_limit() == 20

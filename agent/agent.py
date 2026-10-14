@@ -75,7 +75,8 @@ class Agent:
         self._compact_retry_turn = 0
         self._overflow_retried = False
         self._last_model_call = 0.0
-        self.extra_calls = 0  # raised by /more
+        self.extra_calls = 0  # set by /more, consumed by the next request
+        self._allowance = 0
         self._calls_used = 0
         self._calls_warned = False
         self._read_only = False
@@ -149,6 +150,7 @@ class Agent:
         self._overflow_retried = False
         self._calls_used = 0
         self._calls_warned = False
+        self._allowance, self.extra_calls = self.extra_calls, 0  # /more applies to this one request
         self._read_only = not wants_change(message)
         self._usage_base = self._spent()  # budget is per request
         self._review_sec = 0.0
@@ -324,8 +326,9 @@ class Agent:
                     f"The {limit}-call budget for this read-only request is spent (the user can type /more to allow 10 more)",
                 ):
                     yield ev
+                self._budget_hit = False  # the answer was produced; this is not a token-budget failure
                 return
-            if limit and self._calls_used >= int(limit * 0.7) and not self._calls_warned:
+            if limit and self._calls_used >= max(1, int(limit * 0.7)) and not self._calls_warned:
                 self._calls_warned = True
                 self.session.context_manager.add_user_message(
                     f"Budget check: {self._calls_used} of {limit} tool calls used. Stop exploring; open only what you "
@@ -441,6 +444,8 @@ class Agent:
                 )
 
             self._calls_used += len(tool_calls)
+            if any(tc.name in {"edit", "write_file", "apply_patch"} for tc in tool_calls):
+                self._read_only = False  # it turned out to be a change after all: the read cap no longer applies
             if not tool_calls:
                 if usage:
                     self.session.context_manager.set_latest_usage(usage)
@@ -529,7 +534,7 @@ class Agent:
         yield AgentEvent.notice(f"{notice}; wrapping up with what is known")
         self.session.context_manager.add_user_message(
             f"{why}. No more tool calls. Answer now from what you have already read: what you found (file:line), "
-            "what is still unknown, and the next step. If you were asked for a specific reply format, use it."
+            "what is still unknown, and the next step. Maximum 8 lines, no preamble. If you were asked for a specific reply format, use it."
         )
         text = ""
         async for event in self.session.client.chat_completion(
@@ -567,7 +572,7 @@ class Agent:
         Requests that change files and sub-agents are not capped here (they have turn and token budgets)."""
         if not self._read_only or self.config.model_role != "default" or not self.config.read_call_budget:
             return 0
-        return self.config.read_call_budget + self.extra_calls
+        return self._allowance or self.config.read_call_budget  # after /more: exactly that many more calls
 
     async def _tidy_if_cache_went_cold(self) -> AsyncGenerator[AgentEvent, None]:
         """The first call after a pause is billed in full because the provider's prompt cache expired.

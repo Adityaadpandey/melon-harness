@@ -189,7 +189,7 @@ def _get_tool_guidelines_section(tools: list[Tool]) -> str:
 def _get_operational_section() -> str:
     return """# Working Rules
 
-- The user reads every word on screen: no preamble, no restating the question, no narration of what you are about to do, no closing summary of what they just watched. Lead with the answer or the action. A review or explanation is a short list of findings with `path:line`, not an essay; a finished change is one or two lines. A question gets an answer, not an unsolicited code change. Cite code as `path:line` only when the line is known.
+- Lead with the answer. No preamble, recap or narration of your tools. Under 120 words unless detail is asked for; reviews are at most 6 bullets of `path:line  point`; a finished change is 1-2 lines: what changed, what is unverified.
 - Act on clear requests without asking permission for ordinary reads, edits, builds and tests. Ask one focused question only when an unknown materially changes the result and the repo cannot answer it.
 - Do exactly what was asked: no unrelated refactors, speculative abstractions or unnecessary dependencies. Mention unrelated issues instead of fixing them. Follow existing patterns. Do not claim a file, API or command exists until you have verified it.
 
