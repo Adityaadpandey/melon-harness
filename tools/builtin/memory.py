@@ -1,5 +1,8 @@
+import hashlib
 import json
-import uuid
+import os
+import tempfile
+from pathlib import Path
 from config.config import Config
 from config.loader import get_data_dir
 from tools.base import Tool, ToolInvocation, ToolKind, ToolResult
@@ -18,30 +21,30 @@ class MemoryParams(BaseModel):
 
 class MemoryTool(Tool):
     name = "memory"
-    description = "Store and retrieve persistent memory. Use this to remember user preferences, important context or notes."
+    description = "Store and retrieve persistent memory for this workspace only. Use this to remember user preferences, important context or notes."
     kind = ToolKind.MEMORY
     schema = MemoryParams
 
+    def _path(self) -> Path:
+        """One file per workspace, so notes about one project never show up in another.
+        e.g. /work/shop and /work/blog get different files under <data dir>/memory/."""
+        root = os.path.realpath(self.config.cwd)
+        return get_data_dir() / "memory" / f"{hashlib.sha256(root.encode()).hexdigest()[:16]}.json"
+
     def _load_memory(self) -> dict:
-        data_dir = get_data_dir()
-        data_dir.mkdir(parents=True, exist_ok=True)
-        path = data_dir / "user_memory.json"
-
-        if not path.exists():
-            return {"entries": {}}
-
         try:
-            content = path.read_text(encoding="utf-8")
-            return json.loads(content)
-        except Exception:
+            return json.loads(self._path().read_text(encoding="utf-8"))
+        except (OSError, ValueError):
             return {"entries": {}}
 
     def _save_memory(self, memory: dict) -> None:
-        data_dir = get_data_dir()
-        data_dir.mkdir(parents=True, exist_ok=True)
-        path = data_dir / "user_memory.json"
-
-        path.write_text(json.dumps(memory, indent=2, ensure_ascii=False))
+        path = self._path()
+        path.parent.mkdir(parents=True, exist_ok=True)
+        # write beside the target then rename, so a crash never leaves half a file
+        fd, tmp = tempfile.mkstemp(dir=path.parent, suffix=".tmp")
+        with os.fdopen(fd, "w", encoding="utf-8") as f:
+            json.dump(memory, f, indent=2, ensure_ascii=False)
+        os.replace(tmp, path)
 
     async def execute(self, invocation: ToolInvocation) -> ToolResult:
         params = MemoryParams(**invocation.params)
