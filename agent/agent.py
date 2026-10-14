@@ -1,6 +1,7 @@
 from __future__ import annotations
 import asyncio
 import json
+import re
 import time
 from pathlib import Path
 from typing import AsyncGenerator, Awaitable, Callable
@@ -53,6 +54,9 @@ async def _within(seconds: float, stream):
         await it.aclose()
 
 
+OVERFLOW = re.compile(r"context[_ ](length|window)|maximum context|prompt is too long|too many tokens|exceeds? the (model|context)|input (is )?too long", re.I)
+
+
 class Agent:
     def __init__(
         self,
@@ -69,6 +73,7 @@ class Agent:
         self._escalated = False
         self._budget_hit = False
         self._compact_retry_turn = 0
+        self._overflow_retried = False
         self._budget_warned = False
         self._uncached_streak = 0
         self._usage_base = 0
@@ -134,6 +139,7 @@ class Agent:
         self._escalated = False
         self._budget_hit = False
         self._budget_warned = False
+        self._overflow_retried = False
         self._usage_base = self._spent()  # budget is per request
         self._review_sec = 0.0
         self._tier = "default"
@@ -342,6 +348,7 @@ class Agent:
             tool_calls: list[ToolCall] = []
             usage: TokenUsage | None = None
             failed = False
+            overflowed = False
 
             async for event in _within(task.remaining(), self.session.client.chat_completion(
                 self.session.context_manager.get_messages(),
@@ -359,6 +366,9 @@ class Agent:
                     if event.tool_call:
                         tool_calls.append(event.tool_call)
                 elif event.type == StreamEventType.ERROR:
+                    if OVERFLOW.search(event.error or "") and not self._overflow_retried:
+                        overflowed = True  # the provider says the prompt is too big: compact and ask again, once
+                        break
                     failed = True
                     self._failed = True
                     yield AgentEvent.agent_error(
@@ -367,6 +377,15 @@ class Agent:
                     break
                 elif event.type == StreamEventType.MESSAGE_COMPLETE:
                     usage = event.usage
+
+            if overflowed:
+                self._overflow_retried = True
+                yield AgentEvent.notice("The model refused the prompt as too long; compacting and retrying")
+                if await self._compact():
+                    continue
+                self.session.context_manager.prune_tool_outputs()
+                yield AgentEvent.notice("Could not summarise; pruned old tool output and retrying")
+                continue
 
             if failed:
                 # a failed request must not leave a half-written assistant turn in history

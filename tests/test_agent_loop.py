@@ -292,3 +292,22 @@ async def test_steering_note_lands_after_the_tool_round_and_before_the_next_mode
         second = agent.session.client.requests[1]
         assert "use python 3.12" in str(second[-1]["content"])
         assert agent.steering == []
+
+
+async def test_provider_context_overflow_compacts_once_and_retries(cfg):
+    async with Agent(cfg) as agent:
+        agent.session.client = ScriptedClient([error("This model's maximum context length is 128000 tokens"), text("done")])
+        for i in range(30):  # enough history for a compaction cut to exist
+            agent.session.context_manager.add_user_message(f"old message {i} " * 200)
+            agent.session.context_manager.add_assistant_message(f"old reply {i} " * 200, None)
+
+        async def fake_compact():
+            agent.session.context_manager.apply_compaction("summary", 20)
+            return True
+
+        agent._compact = fake_compact
+        events = await run(agent)
+        kinds = [e.type for e in events]
+        assert AgentEventType.AGENT_ERROR not in kinds
+        assert any("too long" in e.data.get("message", "") for e in events if e.type == AgentEventType.NOTICE)
+        assert len(agent.session.client.requests) == 2
