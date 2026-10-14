@@ -390,6 +390,7 @@ class TUI:
         self._calls: dict[str, tuple[str, dict[str, Any]]] = {}
         self._header_done = False  # an approval prompt already printed the call's header
         self.expand = False
+        self.quiet = True  # one line per tool call, no routine notices, one-line turn summary; /verbose turns it off
         # live turn state
         self.live: Live | None = None
         self._turn_active = False
@@ -498,7 +499,8 @@ class TUI:
         grid.add_row(cat, info)
         self.console.print()
         self.console.print(Padding(grid, (0, 2)))
-        self.console.print(Text(f"  ✦ tip  {random.choice(TIPS)}", style=f"italic {MUTED}"))
+        if not self.quiet:
+            self.console.print(Text(f"  ✦ tip  {random.choice(TIPS)}", style=f"italic {MUTED}"))
         self.console.print()
 
     def echo_user(self, text: str) -> None:
@@ -532,7 +534,12 @@ class TUI:
         self._buf = ""
         self._first_block = True  # the next piece of text (after a tool call) starts a new message
 
+    ROUTINE_NOTICES = ("Loaded playbooks", "Scout finished", "Routing to", "Working in", "Challenger is questioning",
+                       "steering received", "Context compacted", "Cache had expired")
+
     def notice(self, message: str) -> None:
+        if self.quiet and message.startswith(self.ROUTINE_NOTICES):
+            return  # things the harness did that you do not need to act on
         self.console.print(Text(f"  ✦ {message}", style=f"italic {MUTED}"))
 
     def error(self, message: str) -> None:
@@ -573,19 +580,29 @@ class TUI:
                            truncated: bool, exit_code: int | None) -> None:
         args = self._calls.pop(call_id, (name, {}))[1]
         self._phase = "Thinking"
-        if self._header_done:
-            self._header_done = False
-        else:
-            self._print_header(name, args)
         md = metadata or {}
         self._track(name, args, success, md, diff)
         self.results.append({"label": tool_label(name, args, self.cwd), "success": success, "output": output, "error": error, "diff": diff})
         summary, preview = summarize_result(name, success, output, error, md, exit_code, args)
+        is_edit = name in {"edit", "write_file"} and success and diff
+        if self.quiet and not is_edit:
+            # `read  src/app.py  ·  Read 40 lines` on a single line; /expand shows the full output
+            line = header_text(name, args, self.cwd)
+            line.append("  ·  " + summary.removeprefix("✗ "), style=CORAL if not success else MUTED)
+            if self._header_done:  # an approval prompt already showed the header
+                line = Text("  " + ("✗ " if not success else "✓ ") + summary.removeprefix("✗ "), style=CORAL if not success else MUTED)
+                self._header_done = False
+            self.console.print(line)
+            return
+        if self._header_done:
+            self._header_done = False
+        else:
+            self._print_header(name, args)
         color = kind_color(name) if success else CORAL
         rows: list[Any] = []
         if name in {"edit", "write_file"} and success and diff:
             path = display_path_rel_to_cwd(md.get("path", args.get("path", "")), self.cwd)
-            body, adds, dels = render_diff(diff, 400 if self.expand else 14, path, min(self.console.width, 120) - 6)
+            body, adds, dels = render_diff(diff, 400 if self.expand else (8 if self.quiet else 14), path, min(self.console.width, 120) - 6)
             what = Text.assemble(*(x for x in ((f"+{adds}", f"bold {MINT}"), (" ", ""), (f"−{dels}", f"bold {CORAL}")) if x[0] not in ("+0", "−0")))
             verb = "created" if md.get("is_new_file") else "updated"
             rows.append(Text.assemble(("✓ ", f"bold {MINT}"), (f"{verb}  ", MUTED), what))
@@ -635,7 +652,11 @@ class TUI:
 
     def turn_summary(self, elapsed: float, usage: dict | None, report: dict | None) -> None:
         out = Text.assemble(("  ✦ ", ACCENT), (f"{elapsed:.0f}s", f"bold {FG}"))
-        if usage and usage.get("calls"):
+        if self.quiet and usage and usage.get("calls"):
+            out.append(f"  ·  {usage['calls']} call{'s' if usage['calls'] != 1 else ''}  ·  {usage['prompt_tokens'] / 1000:.0f}k in, {usage['cache_hit_pct']:.0f}% cached", style=MUTED)
+            if usage.get("est_cost_usd") is not None:
+                out.append(f"  ·  ${usage['est_cost_usd']}", style=AMBER)
+        elif usage and usage.get("calls"):
             out.append(f"  ·  {usage['calls']} call{'s' if usage['calls'] != 1 else ''}  ·  {usage['prompt_tokens'] / 1000:.1f}k in ", style=MUTED)
             out.append(f"({usage['cache_hit_pct']:.0f}% cached, {(usage['prompt_tokens'] - usage.get('cached_tokens', 0)) / 1000:.1f}k new)", style=MINT if usage["cache_hit_pct"] >= 50 else AMBER)
             out.append(f"  ·  {usage['completion_tokens'] / 1000:.1f}k out", style=MUTED)

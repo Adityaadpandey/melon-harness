@@ -356,18 +356,28 @@ class CLI:
             return
         u = report.get("usage") or {}
         self.tui.turn_summary(elapsed, u, report)
+        quiet = self.tui.quiet
         w = u.get("cache_waste") or {}
-        if w.get("misses"):
+        if w.get("misses") and not quiet:
             console.print(f"[dim]    cache misses: {w['missed_tokens']:,} tokens re-billed ({', '.join(w['reasons'])})[/dim]")
-        self._print_heaviest(u)
+        if not quiet:
+            self._print_heaviest(u)
         g = report.get("grounding") or {}
         if g.get("unverified"):
             console.print(f"[warning]  ⚠ {len(g['unverified'])} cited reference(s) could not be verified: {'; '.join(g['unverified'][:4])}[/warning]")
         if report["status"] == "done_no_changes":
             return
+        style = {"verified": "success", "unverified": "warning"}.get(report["status"], "error")
+        if quiet:
+            bad = [c for c in report["checks"] if not c["ok"]]
+            rv = report.get("review")
+            tail = (f"  ·  {len(report['checks'])} checks ok" if report["checks"] and not bad else "") + (f"  ·  review {rv['verdict'].lower()}" if rv else "")
+            console.print(f"  [{style}]{report['status']}[/{style}]  [dim]{len(report['changed_files'])} files{tail}  ·  /undo reverts[/dim]")
+            for c in bad:
+                console.print(f"    [error]✗[/] {c['command']}")
+            return
         if report.get("undo"):
             console.print("[dim]    /undo puts these files back[/dim]")
-        style = {"verified": "success", "unverified": "warning"}.get(report["status"], "error")
         console.print(f"  [{style}]Result: {report['status']}[/{style}]  files changed: {len(report['changed_files'])}  repairs: {report['repairs']}")
         for c in report["checks"]:
             console.print(f"    [{'success' if c['ok'] else 'error'}]{'✓' if c['ok'] else '✗'}[/] {c['command']} ({c['seconds']}s)")
@@ -494,6 +504,9 @@ class CLI:
             self._print_heaviest(u)
             if w["misses"]:
                 console.print(f"  cache misses: {w['misses']} ({w['missed_tokens']:,} tokens re-billed: {', '.join(w['reasons'])})")
+        elif cmd_name == "/verbose":
+            self.tui.quiet = not self.tui.quiet
+            console.print(f"[dim]  output: {'quiet' if self.tui.quiet else 'verbose'}[/dim]")
         elif cmd_name == "/more":
             self.agent.extra_calls += 10
             await self._run_turn("Continue from where you stopped. You may use 10 more tool calls; spend them on what is still unknown, then answer.")

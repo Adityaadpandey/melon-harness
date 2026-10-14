@@ -50,6 +50,7 @@ def test_result_summaries():
 
 def test_transcript_shape(tmp_path):
     tui, con = make(tmp_path)
+    tui.quiet = False  # the full layout; quiet mode has its own test below
     tui.tool_call_start("c1", "edit", "write", {"path": str(tmp_path / "a.py"), "old_string": "y = 2", "new_string": "y = 20"})
     tui.tool_call_complete("c1", "edit", "write", True, "Edited a.py", None, {"path": str(tmp_path / "a.py")}, DIFF, False, None)
     # a parallel batch: both start, then both complete; each result stays under its own header
@@ -197,9 +198,21 @@ def test_expand_shows_full_output_of_recent_tool_calls(tmp_path):
     assert "no such tool result" in con.export_text()
 
 
+def test_quiet_mode_is_one_line_per_tool_call_and_hides_routine_notices(tmp_path):
+    tui, con = make(tmp_path)
+    tui.tool_call_start("c2", "grep", "read", {"pattern": "needle"})
+    tui.tool_call_complete("c2", "grep", "read", True, "x:1:needle", None, {"matches": 1, "files_with_matches": 1}, None, False, None)
+    tui.notice("Loaded playbooks: code-review")
+    tui.notice("Call budget reached (20 tool calls); wrapping up")
+    out = con.export_text()
+    assert out.count("\n") <= 3 and "x:1:needle" not in out and "Found 1 match" in out
+    assert "Loaded playbooks" not in out and "Call budget reached" in out
+
+
 def test_context_bar_and_summary(tmp_path):
     assert context_bar(0) == "▱" * 10 + " 0%" and context_bar(50) == "▰" * 5 + "▱" * 5 + " 50%" and context_bar(100).startswith("▰" * 10)
     tui, con = make(tmp_path)
+    tui.quiet = False
     tui.turn_summary(12.4, {"calls": 3, "prompt_tokens": 4100, "completion_tokens": 300, "cached_tokens": 3200, "cache_hit_pct": 78.0, "est_cost_usd": None}, None)
     assert "12s  ·  3 calls  ·  4.1k in (78% cached, 0.9k new)  ·  0.3k out" in con.export_text()
 
