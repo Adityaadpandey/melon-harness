@@ -39,6 +39,19 @@ class CLI:
                 self._write_report(report_path, agent, result)
             return result
 
+    async def run_json(self, message: str) -> bool:
+        """One event per stdout line, for CI and scripts: {"type": "tool_call_start", ...}.
+        No TUI, so pair it with --approval auto (nothing can ask a human)."""
+        ok = True
+        async with Agent(self.config) as agent:
+            async for event in agent.run(message):
+                print(json.dumps({"type": event.type.value, **event.data}, default=str), flush=True)
+                if event.type == AgentEventType.AGENT_ERROR:
+                    ok = False
+                elif event.type == AgentEventType.AGENT_END:
+                    self.last_report = event.data.get("report")
+        return ok and (self.last_report or {}).get("status") not in {"failed", "verification_failed"}
+
     async def run_orchestrated(self, message: str, graph: Path | None, apply: bool, report_path: Path | None) -> bool:
         from agent.orchestrator import Orchestrator, parse_graph, plan
         from agent.session import Session
@@ -638,6 +651,7 @@ class CLI:
 @click.option("--parallel", is_flag=True, help="Let a planner split the request into parallel workers")
 @click.option("--graph", type=click.Path(exists=True, path_type=Path), help="Task graph JSON (implies --parallel)")
 @click.option("--apply/--no-apply", default=True, help="Fast-forward the integrated result into a clean checkout")
+@click.option("--json", "json_mode", is_flag=True, help="Print agent events as JSON lines instead of the UI (needs a prompt)")
 @click.option("--report", type=click.Path(path_type=Path), help="Write run metrics JSON here")
 @click.option("--add-dir", "add_dirs", multiple=True, type=click.Path(exists=True, file_okay=False, path_type=Path), help="Extra directory the agent may use besides the working directory (repeatable)")
 @click.option("--resume", "resume_id", help="Continue a saved session by id (shown when you exit; /sessions lists them)")
@@ -659,6 +673,7 @@ def main(
     parallel: bool,
     graph: Path | None,
     apply: bool,
+    json_mode: bool,
     report: Path | None,
     model: str | None,
     approval: str | None,
@@ -710,7 +725,12 @@ def main(
         ok = asyncio.run(cli.run_orchestrated(prompt, graph, apply, report))
         sys.exit(0 if ok else 1)
 
-    # messages = [{"role": "user", "content": prompt}]
+    if json_mode:
+        if not prompt:
+            console.print("[error]--json needs a prompt[/error]")
+            sys.exit(1)
+        sys.exit(0 if asyncio.run(cli.run_json(prompt)) else 1)
+
     if prompt:
         result = asyncio.run(cli.run_single(prompt, report))
         bad = {"failed", "verification_failed"}
