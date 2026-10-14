@@ -7,13 +7,14 @@ from pydantic import BaseModel, Field
 from tools.base import Tool, ToolInvocation, ToolKind, ToolResult
 
 MAX_CHARS = 6000
+PATCH_TOTAL, PATCH_PER_FILE = 24_000, 3_500  # a review reads the whole change in one call, big files are cut so none crowd out the rest
 _REV = re.compile(r"^[\w./~^@{}:-]+$")
 
 
 class GitParams(BaseModel):
-    op: Literal["scope", "status", "diff", "log", "show", "blame", "find_change"] = Field(
+    op: Literal["scope", "patch", "status", "diff", "log", "show", "blame", "find_change"] = Field(
         ..., description=(
-            "scope: one-call review snapshot (branch, status, base range, stat of working-tree and branch changes). status: changed files. diff: stat of working tree (or of `path`, full). log: recent commits touching `path`. "
+            "scope: one-call review snapshot (branch, status, base range, stat of working-tree and branch changes). patch: the actual changes, every changed file in ONE call (uncommitted vs HEAD, or vs `rev`); use it instead of one diff call per file. status: changed files. diff: stat of working tree (or of `path`, full). log: recent commits touching `path`. "
             "show: one commit's files (and its diff of `path`). blame: who last changed lines `lines` of `path`. "
             "find_change: commits that added/removed the text `query` (git log -S), the fastest way to find when a behaviour changed."
         ),
@@ -45,6 +46,8 @@ class GitTool(Tool):
         pretty = "--pretty=format:%h %ad %an: %s"
         if p.op == "scope":
             return await self._scope(invocation.cwd, p.rev)
+        if p.op == "patch":
+            return await self._patch(invocation.cwd, p.rev, p.path)
         if p.op == "status":
             argv = ["status", "--short", "--branch"]
         elif p.op == "diff":
@@ -106,3 +109,33 @@ class GitTool(Tool):
         else:
             parts.append("base: none found, or already on it; only uncommitted changes are in scope")
         return ToolResult.success_result("\n\n".join(parts)[:MAX_CHARS])
+
+
+    async def _patch(self, cwd, rev: str | None, path: str | None) -> ToolResult:
+        """The whole change as one readable patch. Example: 6 changed files cost one call, not six."""
+        argv = ["git", "--no-pager", "diff", "--no-color", "-U2", rev or "HEAD", *(["--", path] if path else [])]
+        proc = await asyncio.create_subprocess_exec(*argv, cwd=cwd, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE)
+        out, err = await asyncio.wait_for(proc.communicate(), 30)
+        if proc.returncode:
+            return ToolResult.error_result(err.decode("utf-8", "replace").strip()[:500] or "git failed")
+        files = re.split(r"(?m)^(?=diff --git )", out.decode("utf-8", "replace"))
+        files = [f for f in files if f.strip()]
+        if not files:
+            return ToolResult.success_result("(no changes; new untracked files are not in a diff, read them directly)")
+        shown, used, cut, skipped = [], 0, [], []
+        for f in files:
+            name = f.splitlines()[0].rsplit(" b/", 1)[-1]
+            if used >= PATCH_TOTAL:
+                skipped.append(name)
+                continue
+            if len(f) > PATCH_PER_FILE:
+                f = f[:PATCH_PER_FILE] + "\n... [file cut here]\n"
+                cut.append(name)
+            shown.append(f)
+            used += len(f)
+        note = ""
+        if cut:
+            note += f"\ncut (read the rest with path=<file>): {', '.join(cut)}"
+        if skipped:
+            note += f"\nnot shown, over the size limit: {', '.join(skipped)}"
+        return ToolResult.success_result("".join(shown).rstrip() + note)

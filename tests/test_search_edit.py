@@ -211,3 +211,22 @@ async def test_git_scope_reports_branch_uncommitted_and_branch_commits(tmp_path)
     (tmp_path / "a.txt").write_text("changed\n")
     out = (await GitTool(Config(cwd=tmp_path)).execute(ToolInvocation(params={"op": "scope"}, cwd=tmp_path))).output
     assert "branch: feature" in out and "add b" in out and "a.txt" in out and "b.txt" in out
+
+
+async def test_git_patch_returns_every_changed_file_in_one_call(tmp_path):
+    import subprocess
+    from tools.base import ToolInvocation
+    from tools.builtin.git import GitTool
+    from config.config import Config
+
+    def sh(*a):
+        subprocess.run(a, cwd=tmp_path, check=True, capture_output=True)
+
+    sh("git", "init", "-q"); sh("git", "config", "user.email", "t@t"); sh("git", "config", "user.name", "t")
+    for n in ("a.txt", "b.txt"):
+        (tmp_path / n).write_text("one\n")
+    sh("git", "add", "."); sh("git", "commit", "-qm", "init")
+    (tmp_path / "a.txt").write_text("one\ntwo\n")
+    (tmp_path / "b.txt").write_text("changed\n")
+    res = await GitTool(Config(cwd=tmp_path)).execute(ToolInvocation(params={"op": "patch"}, cwd=tmp_path))
+    assert res.success and "+two" in res.output and "+changed" in res.output
