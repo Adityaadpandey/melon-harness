@@ -23,6 +23,7 @@ from pathlib import Path
 
 PROFILES_DIR = Path(__file__).resolve().parent.parent / "profiles"
 BUILTIN_DIR = Path(__file__).resolve().parent.parent / "skills"  # ship with the harness, apply to every project
+USER_DIRS = (Path.home() / ".pi" / "agent" / "skills",)  # shared with pi: <name>/SKILL.md folders
 SECTION_CAP = 14_000
 AUTO_LOAD_CAP = 9_000  # total chars of playbooks auto-injected per request
 
@@ -66,7 +67,7 @@ def parse_skill(text: str, path: Path | None = None) -> Skill | None:
 
 @lru_cache(maxsize=16)
 def _load(profile: str | None, cwd: str, skill_dirs: tuple[str, ...]) -> tuple[Skill, ...]:
-    dirs: list[Path] = [BUILTIN_DIR]
+    dirs: list[Path] = [BUILTIN_DIR, *USER_DIRS]
     if profile:
         dirs.append(PROFILES_DIR / profile / "skills")
     root = Path(cwd)
@@ -74,9 +75,12 @@ def _load(profile: str | None, cwd: str, skill_dirs: tuple[str, ...]) -> tuple[S
     found: dict[str, Skill] = {}
     for d in dirs:
         if d.is_dir():
-            for f in sorted(d.glob("*.md")):
+            # flat files (skills/debugging.md) and pi-style folders (skills/review-pr/SKILL.md)
+            for f in sorted([*d.glob("*.md"), *d.glob("*/SKILL.md")]):
                 sk = parse_skill(f.read_text(encoding="utf-8"), f)
                 if sk:
+                    if not sk.triggers and f.name == "SKILL.md" and not sk.always:
+                        sk.triggers = [sk.name, sk.name.replace("-", " ")]  # pi skills carry no trigger words, the name is the hint
                     found[sk.name] = sk  # later dirs (repo-local) override profile ones
     if profile:
         # a profile's own playbook (e.g. tunyt-debugging) replaces the generic one it specialises
