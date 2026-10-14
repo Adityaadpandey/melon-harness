@@ -10,6 +10,10 @@ from utils.search import similar_paths
 from utils.text import count_tokens, truncate_text
 
 
+WHOLE_FILE_LINES = 400
+MIN_SLICE_LINES = 200
+
+
 class ReadFileParams(BaseModel):
 
     path: str = Field(
@@ -67,7 +71,7 @@ class ReadFileTool(Tool):
     name = "read_file"
     description = (
         "Read the contents of a text file. Returns the file content with line numbers. "
-        "For large files, use offset and limit to read specific portions. "
+        "Files up to 400 lines come whole, so just call it with the path. For longer files pass `symbol` (see `outline`) or a wide offset/limit; many small slices cost more than one read. "
         "Cannot read binary files (images, executables, etc.)."
     )
     kind = ToolKind.READ
@@ -159,6 +163,15 @@ class ReadFileTool(Tool):
                 end_idx = min(start_idx + params.limit, total_lines)
             else:
                 end_idx = total_lines
+
+            # Small slices cost an extra model round trip each (the whole history is sent again), far more than
+            # a few more lines: a 400-line file is read whole, and any other slice grows to a useful size.
+            # Lines the model already has are skipped below, so widening never re-sends them.
+            if not params.symbol:
+                if total_lines <= WHOLE_FILE_LINES:
+                    start_idx, end_idx = 0, total_lines
+                else:
+                    end_idx = min(total_lines, max(end_idx, start_idx + MIN_SLICE_LINES))
 
             # Per-file map of the line ranges already in context. A read only returns
             # lines the model does not have yet; changing the file (mtime/size) or

@@ -162,7 +162,9 @@ def test_heaviest_results_weighs_size_by_how_long_it_stays_in_context():
     assert heaviest_results(ev)["tool_result_carried"] < h["tool_result_carried"]
 
 
-async def test_overlapping_reads_return_only_the_lines_not_already_in_context(tmp_path):
+async def test_overlapping_reads_return_only_the_lines_not_already_in_context(tmp_path, monkeypatch):
+    monkeypatch.setattr("tools.builtin.read_file.WHOLE_FILE_LINES", 0)  # keep slices as asked here
+    monkeypatch.setattr("tools.builtin.read_file.MIN_SLICE_LINES", 0)
     (tmp_path / "f.txt").write_text("\n".join(f"line{i}" for i in range(1, 31)) + "\n")
     cfg = Config(cwd=tmp_path, approval=ApprovalPolicy.AUTO)
     async with Agent(cfg) as a:
@@ -179,6 +181,22 @@ async def test_overlapping_reads_return_only_the_lines_not_already_in_context(tm
         assert "30|line30" in out and "\n2|line2\n" not in out and "[lines 1-15 already" in out
         (tmp_path / "f.txt").write_text("changed\n" + "\n".join(f"line{i}" for i in range(2, 31)) + "\n")
         assert "1|changed" in await read(offset=1, limit=3)  # file changed: forget the map
+
+
+async def test_small_slices_are_widened_so_the_model_does_not_drip_feed_a_file(tmp_path):
+    (tmp_path / "small.txt").write_text("\n".join(f"s{i}" for i in range(1, 301)) + "\n")
+    (tmp_path / "big.txt").write_text("\n".join(f"b{i}" for i in range(1, 1001)) + "\n")
+    cfg = Config(cwd=tmp_path, approval=ApprovalPolicy.AUTO)
+    async with Agent(cfg) as a:
+        reg, hs = a.session.tool_registry, a.session.hook_system
+
+        async def read(path, **kw):
+            return (await reg.invoke("read_file", {"path": path, **kw}, tmp_path, hs)).output
+
+        out = await read("small.txt", offset=100, limit=20)  # a 300-line file comes whole
+        assert "1|s1\n" in out and "300|s300" in out
+        out = await read("big.txt", offset=500, limit=20)  # a long file grows the slice to 200 lines
+        assert "500|b500" in out and "699|b699" in out and "700|b700" not in out and "499|b499" not in out
 
 
 def test_learned_lessons_and_edit_history_shape_prompt_and_search(tmp_path):
