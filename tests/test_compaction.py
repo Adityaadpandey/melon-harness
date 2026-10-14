@@ -81,3 +81,22 @@ def test_pruning_works_inside_one_task_keeps_newest_and_leaves_a_hint(tmp_path):
     tools = [m for m in cm._messages if m.role == "tool"]
     assert tools[0].content.startswith("[Old tool result cleared") and "result number 0" in tools[0].content
     assert "word word" in tools[-1].content and "word word" in tools[-2].content  # newest stay whole
+
+
+async def test_failed_compaction_backs_off_instead_of_retrying_every_turn(tmp_path):
+    (tmp_path / "a.txt").write_text("hi")
+    cfg = Config(cwd=tmp_path, approval=ApprovalPolicy.AUTO, auto_verify=False, compact_at_tokens=50, keep_recent_tokens=10)
+    async with Agent(cfg) as a:
+        tries = []
+
+        async def failing_compress(cm):
+            tries.append(1)
+            return None, None, 0
+
+        a.session.chat_compactor.compress = failing_compress
+        steps = [call("read_file", {"path": "a.txt"}, f"c{i}") for i in range(3)] + [text("done")]
+        a.session.client = ScriptedClient(steps)
+        a.session.context_manager._latest_usage = TokenUsage(100, 10, 110)
+        evs = [e async for e in a.run("go")]
+        assert len(tries) == 1  # 4 turns, one failed attempt, then back-off
+        assert any("pruned" in e.data.get("message", "") for e in evs if e.type.value == "notice")

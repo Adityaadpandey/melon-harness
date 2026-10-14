@@ -65,6 +65,7 @@ class Agent:
         self._tier = "default"
         self._escalated = False
         self._budget_hit = False
+        self._compact_retry_turn = 0
         self._budget_warned = False
         self._uncached_streak = 0
         self._usage_base = 0
@@ -291,9 +292,15 @@ class Agent:
             self.session.context_manager.context_window = (
                 self.session.client.registry.get(self.config.model_name).context_length
             )
-            if self.session.context_manager.needs_compression():
+            if self.session.context_manager.needs_compression() and self.session.turn_count >= self._compact_retry_turn:
                 if await self._compact():
                     yield AgentEvent.notice("Context compacted (recent messages kept)")
+                else:
+                    # the summarizer failed: shed old tool output instead, and don't pay for another
+                    # failing summary call on every turn (try again in 3 turns)
+                    self._compact_retry_turn = self.session.turn_count + 3
+                    self.session.context_manager.prune_tool_outputs()
+                    yield AgentEvent.notice("Could not summarise the context; pruned old tool output instead")
 
             tool_schemas = self.session.tool_registry.get_schemas()
 
