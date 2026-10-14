@@ -14,6 +14,7 @@ from safety.approval import ApprovalManager
 from tools.discovery import ToolDiscoveryManager
 from tools.mcp.mcp_manager import MCPManager
 from tools.registry import create_default_registry
+from utils.archive import ResultStore
 from utils.trace import Tracer
 
 
@@ -27,6 +28,8 @@ class Session:
         self.client = LLMClient(config=config, tracer=self.tracer)
         self.tool_registry = create_default_registry(config)
         self.tool_registry.tracer = self.tracer
+        self.tool_registry.archive = ResultStore(get_data_dir() / "results" / self.session_id)
+        self.tool_registry.get("recall_result").store = self.tool_registry.archive
         self.skills = load_skills(config)
         self.context_manager: ContextManager | None = None
         self.discovery_manager = ToolDiscoveryManager(
@@ -58,6 +61,7 @@ class Session:
             tools=self.tool_registry.get_tools(),
             skills=self.skills,
         )
+        self.context_manager.archive = self.tool_registry.archive
 
     def _load_memory(self) -> str | None:
         data_dir = get_data_dir()

@@ -1,3 +1,4 @@
+import re
 import json
 
 from agent.agent import Agent
@@ -5,6 +6,7 @@ from client.response import TokenUsage
 from config.config import ApprovalPolicy, Config
 from context.manager import ContextManager
 from tests.fakes import ScriptedClient, call, text
+from tools.base import ToolResult
 
 
 def cm_with_history(tmp_path, n_pairs=6, big=1000):
@@ -100,3 +102,38 @@ async def test_failed_compaction_backs_off_instead_of_retrying_every_turn(tmp_pa
         evs = [e async for e in a.run("go")]
         assert len(tries) == 1  # 4 turns, one failed attempt, then back-off
         assert any("pruned" in e.data.get("message", "") for e in evs if e.type.value == "notice")
+
+
+def _long_history(tmp_path):
+    cm = ContextManager(Config(cwd=tmp_path), None, [])
+    cm.add_user_message("fix it")
+    for i in range(20):
+        cm.add_assistant_message(None, [{"id": f"c{i}", "type": "function", "function": {"name": "grep", "arguments": "{}"}}])
+        cm.add_tool_result(f"c{i}", f"result number {i}\n" + "word " * 3000)
+    return cm
+
+
+def test_a_cleared_result_can_be_recalled_exactly(tmp_path):
+    from utils.archive import ResultStore
+
+    cm = _long_history(tmp_path)
+    cm.archive = ResultStore(tmp_path / "res")
+    original = cm._messages[2].content
+    assert cm.prune_tool_outputs() > 0
+    note = cm._messages[2].content
+    rid = re.search(r"recall_result (r\d+)", note).group(1)
+    assert cm.archive.get(rid) == original
+    assert ResultStore(tmp_path / "res").get(rid) == original  # a later process can read it too
+
+
+async def test_big_output_is_cut_visibly_and_the_full_text_is_recallable(tmp_path):
+    cfg = Config(cwd=tmp_path, approval=ApprovalPolicy.AUTO, auto_verify=False, tool_output_max_chars=1000)
+    async with Agent(cfg) as a:
+        reg = a.session.tool_registry
+        out = "line one\n" + "noise\n" * 2000 + "FAILED test_x: boom\n"
+        res = ToolResult.success_result(out)
+        reg._cap_output(res)
+        assert res.truncated and "FAILED test_x: boom" in res.output  # the tail, where failures live, survives
+        rid = re.search(r"full output: (r\d+)", res.output).group(1)
+        recalled = await reg.invoke("recall_result", {"id": rid, "offset": 1, "limit": 3}, tmp_path, a.session.hook_system)
+        assert recalled.output.startswith("line one\nnoise")

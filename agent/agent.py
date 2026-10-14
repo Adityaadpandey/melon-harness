@@ -367,8 +367,7 @@ class Agent:
                     self.session.context_manager.set_latest_usage(usage)
                     self.session.context_manager.add_usage(usage)
 
-                if self.session.context_manager.prune_tool_outputs():
-                    self.session.tool_registry.epoch += 1
+                self._prune()
                 return
 
             tool_call_results: list[ToolResultMessage] = []
@@ -408,8 +407,7 @@ class Agent:
                         "Every call re-bills the whole context; a Claude or deepseek model is much cheaper here."
                     )
 
-            if self.session.context_manager.prune_tool_outputs():
-                self.session.tool_registry.epoch += 1
+            self._prune()
         async for ev in self._wrap_up(task, f"Turn limit reached ({max_turns})", "Turn limit reached"):
             yield ev
 
@@ -462,6 +460,12 @@ class Agent:
         if (task.repairs >= 1 or self._escalated) and "strong" in self.config.routing:
             tier = "strong"
         return tier
+
+    def _prune(self) -> None:
+        cm = self.session.context_manager
+        if cm.prune_tool_outputs():
+            self.session.tool_registry.epoch += 1
+            self.session.tracer.emit("prune", **cm.last_prune)
 
     async def _compact(self) -> bool:
         cm = self.session.context_manager

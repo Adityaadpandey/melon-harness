@@ -7,6 +7,8 @@ from safety.approval import ApprovalContext, ApprovalDecision, ApprovalManager
 from tools.base import Tool, ToolInvocation, ToolResult
 import logging
 from tools.builtin import ReadFileTool, get_all_builtin_tools
+from tools.builtin.recall import RecallResultTool
+from utils.archive import ResultStore
 from tools.subagents import SubagentTool, get_default_subagent_definitions
 
 logger = logging.getLogger(__name__)
@@ -23,6 +25,7 @@ class ToolRegistry:
         self._mcp_tools: dict[str, Tool] = {}
         self._read_state: dict[str, tuple[int, int]] = {}  # path -> (mtime_ns, size) when last seen by the agent
         self.config = config
+        self.archive = ResultStore()  # Session points it at a folder; full copies of cut or cleared results live here
 
     @property
     def connected_mcp_servers(self) -> list[Tool]:
@@ -137,9 +140,10 @@ class ToolRegistry:
         out = result.output
         if len(out) > limit:
             head, tail = int(limit * 0.6), int(limit * 0.4)
+            rid = self.archive.put(out)
             result.output = (
                 out[:head]
-                + f"\n... [{len(out) - limit} chars omitted; narrow the command or read a slice] ...\n"
+                + f"\n... [{len(out) - limit} chars omitted; full output: {rid}, get a range with recall_result] ...\n"
                 + out[-tail:]
             )
             result.truncated = True
@@ -250,6 +254,7 @@ def create_default_registry(config: Config) -> ToolRegistry:
 
     for tool_class in get_all_builtin_tools():
         registry.register(tool_class(config))
+    registry.register(RecallResultTool(config, registry.archive))
 
     from tools.builtin.graph import GraphTool
     from tools.builtin.parallel_tasks import ParallelTasksTool

@@ -61,6 +61,8 @@ class ContextManager:
         self.summary: str | None = None  # running summary of everything compacted so far
         self.files_read: set[str] = set()
         self.files_modified: set[str] = set()
+        self.archive = None  # ResultStore: where a cleared result's full text goes
+        self.last_prune: dict = {}
 
     @property
     def message_count(self) -> int:
@@ -121,11 +123,13 @@ class ContextManager:
 
         return messages
 
-    def needs_compression(self) -> bool:
+    def _limit(self) -> float:
         # a 1M window doesn't mean 800k tokens of history is a good idea:
         # quality drops and every turn resends it, so cap with compact_at_tokens
-        limit = min(self.context_window * 0.8, self.config.compact_at_tokens)
-        return self._latest_usage.total_tokens > limit
+        return min(self.context_window * 0.8, self.config.compact_at_tokens)
+
+    def needs_compression(self) -> bool:
+        return self._latest_usage.total_tokens > self._limit()
 
     def set_latest_usage(self, usage: TokenUsage):
         self._latest_usage = usage
@@ -209,7 +213,9 @@ class ContextManager:
         return fixed
 
     def prune_tool_outputs(self) -> int:
-        # a single long task prunes too: its early searches are the ones re-sent most often
+        # Clearing rewrites old messages, which costs one cache re-read of everything after them. It still
+        # pays: prompts stay small, so more calls fit the token budget. What hurts is losing a result the
+        # model then needs again, so cleared results are archived and can be recalled exactly.
         total_tokens = 0
         pruned_tokens = 0
         to_prune: list[MessageItem] = []
@@ -234,11 +240,19 @@ class ContextManager:
         for msg in to_prune:
             head = (msg.content or "").strip().splitlines()[:1]
             hint = f": {head[0][:100]}" if head else ""
-            msg.content = f"[Old tool result cleared to save tokens{hint}. Re-run the tool if you need it again.]"
+            if self.archive is not None:
+                rid = self.archive.put(msg.content or "")
+                msg.content = (
+                    f"[Old tool result cleared to save tokens ({rid}, {len(msg.content or '')} chars){hint}. "
+                    f"recall_result {rid} returns the exact text.]"
+                )
+            else:
+                msg.content = f"[Old tool result cleared to save tokens{hint}. Re-run the tool if you need it again.]"
             msg.token_count = count_tokens(msg.content, self._model_name)
             msg.pruned_at = datetime.now()
             pruned_count += 1
 
+        self.last_prune = {"results": pruned_count, "tokens_cleared": pruned_tokens, "prompt_tokens": self._latest_usage.prompt_tokens}
         return pruned_count
 
     def clear(self) -> None:

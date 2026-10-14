@@ -6,6 +6,7 @@ from tools.builtin.list_dir import ListDirTool
 from tools.builtin.memory import MemoryTool
 from tools.builtin.outline import OutlineTool
 from tools.builtin.read_file import ReadFileTool
+from tools.builtin.recall import RecallResultTool
 from tools.builtin.search import SearchTool
 from tools.builtin.shell import ShellTool
 from tools.builtin.todo import TodosTool
