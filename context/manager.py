@@ -68,7 +68,21 @@ class ContextManager:
     def message_count(self) -> int:
         return len(self._messages)
 
+    COMPACT_HEAD = "# Earlier conversation (compacted)"
+
+    def _restore_summary(self, content: str) -> None:
+        """A resumed session replays its messages, so the compacted head arrives as plain text.
+        Take the summary and the file lists back out of it, otherwise the next compaction would
+        treat it as an ordinary (truncated) message and forget which files were edited."""
+        self.summary = content.split("\n\n", 2)[2] if content.count("\n\n") >= 2 else content
+        for line in self.summary.splitlines():
+            for prefix, target in (("Files modified so far: ", self.files_modified), ("Files read so far: ", self.files_read)):
+                if line.startswith(prefix):
+                    target.update(p.strip() for p in line[len(prefix):].split(","))
+
     def add_user_message(self, content: str) -> None:
+        if not self._messages and content.startswith(self.COMPACT_HEAD):
+            self._restore_summary(content)
         item = MessageItem(
             role="user",
             content=content,
@@ -152,7 +166,9 @@ class ContextManager:
         return cut
 
     def history_for_summary(self, cut: int) -> list[dict[str, Any]]:
-        return [m.to_dict() for m in self._messages[:cut]]
+        # the compacted head is passed whole as the previous summary, not as a message to fold in
+        skip = 1 if self.summary and self._messages and self._messages[0].content.startswith(self.COMPACT_HEAD) else 0
+        return [m.to_dict() for m in self._messages[skip:cut]]
 
     def _track_files(self, items: list[MessageItem]) -> None:
         for m in items:
@@ -182,13 +198,17 @@ class ContextManager:
             files += f"\nFiles read so far: {', '.join(reads[:40])}"
         self.summary = summary + files
         content = (
-            "# Earlier conversation (compacted)\n\n"
+            f"{self.COMPACT_HEAD}\n\n"
             "Older messages were replaced by this summary to save context. Actions listed as "
             "completed are done; do not repeat them. The most recent messages follow unchanged.\n\n"
             f"{self.summary}"
         )
         head = MessageItem(role="user", content=content, token_count=count_tokens(content, self._model_name))
         self._messages = [head] + self._messages[cut:]
+
+    def has_live_result(self, call_id: str) -> bool:
+        """True while that call's result is still in the history with its full text."""
+        return any(m.tool_call_id == call_id and not m.pruned_at for m in self._messages if m.role == "tool")
 
     def repair_orphans(self) -> int:
         """After an interrupt, an assistant message may have tool_calls with no
