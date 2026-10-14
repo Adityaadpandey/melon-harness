@@ -157,7 +157,17 @@ class Agent:
                 break
 
             if self._budget_hit:
-                task.transition(TaskStatus.UNVERIFIED, "token budget reached")
+                # the checks cost no model tokens, so a run that ran out of budget mid-change still finds out if it broke the tree
+                checks = select_checks(self.config, task.changed_files) if task.changed_files else []
+                results = [await run_check(cmd, self.config.cwd / sub, self.config) for cmd, sub in checks]
+                task.verification = [r.to_dict() for r in results]
+                bad = [r for r in results if not r.ok]
+                if bad:
+                    yield AgentEvent.notice(f"Stopped on the budget and the tree fails {bad[0].command}; the change is incomplete")
+                    task.transition(TaskStatus.VERIFYING, "checks after budget stop")
+                    task.transition(TaskStatus.VERIFICATION_FAILED, bad[0].command)
+                else:
+                    task.transition(TaskStatus.UNVERIFIED, "token budget reached")
                 break
 
             if final_response and self.config.check_references:

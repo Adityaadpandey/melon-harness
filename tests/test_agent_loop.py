@@ -254,3 +254,18 @@ async def test_a_run_stopped_by_the_budget_still_reports_the_files_it_changed(tm
         events = await run(agent)
         report = next(e for e in events if e.type == AgentEventType.AGENT_END).data["report"]
         assert report["changed_files"] == ["new.txt"]
+
+
+async def test_a_budget_stop_runs_the_checks_and_reports_a_broken_tree(tmp_path):
+    import subprocess
+    from client.response import StreamEvent, StreamEventType, TokenUsage
+
+    for a in (["init", "-q"], ["config", "user.email", "a@b"], ["config", "user.name", "t"]):
+        subprocess.run(["git", *a], cwd=tmp_path, check=True, capture_output=True)
+    cfg = Config(cwd=tmp_path, approval=ApprovalPolicy.AUTO, max_total_tokens=1000, verify_commands=["exit 3"])
+    ev = call("write_file", {"path": "new.txt", "content": "x"}, call_id="w")
+    ev[-1] = StreamEvent(type=StreamEventType.MESSAGE_COMPLETE, usage=TokenUsage(5000, 10, 5010, 0))
+    async with Agent(cfg) as agent:
+        agent.session.client = ScriptedClient([ev, text("partial answer")])
+        report = next(e for e in await run(agent) if e.type == AgentEventType.AGENT_END).data["report"]
+        assert report["status"] == "verification_failed" and report["checks"][0]["exit_code"] == 3
