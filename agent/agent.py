@@ -74,6 +74,7 @@ class Agent:
         self._budget_hit = False
         self._compact_retry_turn = 0
         self._overflow_retried = False
+        self._last_model_call = 0.0
         self._budget_warned = False
         self._uncached_streak = 0
         self._usage_base = 0
@@ -134,6 +135,8 @@ class Agent:
                 )
             else:
                 yield AgentEvent.notice("Challenger found nothing it could back with evidence")
+        async for ev in self._tidy_if_cache_went_cold():
+            yield ev
         self.session.context_manager.add_user_message(message_for_model)
 
         self._escalated = False
@@ -475,6 +478,7 @@ class Agent:
                         "Every call re-bills the whole context; a Claude or deepseek model is much cheaper here."
                     )
 
+            self._last_model_call = time.monotonic()
             self._prune()
         async for ev in self._wrap_up(task, f"Turn limit reached ({max_turns})", "Turn limit reached"):
             yield ev
@@ -534,6 +538,20 @@ class Agent:
         or twenty greps on a 20k context would use up the whole budget."""
         u = self.session.context_manager.total_usage
         return u.prompt_tokens - u.cached_tokens + u.completion_tokens
+
+    async def _tidy_if_cache_went_cold(self) -> AsyncGenerator[AgentEvent, None]:
+        """The first call after a pause is billed in full because the provider's prompt cache expired.
+        Rewriting history costs nothing extra at that moment, so shrink it now: clear old tool output,
+        and summarise if the context is still big. Example: back after 10 minutes with 70k of history,
+        the cold call sends ~30k instead of 70k."""
+        cm = self.session.context_manager
+        if not self._last_model_call or time.monotonic() - self._last_model_call < self.config.cache_ttl_seconds:
+            return
+        self._last_model_call = 0.0
+        before = cm._latest_usage.total_tokens
+        self._prune()
+        if before > self.config.idle_compact_at_tokens and await self._compact():
+            yield AgentEvent.notice(f"Cache had expired: compacted {before // 1000}k of context before the first call")
 
     def _prune(self) -> None:
         cm = self.session.context_manager

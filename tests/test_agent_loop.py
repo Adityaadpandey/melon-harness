@@ -7,6 +7,7 @@ import pytest
 from agent.agent import Agent
 from agent.events import AgentEventType
 from config.config import ApprovalPolicy, Config
+from client.response import TokenUsage
 from tests.fakes import ScriptedClient, call, calls, error, text
 from tools.base import Tool, ToolInvocation, ToolKind, ToolResult
 from pydantic import BaseModel
@@ -311,3 +312,26 @@ async def test_provider_context_overflow_compacts_once_and_retries(cfg):
         assert AgentEventType.AGENT_ERROR not in kinds
         assert any("too long" in e.data.get("message", "") for e in events if e.type == AgentEventType.NOTICE)
         assert len(agent.session.client.requests) == 2
+
+
+async def test_a_cold_cache_after_a_pause_shrinks_history_before_the_first_call(cfg):
+    cfg.idle_compact_at_tokens = 1000
+    async with Agent(cfg) as agent:
+        agent.session.client = ScriptedClient([text("done")])
+        compacted = []
+
+        async def fake_compact():
+            compacted.append(1)
+            return True
+
+        agent._compact = fake_compact
+        agent.session.context_manager.set_latest_usage(TokenUsage(60_000, 100, 60_100))
+        agent._last_model_call = time.monotonic() - 10_000  # long pause
+        events = await run(agent)
+        assert compacted and any("Cache had expired" in e.data.get("message", "") for e in events if e.type == AgentEventType.NOTICE)
+
+        compacted.clear()
+        agent._last_model_call = time.monotonic()  # warm cache: leave history alone
+        agent.session.client = ScriptedClient([text("done")])
+        await run(agent)
+        assert not compacted

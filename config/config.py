@@ -185,6 +185,8 @@ class Config(BaseModel):
 
     max_seconds: float = 1800  # wall-clock budget for one user request
     compact_at_tokens: int = 200_000  # compact earlier than the model window
+    cache_ttl_seconds: int = 300  # a pause longer than this means the provider's prompt cache has expired
+    idle_compact_at_tokens: int = 40_000  # after such a pause, summarise history above this size before the first call
     keep_recent_tokens: int = 20_000  # tail kept verbatim when compacting
 
     allowed_tools: list[str] | None = Field(
