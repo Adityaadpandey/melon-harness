@@ -22,6 +22,12 @@ def repo(tmp_path):
     return tmp_path
 
 
+async def test_references_resolve_when_started_in_a_folder_that_holds_the_repo(repo):
+    parent = repo.parent  # the repo sits one level below the working directory, which is not a repo
+    n, problems = await verify_references("See apps/server/src/app.ts:12 and src/ghost.ts:3.", parent)
+    assert n == 2 and [p.ref for p in problems] == ["src/ghost.ts:3"]
+
+
 def test_extracts_paths_and_lines_but_not_urls_versions_or_bare_names():
     refs = extract_refs("See `src/app.ts:12-30`, README.md:1, https://example.com/a/b.ts:9, v1.2.3, and index.ts alone, plus lib/x.py")
     assert ("src/app.ts", 12, 30) in refs and ("README.md", 1, None) in refs and ("lib/x.py", None, None) in refs

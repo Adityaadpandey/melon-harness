@@ -36,13 +36,27 @@ def extract_refs(text: str) -> list[tuple[str, int | None, int | None]]:
     return out[:MAX_REFS]
 
 
-async def _tree(cwd: Path) -> list[str]:
+async def _git_files(cwd: Path) -> list[str] | None:
     p = await asyncio.create_subprocess_exec(
         "git", "ls-files", "-co", "--exclude-standard", cwd=cwd,
         stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.DEVNULL,
     )
     out, _ = await p.communicate()
-    return out.decode("utf-8", "replace").splitlines() if p.returncode == 0 else []
+    return out.decode("utf-8", "replace").splitlines() if p.returncode == 0 else None
+
+
+async def _tree(cwd: Path) -> list[str]:
+    files = await _git_files(cwd)
+    if files is not None:
+        return files
+    # started in a folder that holds repos (~/Devlopment with ~/Devlopment/tunyt inside): list each
+    # repo one level down, so "apps/server/x.ts" still resolves instead of being called made up
+    try:
+        repos = [d for d in sorted(cwd.iterdir()) if (d / ".git").exists()]
+    except OSError:
+        return []
+    lists = await asyncio.gather(*(_git_files(d) for d in repos))
+    return [f"{d.name}/{f}" for d, fs in zip(repos, lists) for f in fs or []]
 
 
 def _resolve(cwd: Path, ref: str, tree: list[str]) -> Path | None:
