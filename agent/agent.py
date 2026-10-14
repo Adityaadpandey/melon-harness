@@ -148,6 +148,10 @@ class Agent:
                 if event.type == AgentEventType.TEXT_COMPLETE:
                     final_response = event.data.get("content")
 
+            if self._failed or self._budget_hit:
+                # a run cut short may still have edited files; the report must say which
+                task.changed_files = changed_since(before, await snapshot(self.config.cwd))
+
             if self._failed:
                 task.transition(TaskStatus.FAILED, "agent loop aborted")
                 break

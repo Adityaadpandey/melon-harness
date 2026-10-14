@@ -238,3 +238,19 @@ async def test_budget_counts_new_work_not_a_resent_cached_prefix(tmp_path):
         agent.session.client = ScriptedClient([turn(i) for i in range(8)] + [text("done")])
         events = await run(agent)
         assert not [e for e in events if e.type == AgentEventType.NOTICE and "budget" in str(e.data).lower()]
+
+
+async def test_a_run_stopped_by_the_budget_still_reports_the_files_it_changed(tmp_path):
+    import subprocess
+    from client.response import StreamEvent, StreamEventType, TokenUsage
+
+    for a in (["init", "-q"], ["config", "user.email", "a@b"], ["config", "user.name", "t"]):
+        subprocess.run(["git", *a], cwd=tmp_path, check=True, capture_output=True)
+    cfg = Config(cwd=tmp_path, approval=ApprovalPolicy.AUTO, auto_verify=False, max_total_tokens=1000)
+    ev = call("write_file", {"path": "new.txt", "content": "x"}, call_id="w")
+    ev[-1] = StreamEvent(type=StreamEventType.MESSAGE_COMPLETE, usage=TokenUsage(5000, 10, 5010, 0))
+    async with Agent(cfg) as agent:
+        agent.session.client = ScriptedClient([ev, text("partial answer")])
+        events = await run(agent)
+        report = next(e for e in events if e.type == AgentEventType.AGENT_END).data["report"]
+        assert report["changed_files"] == ["new.txt"]
