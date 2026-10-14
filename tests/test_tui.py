@@ -200,8 +200,8 @@ def test_expand_shows_full_output_of_recent_tool_calls(tmp_path):
 def test_context_bar_and_summary(tmp_path):
     assert context_bar(0) == "▱" * 10 + " 0%" and context_bar(50) == "▰" * 5 + "▱" * 5 + " 50%" and context_bar(100).startswith("▰" * 10)
     tui, con = make(tmp_path)
-    tui.turn_summary(12.4, {"calls": 3, "prompt_tokens": 4100, "completion_tokens": 300, "cache_hit_pct": 78.0, "est_cost_usd": None}, None)
-    assert "12s  ·  3 calls  ·  4.1k in (78% cached)  ·  0.3k out" in con.export_text()
+    tui.turn_summary(12.4, {"calls": 3, "prompt_tokens": 4100, "completion_tokens": 300, "cached_tokens": 3200, "cache_hit_pct": 78.0, "est_cost_usd": None}, None)
+    assert "12s  ·  3 calls  ·  4.1k in (78% cached, 0.9k new)  ·  0.3k out" in con.export_text()
 
 
 async def test_input_box_enter_submits_alt_enter_adds_a_line_and_history_walks_back(tmp_path):
