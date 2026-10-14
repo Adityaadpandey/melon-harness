@@ -113,7 +113,7 @@ class Agent:
         self._escalated = False
         self._budget_hit = False
         self._budget_warned = False
-        self._usage_base = self.session.context_manager.total_usage.total_tokens  # budget is per request
+        self._usage_base = self._spent()  # budget is per request
         self._review_sec = 0.0
         self._tier = "default"
         routing = self.config.routing
@@ -266,7 +266,7 @@ class Agent:
                 self._failed = True
                 yield AgentEvent.agent_error(f"Time budget of {self.config.max_seconds:.0f}s exhausted")
                 return
-            used = self.session.context_manager.total_usage.total_tokens - self._usage_base
+            used = self._spent() - self._usage_base
             budget = self.config.max_total_tokens
             if used > budget:
                 async for ev in self._wrap_up(task, f"Token budget reached ({budget:,})", "Token budget is spent"):
@@ -460,6 +460,12 @@ class Agent:
         if (task.repairs >= 1 or self._escalated) and "strong" in self.config.routing:
             tier = "strong"
         return tier
+
+    def _spent(self) -> int:
+        """Work done so far: new input plus output. A cached prefix re-sent on every call is not counted,
+        or twenty greps on a 20k context would use up the whole budget."""
+        u = self.session.context_manager.total_usage
+        return u.prompt_tokens - u.cached_tokens + u.completion_tokens
 
     def _prune(self) -> None:
         cm = self.session.context_manager

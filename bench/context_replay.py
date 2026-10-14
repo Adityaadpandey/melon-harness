@@ -51,6 +51,10 @@ def script() -> list:
     for _ in range(4):
         turns.append(calls(("git", {"op": "status"}), ("git", {"op": "diff"})))
     turns.append(text("review done"))
+    for n, turn in enumerate(turns):  # a real model never reuses a call id
+        for ev in turn:
+            if ev.tool_call:
+                ev.tool_call.call_id = f"t{n}-{ev.tool_call.call_id}"
     return turns
 
 

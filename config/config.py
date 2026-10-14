@@ -177,7 +177,7 @@ class Config(BaseModel):
     max_repairs: int = 2
     verify_timeout_sec: int = 600
 
-    max_total_tokens: int = 300_000  # processed tokens (incl. cached) per request; stops runaway runs
+    max_total_tokens: int = 300_000  # new work per request (uncached input + output; re-sent cached context is free); stops runaway runs
     tool_output_max_chars: int = 16_000  # per tool result sent to the model
     pricing: dict[str, ModelPrice] = Field(default_factory=dict)  # model id -> price, for cost estimates
 

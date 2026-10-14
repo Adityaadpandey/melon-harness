@@ -7,41 +7,41 @@
    "requests": 32,
    "tools_executed": 64,
    "tool_result_chars_ingested": 452322,
-   "input_tokens_est": 744538,
-   "cached_tokens_est": 567566,
-   "uncached_tokens_est": 176972,
+   "input_tokens_est": 705584,
+   "cached_tokens_est": 529751,
+   "uncached_tokens_est": 175833,
    "duplicate_result_chars_carried": 0,
-   "last_request_tokens_est": 25922
+   "last_request_tokens_est": 24650
   },
   {
    "requests": 32,
    "tools_executed": 64,
    "tool_result_chars_ingested": 452322,
-   "input_tokens_est": 744538,
-   "cached_tokens_est": 567566,
-   "uncached_tokens_est": 176972,
+   "input_tokens_est": 705584,
+   "cached_tokens_est": 529751,
+   "uncached_tokens_est": 175833,
    "duplicate_result_chars_carried": 0,
-   "last_request_tokens_est": 25922
+   "last_request_tokens_est": 24650
   },
   {
    "requests": 32,
    "tools_executed": 64,
    "tool_result_chars_ingested": 452322,
-   "input_tokens_est": 744538,
-   "cached_tokens_est": 567566,
-   "uncached_tokens_est": 176972,
+   "input_tokens_est": 705584,
+   "cached_tokens_est": 529751,
+   "uncached_tokens_est": 175833,
    "duplicate_result_chars_carried": 0,
-   "last_request_tokens_est": 25922
+   "last_request_tokens_est": 24650
   }
  ],
  "median": {
   "requests": 32,
   "tools_executed": 64,
   "tool_result_chars_ingested": 452322,
-  "input_tokens_est": 744538,
-  "cached_tokens_est": 567566,
-  "uncached_tokens_est": 176972,
+  "input_tokens_est": 705584,
+  "cached_tokens_est": 529751,
+  "uncached_tokens_est": 175833,
   "duplicate_result_chars_carried": 0,
-  "last_request_tokens_est": 25922
+  "last_request_tokens_est": 24650
  }
 }

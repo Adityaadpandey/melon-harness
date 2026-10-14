@@ -5,6 +5,7 @@ from hooks.hook_system import HookSystem
 from safety.guard import violation
 from safety.approval import ApprovalContext, ApprovalDecision, ApprovalManager
 from tools.base import Tool, ToolInvocation, ToolResult
+import json
 import logging
 from tools.builtin import ReadFileTool, get_all_builtin_tools
 from tools.builtin.recall import RecallResultTool
@@ -12,6 +13,10 @@ from utils.archive import ResultStore
 from tools.subagents import SubagentTool, get_default_subagent_definitions
 
 logger = logging.getLogger(__name__)
+
+
+# read-only lookups whose answer only changes when something is written; read_file has its own finer dedup
+REUSABLE = {"grep", "search", "glob", "list_dir", "outline", "git", "graph"}
 
 
 class ToolRegistry:
@@ -25,6 +30,9 @@ class ToolRegistry:
         self._mcp_tools: dict[str, Tool] = {}
         self._read_state: dict[str, tuple[int, int]] = {}  # path -> (mtime_ns, size) when last seen by the agent
         self.config = config
+        self._answered: dict[tuple, tuple[str, int]] = {}  # (tool, args, workspace) -> (call id that got the answer, write generation)
+        self._writes = 0  # bumps after every call that can change the workspace
+        self.is_live = lambda call_id: True  # Session: is that call's result still in the model's context?
         self.archive = ResultStore()  # Session points it at a folder; full copies of cut or cleared results live here
 
     @property
@@ -79,7 +87,15 @@ class ToolRegistry:
         import time
 
         started = time.perf_counter()
-        result = self._unread_edit_error(name, params, cwd) or await self._invoke(name, params, cwd, hook_system, approval_manager, call_id)
+        key = (name, json.dumps(params, sort_keys=True, default=str), str(cwd))
+        result = self._unread_edit_error(name, params, cwd) or self._repeat(name, key)
+        if result is None:
+            result = await self._invoke(name, params, cwd, hook_system, approval_manager, call_id)
+            tool = self.get(name)
+            if tool and tool.is_mutating(params):
+                self._writes += 1
+            elif name in REUSABLE and result.success and call_id:
+                self._answered[key] = (call_id, self._writes)
         self._note_file_state(name, params, cwd, result)
         self._cap_output(result)
         if self.tracer:
@@ -91,6 +107,19 @@ class ToolRegistry:
                 error=(result.error or "")[:200] if not result.success else None,
             )
         return result
+
+    def _repeat(self, name: str, key: tuple) -> ToolResult | None:
+        """The same lookup again, with nothing written since and the first answer still in
+        context: say so in one line instead of sending the same text a second time.
+        ponytail: edits made outside this session are not seen; add a git-state stamp if that bites."""
+        hit = self._answered.get(key) if name in REUSABLE else None
+        if not hit or hit[1] != self._writes or not self.is_live(hit[0]):
+            return None
+        return ToolResult.success_result(
+            f"[unchanged: this exact {name} call was already answered above (call {hit[0]}) and nothing was written since. "
+            "Use that result, or change the query.]",
+            metadata={"deduped": True, "tool_name": name},
+        )
 
     def _target(self, params: dict[str, Any], cwd: Path) -> Path | None:
         from utils.paths import resolve_path

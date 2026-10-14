@@ -171,3 +171,70 @@ def test_old_session_files_without_cwd_still_load(tmp_path, monkeypatch):
            "messages": [], "total_usage": {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0, "cached_tokens": 0}}
     (pm.sessions_dir / "old1.json").write_text(json.dumps(old))
     assert pm.load_session("old1").cwd == "" and pm.list_sessions()[0]["title"] == ""
+
+
+async def test_an_identical_lookup_is_answered_once_until_something_is_written(cfg):
+    (cfg.cwd / "a.py").write_text("needle = 1\n" * 50)
+    async with Agent(cfg) as agent:
+        g = ("grep", {"pattern": "needle", "path": "."})
+        agent.session.client = ScriptedClient([
+            call(*g, call_id="a"), call(*g, call_id="b"),
+            call("write_file", {"path": "b.py", "content": "needle = 2\n"}, call_id="w"),
+            call(*g, call_id="c"), text("done"),
+        ])
+        events = await run(agent)
+        outs = {e.data["call_id"]: e.data["output"] for e in events if e.type == AgentEventType.TOOL_CALL_COMPLETE}
+        assert "needle" in outs["a"] and "unchanged" in outs["b"]  # repeat: a pointer, not the same text again
+        assert "needle" in outs["c"] and "unchanged" not in outs["c"]  # the write invalidated it
+
+
+async def test_a_cleared_result_is_not_treated_as_still_in_context(cfg):
+    (cfg.cwd / "a.py").write_text("needle = 1\n")
+    async with Agent(cfg) as agent:
+        g = ("grep", {"pattern": "needle", "path": "."})
+        agent.session.client = ScriptedClient([call(*g, call_id="a"), call(*g, call_id="b"), text("done")])
+        cm = agent.session.context_manager
+        orig = cm.add_tool_result
+
+        def add_then_clear(cid, content):
+            orig(cid, content)
+            cm._messages[-1].pruned_at = True  # as if pruning had cleared it at once
+
+        cm.add_tool_result = add_then_clear
+        events = await run(agent)
+        outs = {e.data["call_id"]: e.data["output"] for e in events if e.type == AgentEventType.TOOL_CALL_COMPLETE}
+        assert "unchanged" not in outs["b"]
+
+
+async def test_two_workspaces_never_share_a_cached_answer(tmp_path):
+    from tools.registry import create_default_registry
+    from agent.agent import Agent  # noqa: F401
+
+    for name, body in (("one", "needle one"), ("two", "needle two")):
+        (tmp_path / name).mkdir()
+        (tmp_path / name / "f.txt").write_text(body)
+    cfg = Config(cwd=tmp_path / "one", approval=ApprovalPolicy.AUTO)
+    reg = create_default_registry(cfg)
+    from hooks.hook_system import HookSystem
+
+    hooks = HookSystem(cfg)
+    a = await reg.invoke("grep", {"pattern": "needle", "path": "."}, tmp_path / "one", hooks, None, "x1")
+    b = await reg.invoke("grep", {"pattern": "needle", "path": "."}, tmp_path / "two", hooks, None, "x2")
+    assert "one" in a.output and "two" in b.output and "unchanged" not in b.output
+
+
+async def test_budget_counts_new_work_not_a_resent_cached_prefix(tmp_path):
+    from client.response import StreamEvent, StreamEventType, TokenUsage
+
+    (tmp_path / "a.txt").write_text("hi")
+    cfg = Config(cwd=tmp_path, approval=ApprovalPolicy.AUTO, auto_verify=False, max_total_tokens=10_000)
+
+    def turn(i):  # 100k prompt, all but 500 of it cached: huge in total, tiny as new work
+        ev = call("read_file", {"path": "a.txt"}, call_id=f"c{i}")
+        ev[-1] = StreamEvent(type=StreamEventType.MESSAGE_COMPLETE, usage=TokenUsage(100_000, 50, 100_050, 99_500))
+        return ev
+
+    async with Agent(cfg) as agent:
+        agent.session.client = ScriptedClient([turn(i) for i in range(8)] + [text("done")])
+        events = await run(agent)
+        assert not [e for e in events if e.type == AgentEventType.NOTICE and "budget" in str(e.data).lower()]

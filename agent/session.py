@@ -62,6 +62,7 @@ class Session:
             skills=self.skills,
         )
         self.context_manager.archive = self.tool_registry.archive
+        self.tool_registry.is_live = self.context_manager.has_live_result
 
     def _load_memory(self) -> str | None:
         data_dir = get_data_dir()
