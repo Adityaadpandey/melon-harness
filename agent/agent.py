@@ -75,6 +75,7 @@ class Agent:
         self._compact_retry_turn = 0
         self._overflow_retried = False
         self._last_model_call = 0.0
+        self.capped_last = False  # did the last request stop at the call budget? /more only makes sense then
         self.extra_calls = 0  # set by /more, consumed by the next request
         self._allowance = 0
         self._calls_used = 0
@@ -150,6 +151,7 @@ class Agent:
         self._overflow_retried = False
         self._calls_used = 0
         self._calls_warned = False
+        self.capped_last = False
         self._allowance, self.extra_calls = self.extra_calls, 0  # /more applies to this one request
         self._read_only = not wants_change(message)
         self._usage_base = self._spent()  # budget is per request
@@ -327,6 +329,7 @@ class Agent:
                 ):
                     yield ev
                 self._budget_hit = False  # the answer was produced; this is not a token-budget failure
+                self.capped_last = True
                 return
             if limit and self._calls_used >= max(1, int(limit * 0.7)) and not self._calls_warned:
                 self._calls_warned = True
@@ -444,7 +447,7 @@ class Agent:
                 )
 
             self._calls_used += len(tool_calls)
-            if any(tc.name in {"edit", "write_file", "apply_patch"} for tc in tool_calls):
+            if any(tc.name in {"edit", "write_file"} for tc in tool_calls):
                 self._read_only = False  # it turned out to be a change after all: the read cap no longer applies
             if not tool_calls:
                 if usage:
@@ -534,7 +537,7 @@ class Agent:
         yield AgentEvent.notice(f"{notice}; wrapping up with what is known")
         self.session.context_manager.add_user_message(
             f"{why}. No more tool calls. Answer now from what you have already read: what you found (file:line), "
-            "what is still unknown, and the next step. Maximum 8 lines, no preamble. If you were asked for a specific reply format, use it."
+            "what is still unknown, and the next step. Under 150 words, no preamble. If you were asked for a specific reply format, use it."
         )
         text = ""
         async for event in self.session.client.chat_completion(

@@ -230,3 +230,22 @@ async def test_git_patch_returns_every_changed_file_in_one_call(tmp_path):
     (tmp_path / "b.txt").write_text("changed\n")
     res = await GitTool(Config(cwd=tmp_path)).execute(ToolInvocation(params={"op": "patch"}, cwd=tmp_path))
     assert res.success and "+two" in res.output and "+changed" in res.output
+
+
+async def test_git_patch_keeps_paths_with_spaces_as_separate_files(tmp_path):
+    import subprocess
+    from tools.base import ToolInvocation
+    from tools.builtin.git import GitTool
+    from config.config import Config
+
+    def sh(*a):
+        subprocess.run(a, cwd=tmp_path, check=True, capture_output=True)
+
+    sh("git", "init", "-q"); sh("git", "config", "user.email", "t@t"); sh("git", "config", "user.name", "t")
+    for n in ("sp ace.txt", "b.txt"):
+        (tmp_path / n).write_text("one\n")
+    sh("git", "add", "."); sh("git", "commit", "-qm", "init")
+    (tmp_path / "sp ace.txt").write_text("two\n")
+    (tmp_path / "b.txt").write_text("changed\n")
+    res = await GitTool(Config(cwd=tmp_path)).execute(ToolInvocation(params={"op": "patch"}, cwd=tmp_path))
+    assert res.output.count("diff --git") == 2

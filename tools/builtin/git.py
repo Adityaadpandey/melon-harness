@@ -118,7 +118,7 @@ class GitTool(Tool):
         out, err = await asyncio.wait_for(proc.communicate(), 30)
         if proc.returncode:
             return ToolResult.error_result(err.decode("utf-8", "replace").strip()[:500] or "git failed")
-        files = re.split(r"(?m)^(?=diff --git a/\S+ b/\S+$)", out.decode("utf-8", "replace"))
+        files = re.split(r"(?m)^(?=diff --git )", out.decode("utf-8", "replace"))
         files = [f for f in files if f.strip()]
         if not files:
             return ToolResult.success_result("(no changes; new untracked files are not in a diff, read them directly)")
