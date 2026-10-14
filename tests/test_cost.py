@@ -247,3 +247,12 @@ async def test_hung_subagent_is_cut_off_at_its_timeout(tmp_path, monkeypatch):
     tool = SubagentTool(cfg, SubagentDefinition("t", "d", "p", ["read_file"], timeout_seconds=0.5))
     r = await asyncio.wait_for(tool.execute(ToolInvocation(cwd=tmp_path, params={"goal": "x"})), 5)
     assert "timed out" in r.output
+
+
+def test_request_size_is_split_by_part_without_keeping_the_text():
+    from client.llm_client import request_chars
+
+    msgs = [{"role": "system", "content": "abc"}, {"role": "user", "content": "hello"},
+            {"role": "assistant", "content": "", "tool_calls": [{"function": {"name": "grep", "arguments": "{}"}}]},
+            {"role": "tool", "content": "x" * 100}]
+    assert request_chars(msgs) == {"system": 3, "user": 5, "assistant": 0, "tool_calls": 6, "tool_results": 100}

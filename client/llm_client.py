@@ -144,6 +144,7 @@ class LLMClient:
                     sec=round(time.perf_counter() - started, 3),
                     ttft=round(first_token, 3) if first_token is not None else None,
                     tokens=usage.__dict__ if usage else None, tool_calls=len(calls),
+                    request_chars=request_chars(messages),
                 )
                 if stream:
                     yield StreamEvent(type=StreamEventType.MESSAGE_COMPLETE, finish_reason=finish, usage=usage)
@@ -173,6 +174,21 @@ class LLMClient:
                     self.registry.mark_down(model, 3600 if e.status in (403, 404) else 60)
                 yield e
                 return
+
+
+def request_chars(messages: list) -> dict[str, int]:
+    """Size of the request by part (characters, so an estimate): shows what the prompt is made of without storing any of it."""
+    out = {"system": 0, "user": 0, "assistant": 0, "tool_calls": 0, "tool_results": 0}
+    for m in messages:
+        role, text = m.get("role"), m.get("content") or ""
+        if role == "tool":
+            out["tool_results"] += len(text)
+        elif role in ("system", "user"):
+            out[role] += len(text)
+        else:
+            out["assistant"] += len(text)
+            out["tool_calls"] += sum(len(tc["function"]["arguments"]) + len(tc["function"]["name"]) for tc in m.get("tool_calls", []))
+    return out
 
 
 class _Collector:

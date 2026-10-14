@@ -333,6 +333,7 @@ class AnthropicAdapter:
                 completion_tokens=u.output_tokens or 0,
                 total_tokens=prompt + (u.output_tokens or 0),
                 cached_tokens=cached,
+                cache_write_tokens=created,
             ),
         )
 

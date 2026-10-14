@@ -30,6 +30,7 @@ class TokenUsage:
     completion_tokens: int = 0
     total_tokens: int = 0
     cached_tokens: int = 0
+    cache_write_tokens: int = 0  # tokens the provider stored for later reuse (billed at a premium by some)
 
     def __add__(self, other: TokenUsage):
         return TokenUsage(
@@ -37,6 +38,7 @@ class TokenUsage:
             completion_tokens=self.completion_tokens + other.completion_tokens,
             total_tokens=self.total_tokens + other.total_tokens,
             cached_tokens=self.cached_tokens + other.cached_tokens,
+            cache_write_tokens=self.cache_write_tokens + other.cache_write_tokens,
         )
 
 
