@@ -194,3 +194,20 @@ def test_atomic_write_keeps_mode_crlf_and_leaves_no_temp_files(tmp_path):
     atomic_write(f, "new\r\nline\r\n")
     assert f.read_bytes() == b"new\r\nline\r\n" and stat.S_IMODE(f.stat().st_mode) == 0o755
     assert [p.name for p in tmp_path.iterdir()] == ["x.sh"]
+
+
+async def test_git_scope_reports_branch_uncommitted_and_branch_commits(tmp_path):
+    import subprocess
+    from tools.builtin.git import GitTool
+    from tools.base import ToolInvocation
+
+    def g(*a):
+        subprocess.run(["git", *a], cwd=tmp_path, check=True, capture_output=True)
+
+    g("init", "-q", "-b", "main"); g("config", "user.email", "a@b"); g("config", "user.name", "t")
+    (tmp_path / "a.txt").write_text("1\n"); g("add", "."); g("commit", "-qm", "base")
+    g("checkout", "-qb", "feature")
+    (tmp_path / "b.txt").write_text("2\n"); g("add", "."); g("commit", "-qm", "add b")
+    (tmp_path / "a.txt").write_text("changed\n")
+    out = (await GitTool(Config(cwd=tmp_path)).execute(ToolInvocation(params={"op": "scope"}, cwd=tmp_path))).output
+    assert "branch: feature" in out and "add b" in out and "a.txt" in out and "b.txt" in out

@@ -11,9 +11,9 @@ _REV = re.compile(r"^[\w./~^@{}:-]+$")
 
 
 class GitParams(BaseModel):
-    op: Literal["status", "diff", "log", "show", "blame", "find_change"] = Field(
+    op: Literal["scope", "status", "diff", "log", "show", "blame", "find_change"] = Field(
         ..., description=(
-            "status: changed files. diff: stat of working tree (or of `path`, full). log: recent commits touching `path`. "
+            "scope: one-call review snapshot (branch, status, base range, stat of working-tree and branch changes). status: changed files. diff: stat of working tree (or of `path`, full). log: recent commits touching `path`. "
             "show: one commit's files (and its diff of `path`). blame: who last changed lines `lines` of `path`. "
             "find_change: commits that added/removed the text `query` (git log -S), the fastest way to find when a behaviour changed."
         ),
@@ -43,6 +43,8 @@ class GitTool(Tool):
             return ToolResult.error_result(f"Unusual revision '{p.rev}'")
         tail = ["--", p.path] if p.path else []
         pretty = "--pretty=format:%h %ad %an: %s"
+        if p.op == "scope":
+            return await self._scope(invocation.cwd, p.rev)
         if p.op == "status":
             argv = ["status", "--short", "--branch"]
         elif p.op == "diff":
@@ -75,3 +77,32 @@ class GitTool(Tool):
         if len(text) > MAX_CHARS:
             text = text[:MAX_CHARS] + f"\n... [clipped at {MAX_CHARS} chars; narrow with path/rev/limit]"
         return ToolResult.success_result(text)
+
+    async def _scope(self, cwd, base: str | None) -> ToolResult:
+        """Everything a review needs to fix its scope once: where we are, what is uncommitted,
+        and which commits and files the branch adds over its base."""
+        async def git(*argv: str) -> str:
+            proc = await asyncio.create_subprocess_exec(
+                "git", "--no-pager", *argv, cwd=cwd, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.DEVNULL
+            )
+            out, _ = await asyncio.wait_for(proc.communicate(), 30)
+            return out.decode("utf-8", "replace").strip() if proc.returncode == 0 else ""
+
+        if not await git("rev-parse", "--git-dir"):
+            return ToolResult.error_result("not a git repository")
+        if not base:  # first of the usual trunk names that exists here
+            for cand in ("origin/main", "origin/master", "main", "master"):
+                if await git("rev-parse", "--verify", "-q", cand):
+                    base = cand
+                    break
+        head = await git("rev-parse", "--abbrev-ref", "HEAD")
+        parts = [f"branch: {head}", f"status:\n{await git('status', '--short') or '(clean)'}",
+                 f"uncommitted (staged+unstaged) vs HEAD:\n{await git('diff', '--stat', 'HEAD') or '(none)'}"]
+        if base and head != base.split("/")[-1]:
+            commits = await git("log", "--oneline", f"{base}..HEAD", "-n", "15")
+            parts.append(f"branch commits not in {base}:\n{commits or '(none)'}")
+            if commits:
+                parts.append(f"branch files vs {base}:\n{await git('diff', '--stat', f'{base}...HEAD')}")
+        else:
+            parts.append("base: none found, or already on it; only uncommitted changes are in scope")
+        return ToolResult.success_result("\n\n".join(parts)[:MAX_CHARS])

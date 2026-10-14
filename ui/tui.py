@@ -637,7 +637,7 @@ class TUI:
         out = Text.assemble(("  ✦ ", ACCENT), (f"{elapsed:.0f}s", f"bold {FG}"))
         if usage and usage.get("calls"):
             out.append(f"  ·  {usage['calls']} call{'s' if usage['calls'] != 1 else ''}  ·  {usage['prompt_tokens'] / 1000:.1f}k in ", style=MUTED)
-            out.append(f"({usage['cache_hit_pct']:.0f}% cached)", style=MINT if usage["cache_hit_pct"] >= 50 else AMBER)
+            out.append(f"({usage['cache_hit_pct']:.0f}% cached, {(usage['prompt_tokens'] - usage.get('cached_tokens', 0)) / 1000:.1f}k new)", style=MINT if usage["cache_hit_pct"] >= 50 else AMBER)
             out.append(f"  ·  {usage['completion_tokens'] / 1000:.1f}k out", style=MUTED)
             if usage.get("est_cost_usd") is not None:
                 out.append(f"  ·  ${usage['est_cost_usd']}", style=AMBER)
