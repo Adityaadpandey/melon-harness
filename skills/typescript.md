@@ -2,6 +2,7 @@
 name: typescript
 description: Writing TypeScript/React that type-checks cleanly and matches the project's idioms
 triggers: typescript, ts, tsx, type error, tsc, interface, generic, zod, react, hook, nextjs, next, expo, react native, tanstack, redux, eslint, props
+always: true
 ---
 # TypeScript / React
 Read `tsconfig.json` and a neighbouring file first; match its strictness, import style (path aliases, `import type`) and naming. Never add `any`, `as unknown as X`, `@ts-ignore` or non-null `!` to silence an error: narrow the type, fix the source type, or use `unknown` plus a guard. A `@ts-expect-error` needs a one-line reason.

@@ -194,9 +194,9 @@ def test_builtin_skills_load_with_the_right_always_on_core_and_profile_overrides
     from utils.text import count_tokens
 
     sk = {s.name: s for s in load_skills(Config(cwd=tmp_path))}
-    assert {n for n, s in sk.items() if s.always} == {"ponytail", "grounded", "house-rules"}
+    assert {n for n, s in sk.items() if s.always} == {"ponytail", "grounded", "house-rules", "typescript"}
     assert {"debugging", "code-review", "security", "refactor", "testing", "performance", "database", "api-design", "git-workflow"} <= set(sk)
-    assert sum(count_tokens(s.body) for s in sk.values() if s.always) < 650  # the always-on core stays cheap
+    assert sum(count_tokens(s.body) for s in sk.values() if s.always) < 1100  # the always-on core stays cheap
     assert all(s.triggers for s in sk.values() if not s.always)
     tunyt = {s.name for s in load_skills(Config(cwd=tmp_path, profile="tunyt"))}
     assert "tunyt-debugging" in tunyt and "debugging" not in tunyt  # specialised playbook replaces the generic one
