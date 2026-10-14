@@ -11,7 +11,7 @@ class GraphParams(BaseModel):
     action: str = Field(
         ...,
         description="find (locate symbols/files by name) | callers (who calls NAME; direction checked in source) | callees (what NAME calls) | "
-        "neighbors (all relations of NAME) | path (shortest connection NAME -> TO) | community (the module NAME belongs to) | stats",
+        "neighbors (all relations of NAME) | impact (files that depend on file/symbol NAME: what a change could break) | path (shortest connection NAME -> TO) | community (the module NAME belongs to) | stats",
     )
     name: str | None = Field(None, description="Symbol, class or file name (e.g. delTicketTypeCache, ticket.service.ts)")
     to: str | None = Field(None, description="Second name, for action=path")
@@ -34,6 +34,17 @@ class GraphTool(Tool):
         stale = g.staleness()
         note = f"\n\n({stale}; verify with read_file)" if stale else "\n\n(from the code graph snapshot; verify with read_file)"
         act = p.action.lower()
+
+        if act == "impact":
+            if not p.name:
+                return ToolResult.error_result("`name` is required for this action")
+            node, _ = g.resolve(p.name)
+            target = g.rel(g.nodes[node].get("source_file", "")) if node else p.name
+            rows = g.impact([target])
+            if not rows:
+                return ToolResult.success_result(f"No other file depends on {target} in the graph." + note)
+            body = "\n".join(f"  {f}  ({', '.join(labels)})" for f, labels in rows)
+            return ToolResult.success_result(f"files that depend on {target} (read their call sites before changing its behaviour):\n{body}" + note)
 
         if act == "stats":
             return ToolResult.success_result(f"{len(g.nodes)} nodes, {sum(len(v) for v in g.out.values())} edges." + note)

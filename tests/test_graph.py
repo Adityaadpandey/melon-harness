@@ -88,3 +88,8 @@ async def test_direction_comes_from_the_source_text_not_the_graphs_edge_order(re
     assert "2 that call it" in r.output
     r = await ask(repo, action="callees", name="delTicketTypeCache")
     assert "0 that it calls" in r.output  # cache.ts calls cacheDel/buildKey, which are not in this graph
+
+
+async def test_impact_lists_files_that_really_call_into_the_changed_file(repo):
+    r = await ask(repo, action="impact", name="src/cache.ts")
+    assert "src/svc.ts" in r.output and "src/team.ts" not in r.output  # team.ts only reaches cache.ts through svc.ts

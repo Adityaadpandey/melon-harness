@@ -24,6 +24,9 @@ AUTOMATED CHECKS: {checks}
 THE AUTHOR'S EXPLANATION OF THE CHANGE:
 {claims}
 
+FILES THAT DEPEND ON THE CHANGED CODE (from the code graph; read their call sites before claiming a break):
+{impact}
+
 DIFF:
 {diff}
 
@@ -92,8 +95,18 @@ async def review_changes(config, request: str, files: list[str], checks: list[di
         "subagents": [], "max_turns": 8 if diff.count("\n") < 80 else 14, "max_seconds": 300,
         "approval": "never",  # small diffs get 8 turns: a look, not an expedition
     })
+    impact = "(no code graph)"
+    try:
+        from utils import codegraph
+
+        g = codegraph.load(config.cwd)
+        if g:
+            rows = g.impact(files)
+            impact = "\n".join(f"- {f} ({', '.join(labels)})" for f, labels in rows) or "(none found)"
+    except Exception:  # the graph only adds hints; a bad one must not stop the review
+        pass
     summary = ", ".join(f"{c['command']}={'ok' if c['ok'] else 'FAILED'}" for c in checks) or "none ran"
-    prompt = REVIEW_PROMPT.format(request=request[:3000], files=", ".join(files[:30]), checks=summary, claims=(claims or "(none given)")[:2500], diff=diff)
+    prompt = REVIEW_PROMPT.format(request=request[:3000], files=", ".join(files[:30]), checks=summary, claims=(claims or "(none given)")[:2500], diff=diff, impact=impact)
     texts: list[str] = []
     error = ""
     try:

@@ -135,6 +135,25 @@ class CodeGraph:
                     queue.append(other)
         return None
 
+    def impact(self, files: list[str], limit: int = 15) -> list[tuple[str, list[str]]]:
+        """Files OUTSIDE `files` whose code depends on code inside them: the blast radius of a change.
+        A call link counts only when the source text shows the other side really calls in; other links
+        (imports, references) are taken as they are. Example: editing delTicketTypeCache() lists the
+        services that call it, so a reviewer reads those call sites instead of hunting for them."""
+        want = {f.lstrip("./") for f in files}
+        seeds = {nid for nid, n in self.nodes.items() if self.rel(n.get("source_file", "")) in want}
+        hits: dict[str, set[str]] = defaultdict(set)
+        for nid in seeds:
+            for other, e in self.out[nid] + self.inc[nid]:
+                f = self.rel(self.nodes[other].get("source_file", ""))
+                if other in seeds or f in want or e.get("relation") == "contains":
+                    continue
+                if e.get("relation") == "calls" and self.call_direction(nid, other) != "caller":
+                    continue
+                hits[f].add(self.nodes[other]["label"])
+        ranked = sorted(hits.items(), key=lambda kv: (-len(kv[1]), kv[0]))
+        return [(f, sorted(labels)[:4]) for f, labels in ranked[:limit]]
+
     def community(self, cid) -> list[str]:
         return sorted((nid for nid, n in self.nodes.items() if n.get("community") == cid), key=lambda x: -self.degree(x))
 
