@@ -489,6 +489,16 @@ class CLI:
             self._print_heaviest(u)
             if w["misses"]:
                 console.print(f"  cache misses: {w['misses']} ({w['missed_tokens']:,} tokens re-billed: {', '.join(w['reasons'])})")
+        elif cmd_name == "/challenge":
+            if not cmd_args:
+                console.print("[dim]Usage: /challenge <your idea or plan>. A second model argues against it.[/dim]")
+            else:
+                from agent.challenge import challenge_request, render
+
+                self.tui.start_turn("Challenging")
+                objections, dropped, err = await challenge_request(self.config, cmd_args)
+                self.tui.end_turn()
+                console.print(f"[error]Challenger failed: {err[:200]}[/error]" if err else (render(objections, dropped) or "[dim]Nothing it could back with evidence.[/dim]"))
         elif cmd_name == "/skills":
             for sk in self.agent.session.skills:
                 tag = " [dim](always on)[/dim]" if sk.always else ""
@@ -730,6 +740,7 @@ class CLI:
 @click.option("--resume", "resume_id", help="Continue a saved session by id (shown when you exit; /sessions lists them)")
 @click.option("--continue", "continue_last", is_flag=True, help="Continue the newest saved session that ran in this folder")
 @click.option("--trust", "trust_project", is_flag=True, help="Trust this project's .ai-agent/config.toml (hooks, verify commands, approval)")
+@click.option("--challenge", "challenge_mode", is_flag=True, help="Have a second model argue against risky requests first (always on interactively)")
 @click.option("--effort", type=click.Choice(["low", "medium", "high"]), help="Reasoning effort (Codex models)")
 @click.option("--model", "-m", help="Model id (overrides config)")
 @click.option(
@@ -750,6 +761,7 @@ def main(
     json_mode: bool,
     rpc_mode: bool,
     report: Path | None,
+    challenge_mode: bool,
     effort: str | None,
     model: str | None,
     approval: str | None,
@@ -781,8 +793,14 @@ def main(
             save_last_model(model)
     if effort:
         config.reasoning_effort = effort
+    config.auto_challenge = challenge_mode or not (prompt or json_mode or rpc_mode)
     if approval:
         config.approval = ApprovalPolicy(approval)
+    elif prompt and config.approval == ApprovalPolicy.ON_REQUEST:
+        # A one-shot run has nobody to ask, so the default would refuse every edit.
+        # Let it edit files in the workspace; commands still need an explicit --approval auto.
+        # ponytail: an explicit `approval = "on-request"` in config is treated like the default.
+        config.approval = ApprovalPolicy.AUTO_EDIT
 
     errors = config.validate()
 
