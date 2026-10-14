@@ -137,3 +137,28 @@ async def test_big_output_is_cut_visibly_and_the_full_text_is_recallable(tmp_pat
         rid = re.search(r"full output: (r\d+)", res.output).group(1)
         recalled = await reg.invoke("recall_result", {"id": rid, "offset": 1, "limit": 3}, tmp_path, a.session.hook_system)
         assert recalled.output.startswith("line one\nnoise")
+
+
+async def test_pruning_forgets_only_the_files_it_cleared(tmp_path):
+    big = "\n".join(f"line {i} " + "word " * 20 for i in range(300))
+    for n in "ab":
+        (tmp_path / f"{n}.txt").write_text(big)
+    cfg = Config(cwd=tmp_path, approval=ApprovalPolicy.AUTO, auto_verify=False)
+    async with Agent(cfg) as agent:
+        reg, cm = agent.session.tool_registry, agent.session.context_manager
+        cm.PRUNE_PROTECT_TOKENS, cm.PRUNE_MINIMUM_TOKENS = 5000, 1  # room for one read: the older one is pruned
+
+        async def read(name, cid):
+            cm.add_assistant_message("", [{"id": cid, "type": "function", "function": {"name": "read_file", "arguments": json.dumps({"path": name})}}])
+            res = await reg.invoke("read_file", {"path": name}, tmp_path, agent.session.hook_system, None, cid)
+            cm.add_tool_result(cid, res.output)
+            return res
+
+        await read("a.txt", "c1")
+        await read("b.txt", "c2")
+        agent._prune()  # a.txt's text is cleared, b.txt's is still in context
+        assert cm.last_prune.get("read_paths") == ["a.txt"]
+        again_b = await reg.invoke("read_file", {"path": "b.txt"}, tmp_path, agent.session.hook_system, None, "c3")
+        again_a = await reg.invoke("read_file", {"path": "a.txt"}, tmp_path, agent.session.hook_system, None, "c4")
+        assert "already in context" in again_b.output and len(again_b.output) < 200
+        assert "line 0 " in again_a.output  # cleared, so it is sent again in full

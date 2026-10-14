@@ -85,6 +85,11 @@ class ReadFileTool(Tool):
         # file can be answered with a diff instead of being sent again in full
         self._snap: dict[str, tuple[int, list[str]]] = {}
 
+    def forget(self, path: Path) -> None:
+        """The model no longer has this file's text (its read result was cleared): the next read sends it again."""
+        self._seen.pop(str(path), None)
+        self._snap.pop(str(path), None)
+
     def _coverage(self, path: Path, epoch: int) -> list[tuple[int, int]]:
         st = path.stat()
         stamp = (st.st_mtime_ns, st.st_size, epoch)

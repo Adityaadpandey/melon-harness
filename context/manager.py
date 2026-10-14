@@ -256,8 +256,16 @@ class ContextManager:
             return 0
 
         pruned_count = 0
+        by_call = {tc["id"]: tc["function"] for m in self._messages for tc in m.tool_calls}
+        paths: set[str] = set()
 
         for msg in to_prune:
+            fn = by_call.get(msg.tool_call_id) or {}
+            if fn.get("name") == "read_file":
+                try:
+                    paths.add(json.loads(fn["arguments"])["path"])
+                except (ValueError, KeyError, TypeError):
+                    pass
             head = (msg.content or "").strip().splitlines()[:1]
             hint = f": {head[0][:100]}" if head else ""
             if self.archive is not None:
@@ -272,7 +280,7 @@ class ContextManager:
             msg.pruned_at = datetime.now()
             pruned_count += 1
 
-        self.last_prune = {"results": pruned_count, "tokens_cleared": pruned_tokens, "prompt_tokens": self._latest_usage.prompt_tokens}
+        self.last_prune = {"results": pruned_count, "tokens_cleared": pruned_tokens, "prompt_tokens": self._latest_usage.prompt_tokens, "read_paths": sorted(paths)}
         return pruned_count
 
     def clear(self) -> None:

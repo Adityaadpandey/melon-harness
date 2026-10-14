@@ -27,6 +27,7 @@ from config.config import Config
 from prompts.system import create_loop_breaker_prompt
 from tools.base import ToolConfirmation, ToolKind, ToolResult
 from tools.builtin.shell import finished_jobs, kill_jobs
+from utils.paths import resolve_path
 
 
 async def _within(seconds: float, stream):
@@ -484,8 +485,12 @@ class Agent:
     def _prune(self) -> None:
         cm = self.session.context_manager
         if cm.prune_tool_outputs():
-            self.session.tool_registry.epoch += 1
-            self.session.tracer.emit("prune", **cm.last_prune)
+            # only the files whose text was cleared are forgotten; files still in context are not sent again
+            reg = self.session.tool_registry
+            reader = reg.get("read_file")
+            for rel in cm.last_prune["read_paths"]:
+                reader.forget(resolve_path(self.config.cwd, rel))
+            self.session.tracer.emit("prune", **{**cm.last_prune, "read_paths": len(cm.last_prune["read_paths"])})
 
     async def _compact(self) -> bool:
         cm = self.session.context_manager
