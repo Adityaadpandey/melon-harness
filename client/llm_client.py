@@ -43,7 +43,7 @@ class LLMClient:
     def _adapter(self, endpoint: str):
         if endpoint not in self._adapters:
             if endpoint == "/responses":
-                self._adapters[endpoint] = CodexResponsesAdapter()
+                self._adapters[endpoint] = CodexResponsesAdapter(effort=self.config.reasoning_effort)
                 return self._adapters[endpoint]
             cls = AnthropicAdapter if endpoint == "/messages" else OpenAIChatAdapter
             headers = {"x-cmd-zdr": "1"} if self.config.zdr else None

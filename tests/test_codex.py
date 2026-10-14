@@ -61,3 +61,11 @@ def test_codex_luna_is_the_default_model():
     from config.config import Config
 
     assert Config().model_name == "codex/gpt-5.6-luna"
+
+
+def test_reasoning_effort_reaches_the_codex_adapter(tmp_path):
+    from client.llm_client import LLMClient
+    from config.config import Config
+
+    client = LLMClient(Config(cwd=tmp_path, reasoning_effort="high"))
+    assert client._adapter("/responses")._effort == "high"

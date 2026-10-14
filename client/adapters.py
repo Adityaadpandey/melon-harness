@@ -383,8 +383,10 @@ class CodexResponsesAdapter:
     endpoint = "/responses"
     URL = "https://chatgpt.com/backend-api/codex/responses"
 
-    def __init__(self, auth=None):
+    def __init__(self, auth=None, effort: str | None = None):
         from client.codex_auth import CodexAuth
+
+        self._effort = effort  # low | medium | high; None keeps the backend default
 
         self._auth = auth or CodexAuth()
         self._http = httpx.AsyncClient(timeout=TIMEOUT)
@@ -433,6 +435,8 @@ class CodexResponsesAdapter:
             ]
             body["tool_choice"] = "auto"
         # no temperature: the Codex backend rejects sampling params
+        if self._effort:
+            body["reasoning"] = {"effort": self._effort}
 
         try:
             headers = self._headers()

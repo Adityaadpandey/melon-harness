@@ -2,7 +2,7 @@ from __future__ import annotations
 from enum import Enum
 import os
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 from pydantic import BaseModel, Field, model_validator
 
 
@@ -165,6 +165,7 @@ class Config(BaseModel):
     skill_dirs: list[str] = Field(default_factory=list)  # repo-relative dirs holding extra skill .md files
     model_role: str = "default"  # which routing chain this agent's own calls use
     auto_route: bool = True  # classify each request into the fast/default/strong chains when [routing] defines them
+    reasoning_effort: Literal["low", "medium", "high"] | None = None  # how hard the model thinks; Codex models only for now
     model_pinned: bool = False  # set by -m or /model: the user chose, so never auto-route away from it
     max_parallel_agents: int = 4  # concurrent sub-agents / workers
     enable_parallel_tasks: bool = True  # expose the parallel_tasks tool (off inside workers and sub-agents)

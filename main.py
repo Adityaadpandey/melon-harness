@@ -662,6 +662,7 @@ class CLI:
 @click.option("--resume", "resume_id", help="Continue a saved session by id (shown when you exit; /sessions lists them)")
 @click.option("--continue", "continue_last", is_flag=True, help="Continue the newest saved session that ran in this folder")
 @click.option("--trust", "trust_project", is_flag=True, help="Trust this project's .ai-agent/config.toml (hooks, verify commands, approval)")
+@click.option("--effort", type=click.Choice(["low", "medium", "high"]), help="Reasoning effort (Codex models)")
 @click.option("--model", "-m", help="Model id (overrides config)")
 @click.option(
     "--approval",
@@ -680,6 +681,7 @@ def main(
     apply: bool,
     json_mode: bool,
     report: Path | None,
+    effort: str | None,
     model: str | None,
     approval: str | None,
 ):
@@ -708,6 +710,8 @@ def main(
         config.model_pinned = True
         if not prompt:
             save_last_model(model)
+    if effort:
+        config.reasoning_effort = effort
     if approval:
         config.approval = ApprovalPolicy(approval)
 
