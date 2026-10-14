@@ -2,8 +2,10 @@ from __future__ import annotations
 import asyncio
 import json
 import time
+from pathlib import Path
 from typing import AsyncGenerator, Awaitable, Callable
 from agent.events import AgentEvent, AgentEventType
+from agent.root import pick_root
 from agent.grounding import correction_prompt, has_file_code, verify_references, wants_change
 from agent.learn import Learned
 from agent.review import review_changes
@@ -68,10 +70,21 @@ class Agent:
         self._usage_base = 0
         self._review_sec = 0.0
         self.undo_info: dict | None = None
+        self._root_hint: Path | None = None  # the repo the last request worked in, when mew starts above it
         self._scout_error = ""
+
+    def _adopt_root(self, root: Path | None) -> bool:
+        """Work from the repo itself. The folder mew started in stays reachable for other repos next to it."""
+        if root is None or root == self.config.cwd:
+            return False
+        self.config.allowed_dirs = [*self.config.allowed_dirs, str(self.config.cwd.resolve())]
+        self.config.cwd = self._root_hint = root
+        return True
 
     async def run(self, message: str):
         await self.session.hook_system.trigger_before_agent(message)
+        if self._adopt_root(pick_root(self.config.cwd, message, self._root_hint)):
+            yield AgentEvent.notice(f"Working in {self.config.cwd} (the repo this request is about)")
         yield AgentEvent.agent_start(message)
         playbooks = match_skills(self.session.skills, message)
         if playbooks:
@@ -152,6 +165,11 @@ class Agent:
                     self.session.context_manager.add_user_message(correction_prompt(problems))
                     continue
 
+            if before is None:  # started above the repo and the request did not name it: the files touched tell
+                targets = [e.get("target", "") for e in self.session.tracer.events if e["event"] == "tool_call"]
+                if self._adopt_root(pick_root(self.config.cwd, message, self._root_hint, targets)):
+                    yield AgentEvent.notice(f"Working in {self.config.cwd} (where the files you touched live)")
+                    before = {}  # nothing known from before: every changed file counts as this request's
             task.changed_files = changed_since(before, await snapshot(self.config.cwd))
             checks = select_checks(self.config, task.changed_files)
             # outside git we can't tell what changed, so only verify when asked to
