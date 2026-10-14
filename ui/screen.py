@@ -36,13 +36,16 @@ class Sink:
 
     def __init__(self) -> None:
         self.text = ""
+        self.nl = 0  # newlines in text, counted as they arrive
         self.gen = 0  # bumps when the oldest lines are dropped, so cached parsing is thrown away
         self.on_write = lambda: None
 
     def write(self, s: str) -> int:
         self.text += s
-        if self.text.count("\n") > MAX_LINES * 1.2:  # keep memory bounded on very long sessions
+        self.nl += s.count("\n")
+        if self.nl > MAX_LINES * 1.2:  # keep memory bounded on very long sessions
             self.text = "\n".join(self.text.split("\n")[-MAX_LINES:])
+            self.nl = self.text.count("\n")
             self.gen += 1
         self.on_write()
         return len(s)
@@ -124,7 +127,7 @@ class Screen:
     def __init__(self, tui: TUI, console: Console, title=lambda: "") -> None:
         self.tui, self.console, self._title = tui, console, title
         self._cache: tuple[int, Any, int, list] = (-1, [], 0, [])  # (text length, formatted text, last line, lines)
-        self._gen, self._done_len, self._done = 0, 0, []  # finished lines already parsed, and how much text they cover
+        self._gen, self._done_len, self._done, self._done_flat = 0, 0, [], []  # finished lines already parsed, and how much text they cover
         self.sel: tuple[tuple[int, int], tuple[int, int]] | None = None  # (line, column) pairs, anchor then head
         self._dragging = False
         self._click = (0.0, None, 0)  # when, where and how many times the last press repeated
@@ -206,13 +209,18 @@ class Screen:
         if len(text) == self._cache[0] and self.sink.gen == self._gen:
             return self._cache
         if self.sink.gen != self._gen or len(text) < self._done_len:
-            self._gen, self._done_len, self._done = self.sink.gen, 0, []  # the head was trimmed: start over
+            self._gen, self._done_len, self._done, self._done_flat = self.sink.gen, 0, [], []  # the head was trimmed: start over
         cut = text.rfind("\n") + 1
         if cut > self._done_len:
-            self._done += self._split(text[self._done_len:cut])
+            new = self._split(text[self._done_len:cut])
+            self._done += new
+            self._done_flat += [f for ln in new for f in (*ln, ("", "\n"))]  # every finished line ends in a newline
             self._done_len = cut
-        lines = self._done + self._split(text[cut:]) if cut < len(text) else list(self._done)
-        flat = [f for i, ln in enumerate(lines) for f in (ln + ([("", "\n")] if i < len(lines) - 1 else []))]
+        tail = self._split(text[cut:]) if cut < len(text) else []
+        if tail:
+            lines, flat = self._done + tail, self._done_flat + tail[0]
+        else:  # nothing half-written: the last finished line is the end, without a trailing newline
+            lines, flat = self._done, self._done_flat[:-1]
         self._cache = (len(text), flat, len(lines) - 1, lines)
         return self._cache
 
