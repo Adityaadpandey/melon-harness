@@ -15,7 +15,7 @@ from agent.persistence import PersistenceManager, SessionSnapshot
 from agent.session import Session
 from config.config import ApprovalPolicy, Config
 from config.loader import load_config
-from config.loader import get_data_dir
+from config.loader import get_data_dir, load_last_model, save_last_model
 from ui.prompt import COMMANDS, InputSession, expand_mentions
 from ui.tui import TUI, context_bar, get_console
 from utils.cost import summarize_usage
@@ -463,6 +463,7 @@ class CLI:
                 else:
                     self.config.model_name = cmd_args
                     self.config.model_pinned = True
+                    save_last_model(cmd_args)
                     console.print(f"[success]Model changed to: {cmd_args} [/success]")
             else:
                 console.print(f"Current model: {self.config.model_name}")
@@ -678,9 +679,15 @@ def main(
 
     if add_dirs:
         config.allowed_dirs = [*config.allowed_dirs, *(str(d.resolve()) for d in add_dirs)]
+    # Interactive only: start on the model used last time. One-shot runs (benchmarks)
+    # keep the configured routing and never touch the remembered model.
+    if not prompt:
+        model = model or load_last_model()
     if model:
         config.model_name = model
         config.model_pinned = True
+        if not prompt:
+            save_last_model(model)
     if approval:
         config.approval = ApprovalPolicy(approval)
 

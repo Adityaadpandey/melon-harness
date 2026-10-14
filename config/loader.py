@@ -35,6 +35,23 @@ def get_data_dir() -> Path:
     return Path(user_data_dir("ai-agent"))
 
 
+def save_last_model(name: str) -> None:
+    """Remember the model the user picked so the next launch starts on it."""
+    try:
+        d = get_data_dir()
+        d.mkdir(parents=True, exist_ok=True)
+        (d / "last_model").write_text(name.strip())
+    except OSError:
+        pass  # losing this only means falling back to the configured default
+
+
+def load_last_model() -> str | None:
+    try:
+        return (get_data_dir() / "last_model").read_text().strip() or None
+    except OSError:
+        return None
+
+
 def get_system_config_path() -> Path:
     return get_config_dir() / CONFIG_FILE_NAME
 
