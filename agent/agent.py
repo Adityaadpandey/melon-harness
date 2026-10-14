@@ -4,6 +4,7 @@ import json
 import time
 from pathlib import Path
 from typing import AsyncGenerator, Awaitable, Callable
+from agent.challenge import challenge_request, is_risky, render as render_objections
 from agent.events import AgentEvent, AgentEventType
 from agent.root import pick_root
 from agent.grounding import correction_prompt, has_file_code, verify_references, wants_change
@@ -112,6 +113,22 @@ class Agent:
                 "\n\n---\nScout report (a cheaper read-only agent already searched; start from it, do not "
                 "repeat its searches, and confirm any line you rely on before editing):\n" + scout
             )
+        if self.config.auto_challenge and is_risky(message):
+            yield AgentEvent.notice("Challenger is questioning this request first")
+            objections, dropped, err = await challenge_request(self.config, message)
+            if err:
+                yield AgentEvent.notice(f"Challenger failed, continuing without it: {err[:160]}")
+            elif objections:
+                notes = render_objections(objections, dropped)
+                yield AgentEvent.notice("Challenger objections:\n" + notes)
+                message_for_model += (
+                    "\n\n---\nChallenger objections (a second model argued against this request). [verified] ones are "
+                    "facts to deal with; [guess] ones are suspicions to check with your tools, never to repeat as fact. "
+                    "Before editing, say which objections you accept and which you reject and why, and tell the user "
+                    "about any real loss in their approach:\n" + notes
+                )
+            else:
+                yield AgentEvent.notice("Challenger found nothing it could back with evidence")
         self.session.context_manager.add_user_message(message_for_model)
 
         self._escalated = False

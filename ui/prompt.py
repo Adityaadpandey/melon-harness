@@ -33,6 +33,7 @@ COMMANDS = {
     "/stats": "session statistics",
     "/tools": "list available tools",
     "/skills": "list project playbooks",
+    "/challenge": "a second model argues against your idea",
     "/mcp": "MCP server status",
     "/copy": "copy the last reply to the clipboard",
     "/jobs": "background commands: /jobs, /jobs 1 for output, /jobs kill 1",
