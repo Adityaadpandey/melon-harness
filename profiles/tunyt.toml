@@ -6,7 +6,7 @@ version = "1"
 match = ["tunyt"]
 auto_review = true
 max_repairs = 2
-max_total_tokens = 1500000
+max_total_tokens = 300000
 
 instructions = """
 # Tunyt profile (v3)
