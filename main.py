@@ -422,6 +422,8 @@ class CLI:
             elif msg.get("role") == "tool":
                 cm.add_tool_result(msg.get("tool_call_id", ""), msg.get("content", ""))
         cm.repair_orphans()  # a session saved mid-turn may end on an unanswered tool call
+        # the new session starts with no one to ask; without this a resumed run refuses every edit
+        session.approval_manager.confirmation_callback = self.agent.session.approval_manager.confirmation_callback
         await self.agent.session.client.close()
         await self.agent.session.mcp_manager.shutdown()
         self.agent.session = session
@@ -492,6 +494,9 @@ class CLI:
             self._print_heaviest(u)
             if w["misses"]:
                 console.print(f"  cache misses: {w['misses']} ({w['missed_tokens']:,} tokens re-billed: {', '.join(w['reasons'])})")
+        elif cmd_name == "/more":
+            self.agent.extra_calls += 10
+            await self._run_turn("Continue from where you stopped. You may use 10 more tool calls; spend them on what is still unknown, then answer.")
         elif cmd_name == "/challenge":
             if not cmd_args:
                 console.print("[dim]Usage: /challenge <your idea or plan>. A second model argues against it.[/dim]")

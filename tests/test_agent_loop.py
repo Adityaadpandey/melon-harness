@@ -154,10 +154,12 @@ async def test_session_autosave_resume_and_continue_by_folder(tmp_path, monkeypa
     assert row["title"] == "Fix the blank line bug in the description" and row["cwd"] == str(work)
     assert pm.latest_for(str(work)) == sid and pm.latest_for("/elsewhere") is None
 
-    async with Agent(cfg) as b:
+    async with Agent(cfg, confirmation_callback=lambda c: True) as b:
         cli2 = CLI(cfg)
         cli2.agent = b
+        ask = b.session.approval_manager.confirmation_callback
         assert await cli2._resume(sid) and not await cli2._resume("nope")
+        assert b.session.approval_manager.confirmation_callback is ask  # a resumed session can still ask
         roles = [m["role"] for m in b.session.context_manager.get_messages()]
         assert roles[1:] == ["user", "assistant", "tool"] and b.session.session_id == sid and b.session.turn_count == 1
 
@@ -335,3 +337,23 @@ async def test_a_cold_cache_after_a_pause_shrinks_history_before_the_first_call(
         agent.session.client = ScriptedClient([text("done")])
         await run(agent)
         assert not compacted
+
+
+async def test_read_only_request_is_cut_off_at_the_call_budget_and_forced_to_answer(cfg):
+    cfg.read_call_budget = 3
+    (cfg.cwd / "a.txt").write_text("hi")
+    async with Agent(cfg) as agent:
+        agent.session.client = ScriptedClient([call("read_file", {"path": "a.txt"}, f"c{i}") for i in range(3)] + [text("answer")])  # the 4th reply is the forced wrap-up
+        events = await run(agent, "explain what a.txt holds")
+        assert sum(e.type == AgentEventType.TOOL_CALL_START for e in events) == 3
+        assert any("Call budget reached" in e.data.get("message", "") for e in events if e.type == AgentEventType.NOTICE)
+        assert any(e.type == AgentEventType.TEXT_COMPLETE for e in events)
+
+
+async def test_requests_that_change_files_are_not_capped_by_the_read_budget(cfg):
+    cfg.read_call_budget = 1
+    (cfg.cwd / "a.txt").write_text("hi")
+    async with Agent(cfg) as agent:
+        agent.session.client = ScriptedClient([call("read_file", {"path": "a.txt"}, f"c{i}") for i in range(3)] + [text("done")])
+        events = await run(agent, "fix the typo in a.txt")
+        assert sum(e.type == AgentEventType.TOOL_CALL_START for e in events) == 3

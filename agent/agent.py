@@ -75,6 +75,10 @@ class Agent:
         self._compact_retry_turn = 0
         self._overflow_retried = False
         self._last_model_call = 0.0
+        self.extra_calls = 0  # raised by /more
+        self._calls_used = 0
+        self._calls_warned = False
+        self._read_only = False
         self._budget_warned = False
         self._uncached_streak = 0
         self._usage_base = 0
@@ -143,6 +147,9 @@ class Agent:
         self._budget_hit = False
         self._budget_warned = False
         self._overflow_retried = False
+        self._calls_used = 0
+        self._calls_warned = False
+        self._read_only = not wants_change(message)
         self._usage_base = self._spent()  # budget is per request
         self._review_sec = 0.0
         self._tier = "default"
@@ -310,6 +317,20 @@ class Agent:
                 self._failed = True
                 yield AgentEvent.agent_error(f"Time budget of {self.config.max_seconds:.0f}s exhausted")
                 return
+            limit = self._call_limit()
+            if limit and self._calls_used >= limit:
+                async for ev in self._wrap_up(
+                    task, f"Call budget reached ({limit} tool calls)",
+                    f"The {limit}-call budget for this read-only request is spent (the user can type /more to allow 10 more)",
+                ):
+                    yield ev
+                return
+            if limit and self._calls_used >= int(limit * 0.7) and not self._calls_warned:
+                self._calls_warned = True
+                self.session.context_manager.add_user_message(
+                    f"Budget check: {self._calls_used} of {limit} tool calls used. Stop exploring; open only what you "
+                    "need to confirm your findings, then answer."
+                )
             used = self._spent() - self._usage_base
             budget = self.config.max_total_tokens
             if used > budget:
@@ -419,6 +440,7 @@ class Agent:
                     text=response_text,
                 )
 
+            self._calls_used += len(tool_calls)
             if not tool_calls:
                 if usage:
                     self.session.context_manager.set_latest_usage(usage)
@@ -538,6 +560,14 @@ class Agent:
         or twenty greps on a 20k context would use up the whole budget."""
         u = self.session.context_manager.total_usage
         return u.prompt_tokens - u.cached_tokens + u.completion_tokens
+
+    def _call_limit(self) -> int:
+        """Read-only requests (review, explain, find) get a hard cap on tool calls: a model that is only
+        reading never has to stop by itself, and 63 calls on a 3-commit review is a cost, not thoroughness.
+        Requests that change files and sub-agents are not capped here (they have turn and token budgets)."""
+        if not self._read_only or self.config.model_role != "default" or not self.config.read_call_budget:
+            return 0
+        return self.config.read_call_budget + self.extra_calls
 
     async def _tidy_if_cache_went_cold(self) -> AsyncGenerator[AgentEvent, None]:
         """The first call after a pause is billed in full because the provider's prompt cache expired.
