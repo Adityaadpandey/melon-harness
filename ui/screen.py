@@ -36,12 +36,14 @@ class Sink:
 
     def __init__(self) -> None:
         self.text = ""
+        self.gen = 0  # bumps when the oldest lines are dropped, so cached parsing is thrown away
         self.on_write = lambda: None
 
     def write(self, s: str) -> int:
         self.text += s
         if self.text.count("\n") > MAX_LINES * 1.2:  # keep memory bounded on very long sessions
             self.text = "\n".join(self.text.split("\n")[-MAX_LINES:])
+            self.gen += 1
         self.on_write()
         return len(s)
 
@@ -122,6 +124,7 @@ class Screen:
     def __init__(self, tui: TUI, console: Console, title=lambda: "") -> None:
         self.tui, self.console, self._title = tui, console, title
         self._cache: tuple[int, Any, int, list] = (-1, [], 0, [])  # (text length, formatted text, last line, lines)
+        self._gen, self._done_len, self._done = 0, 0, []  # finished lines already parsed, and how much text they cover
         self.sel: tuple[tuple[int, int], tuple[int, int]] | None = None  # (line, column) pairs, anchor then head
         self._dragging = False
         self._click = (0.0, None, 0)  # when, where and how many times the last press repeated
@@ -197,28 +200,39 @@ class Screen:
             pass
 
     def _formatted(self):
-        """The transcript as formatted text, parsed again only when something new was printed."""
+        """The transcript as formatted text. Finished lines are parsed once and kept; only the line
+        still being written is parsed again, so a long session costs the same per redraw as a short one."""
         text = self.sink.text
-        if len(text) != self._cache[0]:
-            body = text[:-1] if text.endswith("\n") else text
-            flat = to_formatted_text(ANSI(body))
-            raw: list[list[tuple[str, str]]] = [[]]
-            for style, frag, *_ in flat:
-                for k, piece in enumerate(frag.split("\n")):
-                    if k:
-                        raw.append([])
-                    if piece:
-                        raw[-1].append((style, piece))
-            # several blank lines in a row (every block adds its own gap) read as one
-            lines: list[list[tuple[str, str]]] = []
-            for ln in raw:
-                blank = not "".join(t for _, t in ln).strip()
-                if blank and lines and not "".join(t for _, t in lines[-1]).strip():
-                    continue
-                lines.append(ln)
-            flat = [f for i, ln in enumerate(lines) for f in (ln + ([("", "\n")] if i < len(lines) - 1 else []))]
-            self._cache = (len(text), flat, len(lines) - 1, lines)
+        if len(text) == self._cache[0] and self.sink.gen == self._gen:
+            return self._cache
+        if self.sink.gen != self._gen or len(text) < self._done_len:
+            self._gen, self._done_len, self._done = self.sink.gen, 0, []  # the head was trimmed: start over
+        cut = text.rfind("\n") + 1
+        if cut > self._done_len:
+            self._done += self._split(text[self._done_len:cut])
+            self._done_len = cut
+        lines = self._done + self._split(text[cut:]) if cut < len(text) else list(self._done)
+        flat = [f for i, ln in enumerate(lines) for f in (ln + ([("", "\n")] if i < len(lines) - 1 else []))]
+        self._cache = (len(text), flat, len(lines) - 1, lines)
         return self._cache
+
+    def _split(self, chunk: str) -> list[list[tuple[str, str]]]:
+        """Styled lines for a piece of console output, with runs of blank lines folded into one
+        (every block adds its own gap). A piece ending in a newline has no half-written line after it."""
+        raw: list[list[tuple[str, str]]] = [[]]
+        for style, frag, *_ in to_formatted_text(ANSI(chunk[:-1] if chunk.endswith("\n") else chunk)):
+            for k, piece in enumerate(frag.split("\n")):
+                if k:
+                    raw.append([])
+                if piece:
+                    raw[-1].append((style, piece))
+        out: list[list[tuple[str, str]]] = []
+        for ln in raw:
+            prev = self._done[-1] if not out and self._done else out[-1] if out else None
+            if not "".join(t for _, t in ln).strip() and prev is not None and not "".join(t for _, t in prev).strip():
+                continue
+            out.append(ln)
+        return out
 
     # -- selecting and copying -----------------------------------------
     def _plain(self, i: int) -> str:
