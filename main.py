@@ -53,6 +53,70 @@ class CLI:
                     self.last_report = event.data.get("report")
         return ok and (self.last_report or {}).get("status") not in {"failed", "verification_failed"}
 
+    async def run_rpc(self, lines=None) -> None:
+        """Drive mew from another program: one JSON command per stdin line, events and replies on stdout.
+
+            {"type": "prompt", "message": "fix the bug", "id": "1"}   start a request (one at a time)
+            {"type": "steer", "message": "use python 3.12"}           note read after the current tool calls
+            {"type": "abort"}                                          stop the running request
+            {"type": "get_state"}                                      is it running, which model
+
+        Every command gets {"type": "response", "command": ..., "success": ..., "id": ...}.
+        Nobody can answer an approval prompt here, so pair it with --approval auto."""
+        if lines is None:
+            async def lines():
+                loop = asyncio.get_running_loop()
+                while line := await loop.run_in_executor(None, sys.stdin.readline):
+                    yield line
+
+        def emit(obj: dict) -> None:
+            print(json.dumps(obj, default=str), flush=True)
+
+        async with Agent(self.config) as agent:
+            running: asyncio.Task | None = None
+
+            async def work(message: str) -> None:
+                try:
+                    async for event in agent.run(message):
+                        emit({"type": event.type.value, **event.data})
+                except asyncio.CancelledError:
+                    agent.session.context_manager.repair_orphans()
+                    emit({"type": "aborted"})
+
+            async for line in lines():
+                if not line.strip():
+                    continue
+                try:
+                    cmd = json.loads(line)
+                    kind, rid = cmd["type"], cmd.get("id")
+                except (ValueError, KeyError, TypeError):
+                    emit({"type": "response", "success": False, "error": "each line must be a JSON object with a type"})
+                    continue
+                busy = running is not None and not running.done()
+                error = None
+                if kind == "prompt":
+                    if busy:
+                        error = "a request is already running; steer or abort it"
+                    elif not cmd.get("message"):
+                        error = "prompt needs a message"
+                    else:
+                        running = asyncio.create_task(work(cmd["message"]))
+                elif kind == "steer":
+                    if not busy:
+                        error = "nothing is running to steer; send a prompt"
+                    else:
+                        agent.steering.append(str(cmd.get("message", "")))
+                elif kind == "abort":
+                    if busy:
+                        running.cancel()
+                elif kind == "get_state":
+                    emit({"type": "state", "running": busy, "model": self.config.model_name, "session": agent.session.session_id})
+                else:
+                    error = f"unknown command: {kind}"
+                emit({"type": "response", "command": kind, "id": rid, "success": error is None, **({"error": error} if error else {})})
+            if running:
+                await running  # stdin closed: let the last request finish
+
     async def run_orchestrated(self, message: str, graph: Path | None, apply: bool, report_path: Path | None) -> bool:
         from agent.orchestrator import Orchestrator, parse_graph, plan
         from agent.session import Session
@@ -660,6 +724,7 @@ class CLI:
 @click.option("--graph", type=click.Path(exists=True, path_type=Path), help="Task graph JSON (implies --parallel)")
 @click.option("--apply/--no-apply", default=True, help="Fast-forward the integrated result into a clean checkout")
 @click.option("--json", "json_mode", is_flag=True, help="Print agent events as JSON lines instead of the UI (needs a prompt)")
+@click.option("--rpc", "rpc_mode", is_flag=True, help="Read JSON commands on stdin, write events on stdout (for editors and scripts)")
 @click.option("--report", type=click.Path(path_type=Path), help="Write run metrics JSON here")
 @click.option("--add-dir", "add_dirs", multiple=True, type=click.Path(exists=True, file_okay=False, path_type=Path), help="Extra directory the agent may use besides the working directory (repeatable)")
 @click.option("--resume", "resume_id", help="Continue a saved session by id (shown when you exit; /sessions lists them)")
@@ -683,6 +748,7 @@ def main(
     graph: Path | None,
     apply: bool,
     json_mode: bool,
+    rpc_mode: bool,
     report: Path | None,
     effort: str | None,
     model: str | None,
@@ -737,6 +803,9 @@ def main(
         ok = asyncio.run(cli.run_orchestrated(prompt, graph, apply, report))
         sys.exit(0 if ok else 1)
 
+    if rpc_mode:
+        asyncio.run(cli.run_rpc())
+        sys.exit(0)
     if json_mode:
         if not prompt:
             console.print("[error]--json needs a prompt[/error]")
