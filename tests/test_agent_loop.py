@@ -281,3 +281,14 @@ async def test_a_run_that_cannot_ask_for_approval_stops_at_the_first_refusal(tmp
         assert errs and "--approval auto-edit" in errs[0].data["error"]
         assert len(agent.session.client.requests) == 1  # one model call, not a retry loop
         assert not (tmp_path / "n.txt").exists()
+
+
+async def test_steering_note_lands_after_the_tool_round_and_before_the_next_model_call(cfg):
+    (cfg.cwd / "a.txt").write_text("hi")
+    async with Agent(cfg) as agent:
+        agent.session.client = ScriptedClient([call("read_file", {"path": "a.txt"}), text("done")])
+        agent.steering.append("use python 3.12")
+        await run(agent)
+        second = agent.session.client.requests[1]
+        assert "use python 3.12" in str(second[-1]["content"])
+        assert agent.steering == []

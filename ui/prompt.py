@@ -120,6 +120,7 @@ class InputSession:
         self.line_future: asyncio.Future | None = None
         self.on_interrupt: Callable[[], None] | None = None
         self.is_busy: Callable[[], bool] = lambda: False
+        self.on_steer: Callable[[str], None] | None = None  # when set, a line typed mid-turn steers the running agent
         self._task: asyncio.Task | None = None
         self.area = TextArea(
             prompt=[("class:prompt", " ✦ ")], style="class:box", dont_extend_height=True, multiline=True, wrap_lines=True, history=history,
@@ -144,6 +145,12 @@ class InputSession:
                 elif text.strip():
                     buf.append_to_history()
                     buf.reset()
+                    if self.is_busy() and self.on_steer:
+                        from ui.tui import get_console
+
+                        get_console().print(f"  [dim]↪ steering, read after the current tool calls:[/dim] {text.strip().splitlines()[0][:80]}")
+                        self.on_steer(text.strip())
+                        return
                     if self.is_busy():  # say so, otherwise Enter looks like it did nothing
                         from ui.tui import get_console
 

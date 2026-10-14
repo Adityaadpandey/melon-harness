@@ -163,6 +163,7 @@ class CLI:
             )
             self.inputs = inputs
             inputs.is_busy = lambda: self.tui._turn_active
+            inputs.on_steer = agent.steering.append
             if self.resume_id:
                 if await self._resume(self.resume_id):
                     console.print(f"[success]Resumed {self.resume_id} ({self.agent.session.turn_count} turns). Carry on where you left off.[/success]")
@@ -234,6 +235,8 @@ class CLI:
             self._autosave()
             if inputs:
                 inputs.on_interrupt = None
+                while self.agent.steering:  # the turn ended before the note could land: run it as the next request
+                    inputs.queue.put_nowait(self.agent.steering.pop(0))
             self.tui.end_turn()
             try:
                 loop.remove_signal_handler(signal.SIGINT)

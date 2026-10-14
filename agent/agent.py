@@ -62,6 +62,7 @@ class Agent:
         self.session: Session | None = Session(self.config)
         self.session.approval_manager.confirmation_callback = confirmation_callback
         self.task: TaskState | None = None
+        self.steering: list[str] = []  # typed while the agent works; lands after the current round of tool calls
         self._failed = False
         self._tier = "default"
         self._escalated = False
@@ -400,6 +401,11 @@ class Agent:
                     tool_result.tool_call_id,
                     tool_result.content,
                 )
+
+            while self.steering:
+                note = self.steering.pop(0)
+                self.session.context_manager.add_user_message(f"[the user added, while you were working:] {note}")
+                yield AgentEvent.notice(f"steering received: {note[:80]}")
 
             if self._no_approver:
                 # nobody can answer the approval prompt in this run, so retrying cannot succeed: stop instead of burning the budget
