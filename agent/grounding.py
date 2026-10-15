@@ -128,11 +128,24 @@ _SECOND_THOUGHTS = re.compile(
 )
 
 
+LONGEST_FINDING = 55  # words: a finding is two lines (`severity file:line  what -> fix`); more than this is the model thinking out loud
+_FINDING_START = re.compile(r"^\W*(?:HIGH|MEDIUM|LOW|CRITICAL)\b", re.I | re.M)
+
+
+def finding_lengths(answer: str) -> list[int]:
+    """Word count of each severity-labelled item, up to the next one (or a blank line)."""
+    starts = [m.start() for m in _FINDING_START.finditer(answer)]
+    ends = starts[1:] + [len(answer)]
+    return [len(re.split(r"\n\s*\n", answer[a:b])[0].split()) for a, b in zip(starts, ends)]
+
+
 def shows_second_thoughts(request: str, answer: str) -> bool:
     """A review that lists a finding and then talks itself out of it ("... actually a non-issue. Skip.") has
     put its scratch thinking in the answer. One such phrase is enough: a finding is a defect, so any "no defect" is a deleted item.
     Only review requests are checked."""
-    return bool(re.search(r"\breview", request, re.I)) and _SECOND_THOUGHTS.search(answer) is not None
+    if not re.search(r"\breview", request, re.I):
+        return False
+    return _SECOND_THOUGHTS.search(answer) is not None or any(n > LONGEST_FINDING for n in finding_lengths(answer))
 
 
 REWRITE_PROMPT = (

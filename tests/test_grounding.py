@@ -112,3 +112,12 @@ def test_single_dismissals_and_a_final_answer_header_are_caught_but_no_issues_fo
     assert shows_second_thoughts("review it", "MEDIUM a.ts:9 two entries, coincidence works, not a real defect")
     assert shows_second_thoughts("review it", "Final answer (verified only):\nHIGH a.ts:1 real thing -> fix")
     assert not shows_second_thoughts("review it", "No issues found. Not run: tsc.")
+
+
+def test_a_finding_that_runs_on_is_flagged_but_two_tight_lines_are_not():
+    from agent.grounding import shows_second_thoughts
+
+    tight = "HIGH a.ts:1-9  a new insert on the request path 500s the page when it throws -> catch and serve without it\nLOW b.ts:4  stale prop type -> update it"
+    rambling = "MEDIUM a.ts:9 " + "this changes how the value flows through the component and then the effect runs again after the render " * 6
+    assert not shows_second_thoughts("review it", tight)
+    assert shows_second_thoughts("review it", rambling)
