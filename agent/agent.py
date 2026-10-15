@@ -10,6 +10,7 @@ from agent.events import AgentEvent, AgentEventType
 from agent.root import pick_root
 from agent.grounding import REWRITE_PROMPT, correction_prompt, has_file_code, shows_second_thoughts, verify_references, wants_change
 from agent.learn import Learned
+from agent.review_pipeline import NAMED_SCOPE, run_review_pipeline
 from agent.review import review_changes
 from agent.routing_policy import EFFORT, REVIEWY, classify, length_hint
 from agent.session import Session
@@ -114,6 +115,21 @@ class Agent:
             message_for_model = f"{message}\n\n---\nPlaybooks selected for this request (follow them{reference}):\n\n{loaded}"
         else:
             message_for_model = message
+        if self.config.review_pipeline and self.config.model_role == "default" and REVIEWY.search(message) and not NAMED_SCOPE.search(message):
+            results = ""
+            async for kind, value in run_review_pipeline(self.config, message):
+                if kind == "notice":
+                    yield AgentEvent.notice(value)
+                else:
+                    results = value
+            if results:
+                message_for_model += (
+                    "\n\n---\nReview results. Each claim below was checked by a separate agent that read the code and tried to refute it. "
+                    "Answer from them: [confirmed] items as `severity file:line  what is wrong -> fix` with their severity; [unverified] items "
+                    "marked (unverified), at most MEDIUM; never list [rejected] items as findings (one closing line may say how many were ruled out). "
+                    "Do not investigate again. If the user also asked for a fix, fix the confirmed items first, then check once. "
+                    "If nothing is confirmed or unverified, say: No issues found.\n" + results
+                )
         self._scout_error = ""
         self._no_approver = False
         scout = await self._scout(message)
