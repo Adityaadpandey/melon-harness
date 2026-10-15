@@ -286,6 +286,11 @@ def _pi_prompt(config: Config, tools: list[Tool] | None, skills: list | None) ->
     context = [i for i in (config.developer_instructions, config.user_instructions) if i]
     if context:
         prompt += "\n\n<project_context>\n\nProject-specific instructions and guidelines:\n\n" + "\n\n".join(context) + "\n\n</project_context>"
+    if config.repo_map:
+        from utils.repomap import build
+
+        if repo := build(config.cwd):
+            prompt += f"\n\nMost-imported files first, with their top-level symbols:\n<repo_map>\n{repo}\n</repo_map>"
     listed = [k for k in skills or [] if getattr(k, "path", None) and "read_file" in names]
     if listed:
         rows = "\n".join(

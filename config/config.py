@@ -205,6 +205,8 @@ class Config(BaseModel):
     # whole, no call caps, no clearing of old results, compaction only near the window.
     # Set pi_mode = false to get the older guarded setup back.
     pi_mode: bool = True
+    core_tools_only: bool = False  # pi mode with pi's own four tools (read_file, write_file, edit, shell): smaller schemas, no .gitignore-aware grep
+    repo_map: bool = False  # put a ~1k-token map of the most-imported files in the pi prompt (cached every call); worth it on big repos
 
     @model_validator(mode="after")
     def _apply_pi_mode(self) -> "Config":
