@@ -35,7 +35,10 @@ DIFF:
 Hunt for defects the user would hit. Read the callers and callees with your tools before claiming anything. For every new or changed
 condition, flag or gate, find what flips it at runtime. For every new awaited call or write on a request path, ask what the user gets
 when it throws (optional data that now fails the whole response is a finding). Read what the diff deleted before saying a replacement
-is missing. No style, redundancy or "could drift later" items; nothing you cleared in your own thinking.
+is missing. Run `git show HEAD:<file>` to see how the old code behaved: if it already failed the same way, the change did not
+introduce it. Say what the fix should be in the smallest form: deleting code, bumping a cache key or version, or removing a branch
+beats adding a try/catch or a fallback. One line per defect: the same cause hit in two places is one finding naming both lines.
+No style, redundancy or "could drift later" items; nothing you cleared in your own thinking.
 
 Reply with at most 5 lines, one finding per line, EXACTLY:
 SEVERITY | path:line | what is wrong, and who is affected (the call chain you read) | fix
@@ -53,8 +56,11 @@ A claim about how a library behaves counts only if you read the library or its d
 controller or caller that reads the data), open that file and find the exact line that reads it; if that line does not read what the
 claim says, REJECT it: a wrong consumer is the usual way a plausible claim is false.
 
+Also settle how bad it is. Is the failing state permanent, or does it go away by itself (entries that expire, a one-time migration,
+a window after deploy)? Did the code at HEAD (`git show HEAD:<file>`) already fail the same way, so the change did not add it?
+
 Reply with one line per claim, EXACTLY:
-N | CONFIRMED or REJECTED or UNCLEAR | path:line what you read that decides it | who is actually affected (n/a if rejected)
+N | CONFIRMED or REJECTED or UNCLEAR | path:line what you read that decides it | who is actually affected (n/a if rejected) | ONGOING or TEMPORARY (for how long, e.g. "cache entries written before deploy, 15 min") | NEW or ALREADY_AT_HEAD
 CONFIRMED means you read the code that proves it. REJECTED means the code contradicts it or already handles it (say where).
 UNCLEAR means you could not decide with the files available. Nothing else."""
 
@@ -68,6 +74,8 @@ class Finding:
     verdict: str = "UNCHECKED"
     evidence: str = ""
     reach: str = ""
+    temporary: str = ""  # how long a self-healing failing state lasts, empty when it stays
+    at_head: bool = False  # the code before the change already failed the same way
 
 
 def changed_files(porcelain: str) -> list[str]:
@@ -105,27 +113,58 @@ def parse_findings(text: str) -> list[Finding]:
     return out
 
 
-def parse_verdicts(text: str, count: int) -> dict[int, tuple[str, str, str]]:
-    """One `N | VERDICT | evidence | reach` line per claim; a claim the verifier skipped stays UNCLEAR."""
-    out = {n: ("UNCLEAR", "", "") for n in range(1, count + 1)}
-    for m in re.finditer(r"^\W*(\d+)\s*\|\s*(CONFIRMED|REJECTED|UNCLEAR)\s*\|([^|\n]*)\|?(.*)$", text or "", re.I | re.M):
+def parse_verdicts(text: str, count: int) -> dict[int, tuple[str, str, str, str, bool]]:
+    """One `N | VERDICT | evidence | reach | ONGOING/TEMPORARY (how long) | NEW/ALREADY_AT_HEAD` line per claim.
+    A claim the verifier skipped stays UNCLEAR; the last two fields are optional (an older reply without them reads as ongoing and new)."""
+    out = {n: ("UNCLEAR", "", "", "", False) for n in range(1, count + 1)}
+    for m in re.finditer(r"^\W*(\d+)\s*\|\s*(CONFIRMED|REJECTED|UNCLEAR)\s*\|(.*)$", text or "", re.I | re.M):
         n = int(m.group(1))
-        if n in out:
-            out[n] = (m.group(2).upper(), m.group(3).strip()[:400], m.group(4).strip()[:200])
+        if n not in out:
+            continue
+        rest = [p.strip() for p in m.group(3).split("|")]
+        rest += [""] * (4 - len(rest))
+        lasts = re.sub(r"^TEMPORARY\b[\s:(-]*", "", rest[2], flags=re.I).rstrip(") ") if rest[2].upper().startswith("TEMPORARY") else ""
+        if rest[2].upper().startswith("TEMPORARY") and not lasts:
+            lasts = "temporary"
+        out[n] = (m.group(2).upper(), rest[0][:400], rest[1][:200], lasts[:120], "ALREADY" in rest[3].upper())
     return out
+
+
+def shown_severity(f: Finding) -> str:
+    """What the user sees. HIGH has to be proven AND lasting AND new: a claim nobody proved, a state that heals itself
+    (stale cache entries that expire in 15 min) or one the old code already had is at most MEDIUM."""
+    if f.severity in ("CRITICAL", "HIGH") and (f.verdict != "CONFIRMED" or f.temporary or f.at_head):
+        return "MEDIUM"
+    return f.severity
+
+
+def merge_duplicates(findings: list[Finding]) -> list[Finding]:
+    """The same cause reported twice (one fix, same file) becomes one finding naming every place: two lines in
+    event-read.service.ts that both need `catch the short-link write` are one defect, not two HIGHs."""
+    def words(t: str) -> set[str]:
+        return set(re.findall(r"[a-z]{4,}", t.lower()))
+
+    merged: list[Finding] = []
+    for f in findings:
+        same = next((m for m in merged if m.where.split(":")[0] == f.where.split(":")[0] and m.fix and f.fix
+                     and len(words(m.fix) & words(f.fix)) >= 0.6 * min(len(words(m.fix)), len(words(f.fix)))), None)
+        if same is None:
+            merged.append(f)
+        else:
+            same.where += ", " + (f.where.split(":", 1)[1] if ":" in f.where else f.where)
+    return merged
 
 
 def compose(findings: list[Finding], reviewers: int) -> str:
     """The block the main agent answers from. Rejected findings are listed so it can say what was ruled out, but never as findings."""
-    live = sorted((f for f in findings if f.verdict in ("CONFIRMED", "UNCLEAR", "UNCHECKED")), key=lambda f: SEVERITY_ORDER[f.severity])
+    live = sorted((f for f in findings if f.verdict in ("CONFIRMED", "UNCLEAR", "UNCHECKED")), key=lambda f: SEVERITY_ORDER[shown_severity(f)])
     rejected = [f for f in findings if f.verdict == "REJECTED"]
     lines = [f"{reviewers} reviewers read the change in parallel; each finding was then checked by a separate agent that tried to refute it."]
     if not live and not rejected:
         lines.append("No reviewer found a defect.")
     for f in live:
         tag = "confirmed" if f.verdict == "CONFIRMED" else "unverified"
-        sev = f.severity if f.verdict == "CONFIRMED" else ("MEDIUM" if f.severity in ("CRITICAL", "HIGH") else f.severity)  # a claim nobody proved is at most MEDIUM
-        lines.append(f"- [{tag}] {sev} {f.where}  {f.what} -> {f.fix}" + (f"  (evidence: {f.evidence})" if f.evidence else "") + (f"  (affects: {f.reach})" if f.reach and f.reach != "n/a" else ""))
+        lines.append(f"- [{tag}] {shown_severity(f)} {f.where}  {f.what} -> {f.fix}" + (f"  (evidence: {f.evidence})" if f.evidence else "") + (f"  (affects: {f.reach})" if f.reach and f.reach != "n/a" else ""))
     for f in rejected:
         lines.append(f"- [rejected] {f.where}  {f.what[:90]}  because: {f.evidence or 'the code contradicts it'}")
     return "\n".join(lines)
@@ -133,12 +172,14 @@ def compose(findings: list[Finding], reviewers: int) -> str:
 
 def format_answer(findings: list[Finding]) -> str:
     """The review a user reads, built from the verified findings with no model call: one line each, rejected ones dropped."""
-    live = sorted((f for f in findings if f.verdict != "REJECTED"), key=lambda f: SEVERITY_ORDER[f.severity])
+    live = sorted((f for f in findings if f.verdict != "REJECTED"), key=lambda f: SEVERITY_ORDER[shown_severity(f)])
     lines = []
     for f in live:
         proven = f.verdict == "CONFIRMED"
-        sev = f.severity if proven else ("MEDIUM" if f.severity in ("CRITICAL", "HIGH") else f.severity)  # an unproven claim is at most MEDIUM
-        lines.append(f"{sev}{'' if proven else ' (unverified)'} {f.where}  {f.what}" + (f" -> {f.fix}" if f.fix else ""))
+        note = "" if proven else " (unverified)"
+        note += f" (temporary: {f.temporary})" if f.temporary else ""
+        note += " (the code before this change already did this)" if f.at_head else ""
+        lines.append(f"{shown_severity(f)}{note} {f.where}  {f.what}" + (f" -> {f.fix}" if f.fix else ""))
     ruled_out = sum(f.verdict == "REJECTED" for f in findings)
     if not lines:
         return "No issues found." + (f" The verifier ruled out {ruled_out} claim(s)." if ruled_out else "")
@@ -202,14 +243,14 @@ async def run_review_pipeline(config, request: str) -> AsyncGenerator[tuple[str,
         yield "notice", "The reviewer gave no answer; reviewing without the pipeline"
         return  # an empty answer is a failure, not "no defects": the normal review loop takes over
     found = [f for part in replies if part for f in part]
-    found.sort(key=lambda f: SEVERITY_ORDER[f.severity])
+    found = merge_duplicates(sorted(found, key=lambda f: SEVERITY_ORDER[f.severity]))
     to_check, extra = found[:MAX_VERIFIED], found[MAX_VERIFIED:]  # past the cap a finding stays unchecked and is reported as unverified
     if to_check:
         yield "notice", f"Verifying {len(to_check)} finding(s) in one pass; the verifier tries to refute each"
         claims = "\n".join(f"{n}. {f.severity} | {f.where} | {f.what} | fix: {f.fix or '(none)'}" for n, f in enumerate(to_check, 1))
         reply = await ask(config, VERIFIER_PROMPT.format(claims=claims), role, max_turns=6, max_tokens=config.review_pipeline_tokens, disabled_skills=["code-review"])
         for n, (f, v) in enumerate(zip(to_check, parse_verdicts(reply, len(to_check)).values()), 1):
-            f.verdict, f.evidence, f.reach = v
+            f.verdict, f.evidence, f.reach, f.temporary, f.at_head = v
     for f in extra:
         f.verdict = "UNCHECKED"
     confirmed = sum(f.verdict == "CONFIRMED" for f in found)

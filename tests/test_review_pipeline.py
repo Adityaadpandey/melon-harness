@@ -138,3 +138,21 @@ async def test_a_reviewer_that_returns_nothing_is_a_failure_and_the_normal_revie
         events = [e async for e in agent.run("review the changes")]
         done = [e.data.get("content") for e in events if e.type == AgentEventType.TEXT_COMPLETE]
         assert done == ["HIGH a.ts:1  found by the normal loop -> fix"]  # not a false "No issues found"
+
+
+def test_a_self_healing_or_already_present_failure_is_capped_at_medium_and_says_why():
+    got = rp.parse_verdicts("1 | CONFIRMED | a.ts:4 no catch | every visitor | TEMPORARY (cache entries before deploy, 15 min) | NEW\n2 | CONFIRMED | b.ts:2 no catch | all | ONGOING | ALREADY_AT_HEAD\n3 | CONFIRMED | c.ts:1 x | all | ONGOING | NEW", 3)
+    assert got[1][3] == "cache entries before deploy, 15 min" and got[2][4] is True and got[3][3:] == ("", False)
+    f = [rp.Finding("HIGH", "a.ts:4", "backfill can 500", "bump the key", "CONFIRMED", temporary="15 min"),
+         rp.Finding("HIGH", "b.ts:2", "write throws", "catch", "CONFIRMED", at_head=True),
+         rp.Finding("HIGH", "c.ts:1", "proven and lasting", "fix", "CONFIRMED")]
+    lines = rp.format_answer(f).split("\n\n")
+    assert lines[0].startswith("HIGH c.ts:1") and lines[1].startswith("MEDIUM (temporary: 15 min) a.ts:4") and "already did this" in lines[2]
+
+
+def test_the_same_cause_in_one_file_is_one_finding_naming_every_line():
+    a = rp.Finding("HIGH", "svc/read.ts:121-126", "backfill 500s getEventById", "catch the short-link write")
+    b = rp.Finding("HIGH", "svc/read.ts:189-198", "same in getPublicEventDetail", "wrap the short-link write in catch")
+    c = rp.Finding("MEDIUM", "svc/other.ts:3", "unrelated", "catch the short-link write")
+    got = rp.merge_duplicates([a, b, c])
+    assert [f.where for f in got] == ["svc/read.ts:121-126, 189-198", "svc/other.ts:3"]
