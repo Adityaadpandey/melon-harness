@@ -344,7 +344,9 @@ class Agent:
                 self._calls_warned = True
                 self.session.context_manager.add_user_message(
                     f"Budget check: {self._calls_used} of {limit} tool rounds used. Put every lookup you still need into "
-                    "your next turn as parallel calls, then answer."
+                    "your next turn as parallel calls, then answer. Before reading more, state what you have found so far "
+                    "(file:line each): old tool results get cleared, your own text stays. If the task asks for an output file, "
+                    "write it now with what you have, then refine it."
                 )
             used = self._spent() - self._usage_base
             budget = self.config.max_total_tokens
@@ -355,8 +357,9 @@ class Agent:
             if used > 0.7 * budget and not self._budget_warned:
                 self._budget_warned = True
                 self.session.context_manager.add_user_message(
-                    "Budget check: about 70% of the token budget is used. Stop broad searching. Read only what "
-                    "you must, then answer or make the change."
+                    "Budget check: about 70% of the token budget is used. Stop broad searching. State what you have "
+                    "found so far (file:line each), since old tool results get cleared. If the task asks for an output file, "
+                    "write it now. Read only what you must, then answer or make the change."
                 )
             for job in finished_jobs():
                 state = "finished" if job.process.returncode == 0 else f"failed (exit {job.process.returncode})"
@@ -546,7 +549,8 @@ class Agent:
         yield AgentEvent.notice(f"{notice}; wrapping up with what is known")
         self.session.context_manager.add_user_message(
             f"{why}. No more tool calls. Answer now from what you have already read: what you found (file:line), "
-            "what is still unknown, and the next step. Under 150 words, no preamble. If you were asked for a specific reply format, use it."
+            "what is still unknown, and the next step. List every finding with its file:line: this text is all that survives into the next request. "
+            "Under 250 words, no preamble. If you were asked for a specific reply format, use it."
         )
         text = ""
         async for event in self.session.client.chat_completion(
