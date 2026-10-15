@@ -149,8 +149,10 @@ def shows_second_thoughts(request: str, answer: str) -> bool:
 
 
 REWRITE_PROMPT = (
-    "Your review lists findings you then dismissed (non-issue, acceptable, skip, verified fine). Rewrite it: delete every item "
-    "you dismissed, keep only defects you can point to as `severity file:line  what is wrong -> fix`, at most 6, two lines each, "
-    "no deliberation. If a real risk is left, such as a new awaited call on a request path whose failure now fails the whole "
-    "response, state it. Reply with the rewritten review only."
+    "Your review lists findings you then dismissed or argued about. Rewrite it from scratch: delete every dismissed item and every "
+    "redundancy, duplicate-lookup or style item. Keep only defects you can point to as `severity file:line  what is wrong -> fix`, at most 6, "
+    "two lines each, no deliberation. Rank by what the user sees: a new awaited call or write on a request path whose failure now fails the "
+    "whole response goes first. HIGH only for what you verified by reading the code; a guess about a library, an admin or edge path, or a "
+    "performance cost is `(unverified)` and at most MEDIUM, and drop it if one grep or read could settle it. A flag or option the diff "
+    "adds on purpose is not a defect unless you can name what breaks. Reply with the rewritten review only."
 )
