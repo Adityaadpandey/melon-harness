@@ -469,3 +469,14 @@ async def test_a_review_stopped_by_the_call_cap_is_asked_for_the_review_not_a_ne
         assert not any("next step" in (c or "") for c in asked)
         done = [e.data.get("content") for e in events if e.type == AgentEventType.TEXT_COMPLETE]
         assert done[-1].startswith("HIGH a.txt:1 a failing write")
+
+
+async def test_a_review_near_the_call_cap_is_told_to_verify_its_top_two_candidates(cfg):
+    cfg.read_call_budget = 4
+    for i in range(4):
+        (cfg.cwd / f"f{i}.txt").write_text(f"file {i}")
+    async with Agent(cfg) as agent:
+        agent.session.client = ScriptedClient([call("read_file", {"path": f"f{i}.txt"}, f"c{i}") for i in range(3)] + [text("No issues found")])
+        await run(agent, "review the files")
+        said = [m.content or "" for m in agent.session.context_manager._messages if m.role == "user"]
+        assert any("two candidates most likely to be real defects" in c for c in said)

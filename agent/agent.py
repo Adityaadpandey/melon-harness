@@ -357,12 +357,21 @@ class Agent:
                 return
             if limit and self._calls_used >= max(1, int(limit * 0.7)) and not self._calls_warned:
                 self._calls_warned = True
-                self.session.context_manager.add_user_message(
-                    f"Budget check: {self._calls_used} of {limit} tool rounds used. Put every lookup you still need into "
-                    "your next turn as parallel calls, then answer. Before reading more, jot short working notes "
-                    "(candidate, file:line, checked or not; no severity, nothing called verified until you read the code that proves it): "
-                    "old tool results get cleared, your own text stays. If the task asks for an output file, write it now, then refine it."
-                )
+                if self._is_review:
+                    # unread candidates turn into guessed HIGHs at the cap: spend what is left on the best two
+                    warning = (
+                        f"Budget check: {self._calls_used} of {limit} tool rounds used. Pick the two candidates most likely to be real defects "
+                        "and use the remaining rounds, in parallel, to read the code that proves or refutes each. Drop the rest: an unread "
+                        "candidate is not a finding. Keep any notes to 5 lines (candidate, file:line, checked or not; no severity)."
+                    )
+                else:
+                    warning = (
+                        f"Budget check: {self._calls_used} of {limit} tool rounds used. Put every lookup you still need into "
+                        "your next turn as parallel calls, then answer. Before reading more, jot short working notes "
+                        "(candidate, file:line, checked or not; no severity, nothing called verified until you read the code that proves it): "
+                        "old tool results get cleared, your own text stays. If the task asks for an output file, write it now, then refine it."
+                    )
+                self.session.context_manager.add_user_message(warning)
             if self._quiet_rounds >= 8:
                 # reasoning is dropped between turns and old tool results get cleared: only written text survives
                 self._quiet_rounds = 0
