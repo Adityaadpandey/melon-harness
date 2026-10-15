@@ -176,7 +176,7 @@ def test_everyday_searches_run_without_asking_and_tricks_still_ask():
     for ok in [
         'grep -rnE "foo|bar" src', "grep -rn TODO . 2>/dev/null | head -50", "cd src && grep -n def a.py",
         "rg -n 'fn main' --type rust", "fd -e py src", "sed -n '10,40p' a.py", "ls; pwd", "git log -5 2>&1 | head",
-        'grep -n "a\\"b" f', "tree -L 2", "nl a.py | head",
+        'grep -n "a\\"b" f', "tree -L 2", "nl a.py | head", "git stash list", "git stash show -p stash@{0} | head",
     ]:
         assert is_safe_command(ok), ok
     for bad in [
@@ -184,6 +184,6 @@ def test_everyday_searches_run_without_asking_and_tricks_still_ask():
         "grep x f > out", "grep x f 2>/dev/null > out", "grep x f >/dev/nullx", "cd src && rm a",
         "rg --pre ./run.sh x", "rg --pre=./run.sh x", "fd -x rm", "sort -ro out f", "sort --output=out f",
         "sed -n '1w out' a", "sed -n '1e id' a", "sed -i -n 1p a", "sed 1d a", "(rm x)", "ls \; rm x",
-        "grep '$(id)' f", 'grep "x', "tail -qf log", "ls |& sh",
+        "grep '$(id)' f", 'grep "x', "tail -qf log", "ls |& sh", "git stash", "git stash pop", "git stash drop",
     ]:
         assert not is_safe_command(bad), bad

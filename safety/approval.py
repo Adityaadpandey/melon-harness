@@ -174,6 +174,8 @@ def _safe_words(words: list[str]) -> bool:
         sub, rest = args[0], args[1:]
         if sub in _GIT_READ:
             return True
+        if sub == "stash":  # list and show only read; push, pop, drop and clear change the tree
+            return bool(rest) and rest[0] in ("list", "show")
         return sub in _GIT_LISTING and set(rest) <= _GIT_LISTING[sub]
     if name in _PKG_READ:
         return bool(args) and args[0] in _PKG_READ[name]
