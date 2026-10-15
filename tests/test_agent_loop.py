@@ -382,3 +382,14 @@ async def test_more_allows_exactly_that_many_calls_for_one_request_only(cfg):
         agent.session.client = ScriptedClient([text("ok")])
         await run(agent, "explain more")
         assert agent._call_limit() == 20
+
+
+async def test_a_capped_answer_with_unverifiable_refs_is_not_sent_back_for_a_second_answer(cfg):
+    cfg.read_call_budget = 1
+    cfg.check_references = True
+    (cfg.cwd / "a.txt").write_text("hi")
+    async with Agent(cfg) as agent:
+        # the wrap-up cites a file that does not exist; with no tools left, a correction round would only cost another full-context call
+        agent.session.client = ScriptedClient([call("read_file", {"path": "a.txt"}, "c0"), text("see ghost/missing.py:3"), text("second answer")])
+        events = await run(agent, "explain what a.txt holds")
+        assert sum(e.type == AgentEventType.TEXT_COMPLETE for e in events) == 1

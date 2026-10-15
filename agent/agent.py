@@ -215,7 +215,8 @@ class Agent:
                 n_refs, problems = await verify_references(final_response, self.config.cwd)
                 task.grounding = {"checked": n_refs, "unverified": [f"{p.ref} ({p.why})" for p in problems]}
                 self.session.tracer.emit("grounding", task=task.id, checked=n_refs, unverified=len(problems))
-                if problems and not grounded_once:
+                # after a call-cap wrap-up there are no tools left to re-check with, so a retry would only pay for a second full-context answer
+                if problems and not grounded_once and not self.capped_last:
                     grounded_once = True
                     yield AgentEvent.notice(f"{len(problems)} cited reference(s) could not be verified; asking for a correction")
                     self.session.context_manager.add_user_message(correction_prompt(problems))
