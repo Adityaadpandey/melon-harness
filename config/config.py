@@ -240,6 +240,12 @@ class Config(BaseModel):
         own context and parallel instead of filling this one. A sub-agent itself has none: no recursion."""
         if self.model_role != "default":
             return []
+        from tools.subagents import READONLY_TOOLS, get_default_subagent_definitions
+
+        for d in get_default_subagent_definitions(self):
+            if d.allowed_tools and set(d.allowed_tools) <= READONLY_TOOLS and re.search(r"investigat|explor", d.name):
+                return [f"subagent_{d.name}"]
+        return []
 
     @property
     def api_key(self) -> str | None:
