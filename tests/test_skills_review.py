@@ -211,3 +211,15 @@ def test_answer_size_limits_are_in_the_prompt_and_the_review_skill(tmp_path):
     sk = {s.name: s for s in load_skills(Config(pi_mode=False, cwd=tmp_path))}
     assert "under 150 words" in sk["code-review"].body
     assert "Under 120 words" in get_system_prompt(Config(pi_mode=False, cwd=tmp_path), None, [], [])
+
+
+async def test_pi_mode_playbook_message_does_not_offer_the_use_skill_tool(tmp_path):
+    from agent.agent import Agent
+    from tests.fakes import ScriptedClient, text
+
+    cfg = Config(pi_mode=True, cwd=tmp_path, approval=ApprovalPolicy.AUTO, auto_verify=False)
+    async with Agent(cfg) as a:
+        a.session.client = ScriptedClient([text("No issues found")])
+        _ = [e async for e in a.run("review my changes")]
+        first = [m.content for m in a.session.context_manager._messages if m.role == "user"][0]
+        assert "Playbook: code-review" in first and "use_skill" not in first

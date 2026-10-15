@@ -51,7 +51,7 @@ def length_hint(request: str, tier: str, will_change: bool) -> str:
     """One line appended to the user's message telling the model how long the answer should be.
     Debugging and other hard work gets no cap: cutting its reasoning would cost more than it saves."""
     if REVIEWY.search(request):
-        return "Answer with at most 6 bullets, each a path:line observation."
+        return "Answer with at most 6 findings, each `severity path:line  what is wrong -> fix`; if there is no defect, only: No issues found."
     if EXPLAINY.search(request) and not will_change:
         return "Answer in under 300 words, with file:line references."
     if tier == "fast" and will_change:

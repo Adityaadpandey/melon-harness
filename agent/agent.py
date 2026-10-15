@@ -108,10 +108,9 @@ class Agent:
             yield AgentEvent.notice("Loaded playbooks: " + ", ".join(p.name for p in playbooks))
             self.session.tracer.emit("skills_loaded", skills=[p.name for p in playbooks])
             loaded = "\n\n".join(f"### Playbook: {p.name}\n{p.body}" for p in playbooks)
-            message_for_model = (
-                f"{message}\n\n---\nPlaybooks selected for this request (follow them; "
-                f"use `use_skill` with `section` for the full reference):\n\n{loaded}"
-            )
+            # a playbook's long reference is pulled with use_skill; pi mode has no such tool, so it is not offered
+            reference = "; use `use_skill` with `section` for the full reference" if any(t.name == "use_skill" for t in self.session.tool_registry.get_tools()) else ""
+            message_for_model = f"{message}\n\n---\nPlaybooks selected for this request (follow them{reference}):\n\n{loaded}"
         else:
             message_for_model = message
         self._scout_error = ""
