@@ -134,6 +134,26 @@ class ReadFileTool(Tool):
             entry = self._seen[str(path)] = (stamp, [])
         return entry[1]
 
+    def _pi_incremental(self, path: Path, content: str, params, epoch: int) -> str:
+        """Whole-file reads only: a file the model already holds is not sent again. Unchanged gives one line,
+        changed gives a diff against what it last saw. Slices and files over pi's cap go out as plain pi reads.
+        Example: reading a 300-line file twice costs the 300 lines once and ~25 tokens the second time."""
+        text = pi_read(content, params.offset, params.limit)
+        if params.offset != 1 or params.limit is not None:
+            return text
+        key, lines = str(path), content.split("\n")
+        snap = self._snap.get(key)
+        if snap and snap[0] == epoch:
+            if snap[1] == lines:
+                return f"[{path.name} is unchanged since you last read it ({len(lines)} lines) and is still in context above]"
+            diff = "\n".join(difflib.unified_diff(snap[1], lines, "before", "now", n=2, lineterm=""))
+            if len(diff) < 0.6 * len(content):
+                self._snap[key] = (epoch, lines)
+                return f"[{path.name} changed since you last read it ({len(lines)} lines now); only the changes are shown, the rest is as you saw it]\n{diff}"
+        if "Use offset=" not in text:  # a cut-off read leaves the model without the whole file, so nothing to dedup against
+            self._snap[key] = (epoch, lines)
+        return text
+
     MAX_FILE_SIZE = 1024 * 1024 * 10
     MAX_OUTPUT_TOKENS = 8000  # ~32KB; bigger files are read in slices with offset/limit
 
@@ -188,7 +208,7 @@ class ReadFileTool(Tool):
                 content = path.read_text(encoding="latin-1")
 
             if self.config.pi_mode:
-                return ToolResult.success_result(pi_read(content, params.offset, params.limit))
+                return ToolResult.success_result(self._pi_incremental(path, content, params, invocation.epoch))
 
             lines = content.splitlines()
             total_lines = len(lines)
