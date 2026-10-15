@@ -284,8 +284,11 @@ def _skill_rows(skills: list) -> str:
 def _pi_prompt(config: Config, tools: list[Tool] | None, skills: list | None) -> str:
     """The pi coding agent's system prompt: what the tools are, two guidelines, the project's own
     instructions and a skills list. About 300 tokens before the project text."""
+    explorer = next((t for t in tools or [] if t.name.startswith("subagent_")), None)
     names = [t.name for t in tools or [] if t.name in _PI_SNIPPETS]
     listing = "\n".join(f"- {n}: {_PI_SNIPPETS[n]}" for n in names) or "(none)"
+    if explorer:
+        listing += f"\n- {explorer.name}: Read-only searcher in its own context: 1-3 independent questions per turn, answers with file:line"
     guidelines = ["Use read_file to examine files instead of cat or sed."] if "read_file" in names else []
     if "write_file" in names:
         guidelines.append("Use write_file only for new files or complete rewrites.")
@@ -295,6 +298,8 @@ def _pi_prompt(config: Config, tools: list[Tool] | None, skills: list | None) ->
         "Batch independent lookups as parallel tool calls in one turn (three reads at once, not one per turn); each turn re-sends the whole conversation.",
         "Write the smallest change that is correct and secure: reuse existing code, validate untrusted input, no new dependency or abstraction without a real need.",
         "If the requested approach looks wrong (insecure, unscalable, duplicates existing code), say so in one line with the better option; use it when it clearly serves the same goal, else ask.",
+        *(["Wider than 2-3 files: ask the searcher; do not redo its searches."] if explorer else []),
+        "Ask before anything hard to undo (deleting, force-push, dropping data); a denied action is a boundary.",
         "Be concise in your responses", "Show file paths clearly when working with files",
     ]
     prompt = (

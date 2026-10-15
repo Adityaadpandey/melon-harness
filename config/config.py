@@ -1,6 +1,7 @@
 from __future__ import annotations
 from enum import Enum
 import os
+import re
 from pathlib import Path
 from typing import Any, Literal
 from pydantic import BaseModel, Field, model_validator
@@ -227,10 +228,18 @@ class Config(BaseModel):
             "enable_parallel_tasks": False,
             "tool_output_max_chars": 51_200,
         }
+        if "allowed_tools" not in self.model_fields_set and not self.core_tools_only:
+            pi["allowed_tools"] = [*pi["allowed_tools"], *self._explorer_tool()]
         for key, value in pi.items():
             if key not in self.model_fields_set:
                 setattr(self, key, value)
         return self
+
+    def _explorer_tool(self) -> list[str]:
+        """The read-only investigator sub-agent (a profile's own, or the built-in one), so wide searches run in their
+        own context and parallel instead of filling this one. A sub-agent itself has none: no recursion."""
+        if self.model_role != "default":
+            return []
 
     @property
     def api_key(self) -> str | None:
