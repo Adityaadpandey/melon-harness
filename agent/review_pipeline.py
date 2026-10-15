@@ -145,6 +145,9 @@ def format_answer(findings: list[Finding]) -> str:
     return "\n".join(lines) + (f"\n{ruled_out} more claim(s) were ruled out by the verifier." if ruled_out else "")
 
 
+_spent_log: list[int] = []  # new input + output tokens of each sub-agent, in the order they finished
+
+
 async def ask(config, prompt: str, role: str, max_turns: int, max_tokens: int, disabled_skills: list[str] | None = None) -> str:
     """One read-only sub-agent with its own context; returns its last text. A crash or a stop is an empty answer, never an error."""
     from agent.agent import Agent
@@ -166,6 +169,7 @@ async def ask(config, prompt: str, role: str, max_turns: int, max_tokens: int, d
             async for ev in sub.run(prompt):
                 if ev.type == AgentEventType.TEXT_COMPLETE and ev.data.get("content"):
                     texts.append(ev.data["content"])
+            _spent_log.append(sub._spent())
     except Exception:  # a broken reviewer must not stop the review
         return ""
     return texts[-1] if texts else ""
@@ -182,6 +186,7 @@ async def run_review_pipeline(config, request: str) -> AsyncGenerator[tuple[str,
     groups = [("the whole change", files)] if "[diff clipped]" not in whole else group_files(files, 2)
     yield "notice", f"Reviewing {len(files)} changed file(s)" + (f" with {len(groups)} reviewers in parallel" if len(groups) > 1 else "")
     role = config.review_pipeline_role
+    _spent_log.clear()
 
     async def review(name: str, fs: list[str]) -> list[Finding] | None:
         diff = whole if len(groups) == 1 else await build_diff(cwd, fs)
@@ -192,6 +197,7 @@ async def run_review_pipeline(config, request: str) -> AsyncGenerator[tuple[str,
         return parse_findings(reply) if reply.strip() else None
 
     replies = await asyncio.gather(*(review(n, fs) for n, fs in groups))
+    review_tokens = sum(_spent_log)
     if all(r is None for r in replies):
         yield "notice", "The reviewer gave no answer; reviewing without the pipeline"
         return  # an empty answer is a failure, not "no defects": the normal review loop takes over
@@ -207,6 +213,9 @@ async def run_review_pipeline(config, request: str) -> AsyncGenerator[tuple[str,
     for f in extra:
         f.verdict = "UNCHECKED"
     confirmed = sum(f.verdict == "CONFIRMED" for f in found)
-    yield "notice", f"Verified: {confirmed} confirmed, {sum(f.verdict == 'REJECTED' for f in found)} rejected, {len(found) - confirmed - sum(f.verdict == 'REJECTED' for f in found)} unverified"
+    rejected = sum(f.verdict == "REJECTED" for f in found)
+    verify_tokens = sum(_spent_log) - review_tokens
+    yield "notice", f"Verified: {confirmed} confirmed, {rejected} rejected, {len(found) - confirmed - rejected} unverified"
+    yield "notice", f"Tokens: reviewer {review_tokens:,} + verifier {verify_tokens:,} = {review_tokens + verify_tokens:,}"
     yield "answer", format_answer(found)
     yield "result", compose(found, len(groups))
