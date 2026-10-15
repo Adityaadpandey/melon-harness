@@ -19,6 +19,8 @@ def get_system_prompt(
     skills: list | None = None,
 ) -> str:
     """Build the full prompt from harness facts and per-session context."""
+    if config.pi_mode:
+        return _pi_prompt(config, tools, skills)
     parts: list[str] = [
         _get_identity_section(),
         _get_harness_section(),
@@ -248,3 +250,49 @@ The harness believes the agent may be repeating an unproductive pattern:
 Stop repeating the same calls or reasoning path. Re-check the original goal and the evidence gathered. Summarize what has actually been tried and what each attempt established. Then choose a materially different diagnostic or implementation approach, reduce the problem to a smaller reproducible case, or identify the exact missing information or permission that blocks progress.
 
 Do not claim progress without new evidence. Do not bypass permissions or safety controls. Ask the user a focused question only if there is no safe, evidence-based next step."""
+
+
+
+# One line per tool, worded as pi words them (our tool names).
+_PI_SNIPPETS = {
+    "read_file": "Read file contents",
+    "write_file": "Create or overwrite files",
+    "edit": "Make precise file edits with exact text replacement",
+    "shell": "Execute shell commands (ls, grep, find, etc.)",
+    "grep": "Search file contents for patterns (respects .gitignore)",
+    "glob": "Find files by glob pattern (respects .gitignore)",
+    "list_dir": "List directory contents",
+}
+
+
+def _pi_prompt(config: Config, tools: list[Tool] | None, skills: list | None) -> str:
+    """The pi coding agent's system prompt: what the tools are, two guidelines, the project's own
+    instructions and a skills list. About 300 tokens before the project text."""
+    names = [t.name for t in tools or [] if t.name in _PI_SNIPPETS]
+    listing = "\n".join(f"- {n}: {_PI_SNIPPETS[n]}" for n in names) or "(none)"
+    guidelines = ["Use read_file to examine files instead of cat or sed."] if "read_file" in names else []
+    if "write_file" in names:
+        guidelines.append("Use write_file only for new files or complete rewrites.")
+    guidelines += ["Be concise in your responses", "Show file paths clearly when working with files"]
+    prompt = (
+        "You are an expert coding assistant operating inside mew, a coding agent harness. You help users by reading "
+        "files, executing commands, editing code, and writing new files.\n\n"
+        f"Available tools:\n{listing}\n\n"
+        "In addition to the tools above, you may have access to other custom tools depending on the project.\n\n"
+        "Guidelines:\n" + "\n".join(f"- {g}" for g in guidelines)
+    )
+    context = [i for i in (config.developer_instructions, config.user_instructions) if i]
+    if context:
+        prompt += "\n\n<project_context>\n\nProject-specific instructions and guidelines:\n\n" + "\n\n".join(context) + "\n\n</project_context>"
+    listed = [k for k in skills or [] if getattr(k, "path", None) and "read_file" in names]
+    if listed:
+        rows = "\n".join(
+            f"  <skill>\n    <name>{k.name}</name>\n    <description>{k.description}</description>\n    <location>{k.path}</location>\n  </skill>"
+            for k in listed
+        )
+        prompt += (
+            "\n\nThe following skills provide specialized instructions for specific tasks.\n"
+            "Use the read_file tool to load a skill's file when the task matches its description.\n\n"
+            f"<available_skills>\n{rows}\n</available_skills>"
+        )
+    return prompt + f"\nCurrent working directory: {config.cwd}"

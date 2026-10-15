@@ -34,3 +34,15 @@ def test_pi_read_cuts_at_2000_lines_and_says_where_to_continue():
     assert pi_read(body, 4990, None) == "\n".join(f"l{i}" for i in range(4990, 5001))
     assert pi_read("a\nb\nc", 1, 2).endswith("[1 more lines in file. Use offset=3 to continue.]")
     assert "beyond end" in pi_read("a", 9, None)
+
+
+def test_pi_prompt_is_small_and_lists_only_the_tools_given(tmp_path):
+    from prompts.system import get_system_prompt
+    from tools.registry import create_default_registry
+    from utils.text import count_tokens
+
+    cfg = Config(cwd=tmp_path)
+    tools = create_default_registry(cfg).get_tools()
+    prompt = get_system_prompt(cfg, "remembered", tools, [])
+    assert len(tools) == 7 and "- shell:" in prompt and "- git:" not in prompt and "remembered" not in prompt
+    assert count_tokens(prompt, cfg.model_name) < 400

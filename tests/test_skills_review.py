@@ -45,7 +45,7 @@ async def test_use_skill_tool(tmp_path):
     (tmp_path / ".ai-agent" / "skills" / "dbg.md").write_text(SKILL)
     (tmp_path / "docs").mkdir()
     (tmp_path / "docs" / "dbg.md").write_text(DOC)
-    cfg = Config(cwd=tmp_path, approval=ApprovalPolicy.AUTO)
+    cfg = Config(pi_mode=False, cwd=tmp_path, approval=ApprovalPolicy.AUTO)
     async with Agent(cfg) as a:
         run = lambda p: a.session.tool_registry.invoke("use_skill", p, tmp_path, a.session.hook_system)
         assert (await run({"name": "dbg"})).output == "Body text."
@@ -57,7 +57,7 @@ async def test_use_skill_tool(tmp_path):
 async def test_matching_playbook_is_attached_to_the_request(tmp_path):
     (tmp_path / ".ai-agent" / "skills").mkdir(parents=True)
     (tmp_path / ".ai-agent" / "skills" / "dbg.md").write_text(SKILL)
-    cfg = Config(cwd=tmp_path, approval=ApprovalPolicy.AUTO, auto_verify=False)
+    cfg = Config(pi_mode=False, cwd=tmp_path, approval=ApprovalPolicy.AUTO, auto_verify=False)
     async with Agent(cfg) as a:
         a.session.client = ScriptedClient([text("ok")])
         evs = [e async for e in a.run("there is a bug in checkout")]
@@ -104,7 +104,7 @@ async def test_reviewer_findings_go_back_for_one_fix(repo, monkeypatch):
         return ReviewResult("ISSUES", "1. x.py:1 missing guard | evidence: none") if len(calls) == 1 else ReviewResult("PASS", "")
 
     monkeypatch.setattr(agent_mod, "review_changes", fake_review)
-    cfg = Config(cwd=repo, approval=ApprovalPolicy.AUTO, auto_verify=False, auto_review=True)
+    cfg = Config(pi_mode=False, cwd=repo, approval=ApprovalPolicy.AUTO, auto_verify=False, auto_review=True)
     async with Agent(cfg) as a:
         a.session.client = ScriptedClient([write("x.py"), text("done"), write("y.py"), text("fixed")])
         evs = [e async for e in a.run("go")]
@@ -119,7 +119,7 @@ async def test_clean_review_just_finishes(repo, monkeypatch):
         return ReviewResult("PASS", "")
 
     monkeypatch.setattr(agent_mod, "review_changes", fake_review)
-    cfg = Config(cwd=repo, approval=ApprovalPolicy.AUTO, auto_verify=False, auto_review=True)
+    cfg = Config(pi_mode=False, cwd=repo, approval=ApprovalPolicy.AUTO, auto_verify=False, auto_review=True)
     async with Agent(cfg) as a:
         a.session.client = ScriptedClient([write("x.py"), text("done")])
         evs = [e async for e in a.run("go")]
@@ -131,10 +131,10 @@ def test_profile_subagents_replace_builtins_and_router_puts_non_author_reviewer_
     from client.routing import ModelRegistry, Router
 
     spec = SubagentSpec(name="debugger", description="d", goal_prompt="g", role="debug")
-    cfg = Config(cwd=tmp_path, subagents=[spec], routing={"review": ["author", "other"]})
+    cfg = Config(pi_mode=False, cwd=tmp_path, subagents=[spec], routing={"review": ["author", "other"]})
     cfg.model_name = "author"
     assert [d.name for d in get_default_subagent_definitions(cfg)] == ["debugger"]
-    assert [d.name for d in get_default_subagent_definitions(Config(cwd=tmp_path))] == ["codebase_investigator", "code_reviewer"]
+    assert [d.name for d in get_default_subagent_definitions(Config(pi_mode=False, cwd=tmp_path))] == ["codebase_investigator", "code_reviewer"]
     assert Router(cfg, ModelRegistry(cfg, tmp_path)).chain("review") == ["other", "author"]
 
 
@@ -164,7 +164,7 @@ async def test_subagent_from_profile_runs_with_its_role_and_tools(tmp_path, monk
     monkeypatch.setattr(LLMClient, "chat_completion", fake_chat)
     spec = SubagentSpec(name="investigator", description="maps code", goal_prompt="map it", role="explore",
                         allowed_tools=["read_file", "grep"])
-    cfg = Config(cwd=tmp_path, approval=ApprovalPolicy.AUTO, auto_verify=False, subagents=[spec])
+    cfg = Config(pi_mode=False, cwd=tmp_path, approval=ApprovalPolicy.AUTO, auto_verify=False, subagents=[spec])
     async with Agent(cfg) as a:
         a.session.client = ScriptedClient([call("subagent_investigator", {"goal": "where is auth"}), text("thanks")])
         evs = [e async for e in a.run("explore")]
@@ -178,12 +178,12 @@ def test_ponytail_is_on_by_default_inlined_not_indexed_and_can_be_disabled(tmp_p
     from prompts.system import get_system_prompt
     from tools.registry import create_default_registry
 
-    cfg = Config(cwd=tmp_path)
+    cfg = Config(pi_mode=False, cwd=tmp_path)
     sk = load_skills(cfg)
     assert any(s.name == "ponytail" and s.always for s in sk)
     prompt = get_system_prompt(cfg, None, create_default_registry(cfg).get_tools(), sk)
     assert "the least that fully works" in prompt and "- **ponytail**" not in prompt  # inlined, not an index entry
-    off = Config(cwd=tmp_path, disabled_skills=["ponytail"])
+    off = Config(pi_mode=False, cwd=tmp_path, disabled_skills=["ponytail"])
     assert "the least that fully works" not in get_system_prompt(off, None, [], load_skills(off))
     assert "ponytail" not in [m.name for m in match_skills(sk, "fix this bug")]  # always-on skills are never triggered a second time
     assert match_skills(sk, "hello there") == []
@@ -193,12 +193,12 @@ def test_builtin_skills_load_with_the_right_always_on_core_and_profile_overrides
     from agent.skills import load_skills
     from utils.text import count_tokens
 
-    sk = {s.name: s for s in load_skills(Config(cwd=tmp_path))}
+    sk = {s.name: s for s in load_skills(Config(pi_mode=False, cwd=tmp_path))}
     assert {n for n, s in sk.items() if s.always} == {"ponytail", "grounded", "house-rules", "typescript"}
     assert {"debugging", "code-review", "security", "refactor", "testing", "performance", "database", "api-design", "git-workflow"} <= set(sk)
     assert sum(count_tokens(s.body) for s in sk.values() if s.always) < 1100  # the always-on core stays cheap
     assert all(s.triggers for s in sk.values() if not s.always)
-    tunyt = {s.name for s in load_skills(Config(cwd=tmp_path, profile="tunyt"))}
+    tunyt = {s.name for s in load_skills(Config(pi_mode=False, cwd=tmp_path, profile="tunyt"))}
     assert "tunyt-debugging" in tunyt and "debugging" not in tunyt  # specialised playbook replaces the generic one
     assert "refactor" in tunyt  # generic ones without a Tunyt twin remain
     assert [s.name for s in match_skills(list(sk.values()), "please refactor this module and rename the helper")][:1] == ["refactor"]
@@ -208,6 +208,6 @@ def test_answer_size_limits_are_in_the_prompt_and_the_review_skill(tmp_path):
     from agent.skills import load_skills
     from prompts.system import get_system_prompt
 
-    sk = {s.name: s for s in load_skills(Config(cwd=tmp_path))}
+    sk = {s.name: s for s in load_skills(Config(pi_mode=False, cwd=tmp_path))}
     assert "under 150 words" in sk["code-review"].body
-    assert "Under 120 words" in get_system_prompt(Config(cwd=tmp_path), None, [], [])
+    assert "Under 120 words" in get_system_prompt(Config(pi_mode=False, cwd=tmp_path), None, [], [])
