@@ -39,6 +39,37 @@ class ReadFileParams(BaseModel):
     )
 
 
+PI_MAX_LINES = 2000
+PI_MAX_BYTES = 50 * 1024
+
+
+def pi_read(content: str, offset: int, limit: int | None) -> str:
+    """Pi's read: plain text from `offset`, cut at 2000 lines or 50KB (whichever comes first, never mid-line),
+    with the exact offset to continue from. Example: a 5000-line file gives lines 1-2000, then
+    '[Showing lines 1-2000 of 5000. Use offset=2001 to continue.]'."""
+    all_lines = content.split("\n")
+    total = len(all_lines)
+    start = max(0, offset - 1)
+    if start >= total:
+        return f"Offset {offset} is beyond end of file ({total} lines total)"
+    end = min(start + limit, total) if limit else total
+    picked, size = [], 0
+    for line in all_lines[start:end][:PI_MAX_LINES]:
+        size += len(line.encode("utf-8")) + (1 if picked else 0)
+        if size > PI_MAX_BYTES:
+            break
+        picked.append(line)
+    if not picked:
+        return f"[Line {start + 1} is over {PI_MAX_BYTES // 1024}KB. Use shell: sed -n '{start + 1}p' <file> | head -c {PI_MAX_BYTES}]"
+    shown_to = start + len(picked)
+    text = "\n".join(picked)
+    if shown_to < end:  # our cap stopped it
+        return f"{text}\n\n[Showing lines {start + 1}-{shown_to} of {total}. Use offset={shown_to + 1} to continue.]"
+    if shown_to < total:  # the caller's own limit stopped it, but the file goes on
+        return f"{text}\n\n[{total - shown_to} more lines in file. Use offset={shown_to + 1} to continue.]"
+    return text
+
+
 def _missing(have: list[tuple[int, int]], start: int, end: int) -> list[tuple[int, int]]:
     """Sub-ranges of [start, end] (1-based, inclusive) not covered by `have`."""
     out, cur = [], start
@@ -80,6 +111,11 @@ class ReadFileTool(Tool):
 
     def __init__(self, config):
         super().__init__(config)
+        if config.pi_mode:
+            self.description = (
+                f"Read the contents of a text file. Output is truncated to {PI_MAX_LINES} lines or {PI_MAX_BYTES // 1024}KB "
+                "(whichever is hit first). Use offset/limit for large files. When you need the full file, continue with offset until complete."
+            )
         self._seen: dict[str, tuple[tuple, list[tuple[int, int]]]] = {}
         # whole-file text the model last got, kept here (not in the prompt) so a changed
         # file can be answered with a diff instead of being sent again in full
@@ -150,6 +186,9 @@ class ReadFileTool(Tool):
                 content = path.read_text(encoding="utf-8")
             except UnicodeDecodeError:
                 content = path.read_text(encoding="latin-1")
+
+            if self.config.pi_mode:
+                return ToolResult.success_result(pi_read(content, params.offset, params.limit))
 
             lines = content.splitlines()
             total_lines = len(lines)

@@ -22,3 +22,15 @@ def test_pi_mode_compacts_only_near_the_window_and_never_clears_results(tmp_path
     cm.add_assistant_message("", [{"id": "a", "type": "function", "function": {"name": "read_file", "arguments": "{}"}}])
     cm.add_tool_result("a", "x" * 400_000)
     assert cm.prune_tool_outputs() == 0
+
+
+def test_pi_read_cuts_at_2000_lines_and_says_where_to_continue():
+    from tools.builtin.read_file import pi_read
+
+    body = "\n".join(f"l{i}" for i in range(1, 5001))
+    out = pi_read(body, 1, None)
+    assert out.startswith("l1\n") and "l2000\n" in out and "l2001" not in out
+    assert out.endswith("[Showing lines 1-2000 of 5000. Use offset=2001 to continue.]")
+    assert pi_read(body, 4990, None) == "\n".join(f"l{i}" for i in range(4990, 5001))
+    assert pi_read("a\nb\nc", 1, 2).endswith("[1 more lines in file. Use offset=3 to continue.]")
+    assert "beyond end" in pi_read("a", 9, None)
