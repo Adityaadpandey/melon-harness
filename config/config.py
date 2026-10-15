@@ -215,7 +215,7 @@ class Config(BaseModel):
         if not self.pi_mode:
             return self
         pi = {
-            "allowed_tools": ["read_file", "write_file", "edit", "shell", "grep", "glob", "list_dir"],
+            "allowed_tools": ["read_file", "write_file", "edit", "shell"] if self.core_tools_only else ["read_file", "write_file", "edit", "shell", "grep", "glob", "list_dir"],
             "read_call_budget": 0,
             "check_references": False,
             "auto_scout": False,
