@@ -117,3 +117,21 @@ def has_file_code(answer: str) -> bool:
     """A fenced block in a source language (not a command or output the user is meant to run or read)."""
     langs = re.findall(r"```([\w+#-]*)", answer)
     return any(lang.lower() not in _SHELLISH for lang in langs[::2] or langs)
+
+
+# a review answer that argues with itself: findings the model dismissed in the same breath
+_SECOND_THOUGHTS = re.compile(r"non-issue|not an? (bug|issue|problem)|\bskip\b\.?|acceptable[;.,]|actually (fine|ok|correct)|no collision here|\bverified (correct|fine)", re.I)
+
+
+def shows_second_thoughts(request: str, answer: str) -> bool:
+    """A review that lists a finding and then talks itself out of it ("... actually a non-issue. Skip.") has
+    put its scratch thinking in the answer. Only review requests are checked."""
+    return bool(re.search(r"\breview", request, re.I)) and len(_SECOND_THOUGHTS.findall(answer)) >= 2
+
+
+REWRITE_PROMPT = (
+    "Your review lists findings you then dismissed (non-issue, acceptable, skip, verified fine). Rewrite it: delete every item "
+    "you dismissed, keep only defects you can point to as `severity file:line  what is wrong -> fix`, at most 6, two lines each, "
+    "no deliberation. If a real risk is left, such as a new awaited call on a request path whose failure now fails the whole "
+    "response, state it. Reply with the rewritten review only."
+)

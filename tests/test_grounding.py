@@ -94,3 +94,12 @@ def test_nudge_only_for_change_requests_with_source_code_in_the_reply():
     assert has_file_code("Here:\n```python\nx = 1\n```\n") and has_file_code("```ts\nconst a = 1\n```")
     assert not has_file_code("Run this:\n```bash\npsql -c 'select 1'\n```\n") and not has_file_code("```sql\nSELECT 1;\n```")
     assert not has_file_code("no code here")
+
+
+def test_a_review_that_dismisses_its_own_findings_is_flagged_but_a_clean_one_is_not():
+    from agent.grounding import shows_second_thoughts
+
+    messy = "high a.ts:1 keys clash ... actually a non-issue. Skip.\nmedium b.ts:2 extra insert. Acceptable; not a bug."
+    assert shows_second_thoughts("review my changes", messy)
+    assert not shows_second_thoughts("explain the diff", messy)  # only reviews are judged
+    assert not shows_second_thoughts("review my changes", "high a.ts:1 createMany failure 500s the page -> catch and fall back")

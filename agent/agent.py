@@ -8,7 +8,7 @@ from typing import AsyncGenerator, Awaitable, Callable
 from agent.challenge import challenge_request, is_risky, render as render_objections
 from agent.events import AgentEvent, AgentEventType
 from agent.root import pick_root
-from agent.grounding import correction_prompt, has_file_code, verify_references, wants_change
+from agent.grounding import REWRITE_PROMPT, correction_prompt, has_file_code, shows_second_thoughts, verify_references, wants_change
 from agent.learn import Learned
 from agent.review import review_changes
 from agent.routing_policy import EFFORT, classify, length_hint
@@ -190,6 +190,7 @@ class Agent:
         nudged = False
         reviews = 0
         grounded_once = False
+        rewrote = False
 
         while True:
             self._failed = False
@@ -230,6 +231,12 @@ class Agent:
                     yield AgentEvent.notice(f"{len(problems)} cited reference(s) could not be verified; asking for a correction")
                     self.session.context_manager.add_user_message(correction_prompt(problems))
                     continue
+
+            if final_response and not rewrote and not self.capped_last and shows_second_thoughts(message, final_response):
+                rewrote = True
+                yield AgentEvent.notice("The review argues with itself; asking for a clean rewrite")
+                self.session.context_manager.add_user_message(REWRITE_PROMPT)
+                continue
 
             if before is None:  # started above the repo and the request did not name it: the files touched tell
                 targets = [e.get("target", "") for e in self.session.tracer.events if e["event"] == "tool_call"]
