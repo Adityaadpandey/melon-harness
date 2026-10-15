@@ -122,7 +122,7 @@ def has_file_code(answer: str) -> bool:
 # a review answer that argues with itself: findings the model dismissed in the same breath
 _SECOND_THOUGHTS = re.compile(
     r"non-issue|not an? (real )?(bug|issue|problem|defect|regression)|no (defect|regression|issue here)|\bskip\b\.?|acceptable[;.,]|"
-    r"actually (fine|ok|correct)|coincidence|no collision here|\bverified (correct|fine)|pre-existing behaviou?r|nothing to fix|"
+    r"actually (fine|ok|correct)|coincidence|no collision here|\bverified (correct|fine)|pre-existing behaviou?r|nothing to fix|\bretract|\bmoot\b|no fix needed|"
     r"^\W*final answer\b",
     re.I | re.M,
 )

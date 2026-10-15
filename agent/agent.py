@@ -11,7 +11,7 @@ from agent.root import pick_root
 from agent.grounding import REWRITE_PROMPT, correction_prompt, has_file_code, shows_second_thoughts, verify_references, wants_change
 from agent.learn import Learned
 from agent.review import review_changes
-from agent.routing_policy import EFFORT, classify, length_hint
+from agent.routing_policy import EFFORT, REVIEWY, classify, length_hint
 from agent.session import Session
 from agent.skills import match_skills
 from utils.cost import summarize_usage
@@ -161,6 +161,7 @@ class Agent:
         self._allowance, self.extra_calls = self.extra_calls, 0  # /more applies to this one request
         self._read_only = not wants_change(message)
         self._wants_change = not self._read_only
+        self._is_review = bool(REVIEWY.search(message))
         self._usage_base = self._spent()  # budget is per request
         self._review_sec = 0.0
         self._tier = "default"
@@ -231,7 +232,7 @@ class Agent:
                     self.session.context_manager.add_user_message(correction_prompt(problems))
                     continue
 
-            if final_response and not rewrote and not self.capped_last and shows_second_thoughts(message, final_response):
+            if final_response and not rewrote and shows_second_thoughts(message, final_response):
                 rewrote = True
                 yield AgentEvent.notice("The review argues with itself; asking for a clean rewrite")
                 self.session.context_manager.add_user_message(REWRITE_PROMPT)
@@ -358,16 +359,16 @@ class Agent:
                 self._calls_warned = True
                 self.session.context_manager.add_user_message(
                     f"Budget check: {self._calls_used} of {limit} tool rounds used. Put every lookup you still need into "
-                    "your next turn as parallel calls, then answer. Before reading more, state what you have found so far "
-                    "(file:line each): old tool results get cleared, your own text stays. If the task asks for an output file, "
-                    "write it now with what you have, then refine it."
+                    "your next turn as parallel calls, then answer. Before reading more, jot short working notes "
+                    "(candidate, file:line, checked or not; no severity, nothing called verified until you read the code that proves it): "
+                    "old tool results get cleared, your own text stays. If the task asks for an output file, write it now, then refine it."
                 )
             if self._quiet_rounds >= 8:
                 # reasoning is dropped between turns and old tool results get cleared: only written text survives
                 self._quiet_rounds = 0
                 self.session.context_manager.add_user_message(
                     "Checkpoint: you have looked things up for several rounds without writing anything down. Before the next lookup, "
-                    "write what you have found so far (file:line each) and what you will check next. If you have found a defect, fix it now."
+                    "jot working notes (candidate, file:line, checked or not; no severity) and what you will check next. If you have verified a defect, fix it now."
                 )
             elif self._wants_change and not self._edited and not self._fix_nudged and self._calls_used >= 15:
                 self._fix_nudged = True
@@ -384,9 +385,9 @@ class Agent:
             if used > 0.7 * budget and not self._budget_warned:
                 self._budget_warned = True
                 self.session.context_manager.add_user_message(
-                    "Budget check: about 70% of the token budget is used. Stop broad searching. State what you have "
-                    "found so far (file:line each), since old tool results get cleared. If the task asks for an output file, "
-                    "write it now. Read only what you must, then answer or make the change."
+                    "Budget check: about 70% of the token budget is used. Stop broad searching. Jot short "
+                    "working notes (candidate, file:line, checked or not; no severity), since old tool results get cleared. If the task asks "
+                    "for an output file, write it now. Read only what you must, then answer or make the change."
                 )
             for job in finished_jobs():
                 state = "finished" if job.process.returncode == 0 else f"failed (exit {job.process.returncode})"
@@ -576,11 +577,19 @@ class Agent:
         becomes an answer (or a verdict, for a reviewer) instead of a bare failure."""
         self._budget_hit = True
         yield AgentEvent.notice(f"{notice}; wrapping up with what is known")
-        self.session.context_manager.add_user_message(
-            f"{why}. No more tool calls. Answer now from what you have already read: what you found (file:line), "
-            "what is still unknown, and the next step. List every finding with its file:line: this text is all that survives into the next request. "
-            "Under 250 words, no preamble. If you were asked for a specific reply format, use it."
-        )
+        if self._is_review:
+            ask = (
+                "Answer now with the review itself: only defects you verified by reading the code, as `severity file:line  what is wrong -> fix`, "
+                "at most 6. Leave out anything you retracted, could not verify, or that is redundancy or style; a guess is `(unverified)` and at most "
+                "MEDIUM. At most one closing line, for a check you did not run."
+            )
+        else:
+            ask = (
+                "Answer now from what you have already read: what you found (file:line), what is still unknown, and the next step. "
+                "List every finding with its file:line: this text is all that survives into the next request. Under 250 words, no preamble. "
+                "If you were asked for a specific reply format, use it."
+            )
+        self.session.context_manager.add_user_message(f"{why}. No more tool calls. {ask}")
         async for ev in self._answer_without_tools(task):
             yield ev
 

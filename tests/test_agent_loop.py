@@ -455,3 +455,17 @@ async def test_a_review_that_argues_with_itself_is_rewritten_without_another_loo
         done = [e.data.get("content") for e in events if e.type == AgentEventType.TEXT_COMPLETE]
         assert done[-1] == "high a.txt:1 write can 500 the page -> catch"
         assert not any("Call budget" in e.data.get("message", "") for e in events if e.type == AgentEventType.NOTICE)
+
+
+async def test_a_review_stopped_by_the_call_cap_is_asked_for_the_review_not_a_next_step_summary_and_still_gets_the_rewrite(cfg):
+    cfg.read_call_budget = 1
+    (cfg.cwd / "a.txt").write_text("hi")
+    messy = "HIGH a.txt:1 two ids collide. Finding retracted; moot."
+    async with Agent(cfg) as agent:
+        agent.session.client = ScriptedClient([call("read_file", {"path": "a.txt"}), text(messy), text("HIGH a.txt:1 a failing write 500s the page -> catch")])
+        events = await run(agent, "review a.txt")
+        asked = [m.content for m in agent.session.context_manager._messages if m.role == "user"]
+        assert any("Answer now with the review itself" in (c or "") for c in asked)
+        assert not any("next step" in (c or "") for c in asked)
+        done = [e.data.get("content") for e in events if e.type == AgentEventType.TEXT_COMPLETE]
+        assert done[-1].startswith("HIGH a.txt:1 a failing write")
