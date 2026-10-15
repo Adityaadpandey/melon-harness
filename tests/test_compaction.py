@@ -10,7 +10,7 @@ from tools.base import ToolResult
 
 
 def cm_with_history(tmp_path, n_pairs=6, big=1000):
-    cm = ContextManager(Config(cwd=tmp_path), None, [])
+    cm = ContextManager(Config(pi_mode=False, cwd=tmp_path), None, [])
     for i in range(n_pairs):
         cm.add_user_message(f"task {i} " + "x" * big)
         tid = f"t{i}"
@@ -45,7 +45,7 @@ def test_compaction_keeps_the_recent_tail_verbatim_and_tracks_files(tmp_path):
 
 
 def test_repair_orphans_closes_unanswered_tool_calls(tmp_path):
-    cm = ContextManager(Config(cwd=tmp_path), None, [])
+    cm = ContextManager(Config(pi_mode=False, cwd=tmp_path), None, [])
     cm.add_user_message("go")
     cm.add_assistant_message("", [{"id": "a", "type": "function", "function": {"name": "x", "arguments": "{}"}},
                                   {"id": "b", "type": "function", "function": {"name": "y", "arguments": "{}"}}])
@@ -57,7 +57,7 @@ def test_repair_orphans_closes_unanswered_tool_calls(tmp_path):
 
 async def test_agent_compacts_mid_run_and_continues(tmp_path):
     (tmp_path / "a.txt").write_text("hi")
-    cfg = Config(cwd=tmp_path, approval=ApprovalPolicy.AUTO, auto_verify=False, compact_at_tokens=50, keep_recent_tokens=10)
+    cfg = Config(pi_mode=False, cwd=tmp_path, approval=ApprovalPolicy.AUTO, auto_verify=False, compact_at_tokens=50, keep_recent_tokens=10)
     async with Agent(cfg) as a:
         seen = {}
 
@@ -74,7 +74,7 @@ async def test_agent_compacts_mid_run_and_continues(tmp_path):
 
 
 def test_pruning_works_inside_one_task_keeps_newest_and_leaves_a_hint(tmp_path):
-    cm = ContextManager(Config(cwd=tmp_path), None, [])
+    cm = ContextManager(Config(pi_mode=False, cwd=tmp_path), None, [])
     cm.add_user_message("fix it")  # only one user message: a single long task
     for i in range(20):
         cm.add_assistant_message(None, [{"id": f"c{i}", "type": "function", "function": {"name": "grep", "arguments": "{}"}}])
@@ -87,7 +87,7 @@ def test_pruning_works_inside_one_task_keeps_newest_and_leaves_a_hint(tmp_path):
 
 async def test_failed_compaction_backs_off_instead_of_retrying_every_turn(tmp_path):
     (tmp_path / "a.txt").write_text("hi")
-    cfg = Config(cwd=tmp_path, approval=ApprovalPolicy.AUTO, auto_verify=False, compact_at_tokens=50, keep_recent_tokens=10)
+    cfg = Config(pi_mode=False, cwd=tmp_path, approval=ApprovalPolicy.AUTO, auto_verify=False, compact_at_tokens=50, keep_recent_tokens=10)
     async with Agent(cfg) as a:
         tries = []
 
@@ -105,7 +105,7 @@ async def test_failed_compaction_backs_off_instead_of_retrying_every_turn(tmp_pa
 
 
 def _long_history(tmp_path):
-    cm = ContextManager(Config(cwd=tmp_path), None, [])
+    cm = ContextManager(Config(pi_mode=False, cwd=tmp_path), None, [])
     cm.add_user_message("fix it")
     for i in range(20):
         cm.add_assistant_message(None, [{"id": f"c{i}", "type": "function", "function": {"name": "grep", "arguments": "{}"}}])
@@ -127,7 +127,7 @@ def test_a_cleared_result_can_be_recalled_exactly(tmp_path):
 
 
 async def test_big_output_is_cut_visibly_and_the_full_text_is_recallable(tmp_path):
-    cfg = Config(cwd=tmp_path, approval=ApprovalPolicy.AUTO, auto_verify=False, tool_output_max_chars=1000)
+    cfg = Config(pi_mode=False, cwd=tmp_path, approval=ApprovalPolicy.AUTO, auto_verify=False, tool_output_max_chars=1000)
     async with Agent(cfg) as a:
         reg = a.session.tool_registry
         out = "line one\n" + "noise\n" * 2000 + "FAILED test_x: boom\n"
@@ -143,7 +143,7 @@ async def test_pruning_forgets_only_the_files_it_cleared(tmp_path):
     big = "\n".join(f"line {i} " + "word " * 20 for i in range(300))
     for n in "ab":
         (tmp_path / f"{n}.txt").write_text(big)
-    cfg = Config(cwd=tmp_path, approval=ApprovalPolicy.AUTO, auto_verify=False)
+    cfg = Config(pi_mode=False, cwd=tmp_path, approval=ApprovalPolicy.AUTO, auto_verify=False)
     async with Agent(cfg) as agent:
         reg, cm = agent.session.tool_registry, agent.session.context_manager
         cm.PRUNE_PROTECT_TOKENS, cm.PRUNE_MINIMUM_TOKENS = 5000, 1  # room for one read: the older one is pruned

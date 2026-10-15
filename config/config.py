@@ -201,6 +201,30 @@ class Config(BaseModel):
     debug: bool = False
     ignored_project_keys: list[str] = Field(default_factory=list)  # project settings skipped until trusted
 
+    # Pi mode copies how the pi coding agent works: seven plain tools, a tiny prompt, files read
+    # whole, no call caps, no clearing of old results, compaction only near the window.
+    # Set pi_mode = false to get the older guarded setup back.
+    pi_mode: bool = True
+
+    @model_validator(mode="after")
+    def _apply_pi_mode(self) -> "Config":
+        """Pi defaults fill in only what nobody set: a sub-agent or a profile that names its own
+        tools or limits keeps them."""
+        if not self.pi_mode:
+            return self
+        pi = {
+            "allowed_tools": ["read_file", "write_file", "edit", "shell", "grep", "glob", "list_dir"],
+            "read_call_budget": 0,
+            "check_references": False,
+            "auto_scout": False,
+            "enable_parallel_tasks": False,
+            "tool_output_max_chars": 51_200,
+        }
+        for key, value in pi.items():
+            if key not in self.model_fields_set:
+                setattr(self, key, value)
+        return self
+
     @property
     def api_key(self) -> str | None:
         return os.environ.get("API_KEY")

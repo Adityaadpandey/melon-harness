@@ -14,7 +14,7 @@ from utils.text import count_tokens
 
 
 def test_system_prompt_stays_lean():
-    c = Config(cwd="/tmp")
+    c = Config(pi_mode=False, cwd="/tmp")
     prompt = get_system_prompt(c, None, create_default_registry(c).get_tools(), [])
     assert count_tokens(prompt) < 1200  # was ~3000; every call pays this
 
@@ -32,7 +32,7 @@ def test_cost_summary_only_prices_known_models():
 
 async def test_large_file_is_truncated_not_unreadable(tmp_path):
     (tmp_path / "big.txt").write_text("\n".join(f"line {i} " + "x" * 60 for i in range(6000)))
-    cfg = Config(cwd=tmp_path, approval=ApprovalPolicy.AUTO, auto_verify=False)
+    cfg = Config(pi_mode=False, cwd=tmp_path, approval=ApprovalPolicy.AUTO, auto_verify=False)
     async with Agent(cfg) as a:
         a.session.client = ScriptedClient([call("read_file", {"path": "big.txt"}), text("ok")])
         evs = [e async for e in a.run("read")]
@@ -43,7 +43,7 @@ async def test_large_file_is_truncated_not_unreadable(tmp_path):
 
 async def test_rereading_unchanged_file_is_deduped_until_context_changes(tmp_path):
     (tmp_path / "a.txt").write_text("hello")
-    cfg = Config(cwd=tmp_path, approval=ApprovalPolicy.AUTO, auto_verify=False)
+    cfg = Config(pi_mode=False, cwd=tmp_path, approval=ApprovalPolicy.AUTO, auto_verify=False)
     async with Agent(cfg) as a:
         reg = a.session.tool_registry
         a.session.client = ScriptedClient([
@@ -65,7 +65,7 @@ async def test_rereading_unchanged_file_is_deduped_until_context_changes(tmp_pat
 
 
 async def test_tool_output_is_capped_head_and_tail(tmp_path):
-    cfg = Config(cwd=tmp_path, approval=ApprovalPolicy.AUTO, tool_output_max_chars=1000)
+    cfg = Config(pi_mode=False, cwd=tmp_path, approval=ApprovalPolicy.AUTO, tool_output_max_chars=1000)
     async with Agent(cfg) as a:
         r = await a.session.tool_registry.invoke(
             "shell", {"command": "python3 -c \"print('A'*5000); print('THE-END')\""}, tmp_path, a.session.hook_system, a.session.approval_manager
@@ -74,7 +74,7 @@ async def test_tool_output_is_capped_head_and_tail(tmp_path):
 
 
 async def test_token_budget_ends_with_a_final_answer_not_a_bare_failure(tmp_path):
-    cfg = Config(cwd=tmp_path, approval=ApprovalPolicy.AUTO, auto_verify=False, max_total_tokens=1)
+    cfg = Config(pi_mode=False, cwd=tmp_path, approval=ApprovalPolicy.AUTO, auto_verify=False, max_total_tokens=1)
     explore = [call("list_dir", {"path": f"d{i}"}, f"c{i}") for i in range(3)]
     async with Agent(cfg) as a:
         a.session.client = ScriptedClient(explore[:1] + [text("Found X at a.py:1; Y unknown.")])
@@ -138,7 +138,7 @@ async def test_scout_findings_start_the_main_context(tmp_path):
         async def execute(self, invocation):
             return ToolResult.success_result("route -> svc.ts:42")
 
-    cfg = Config(cwd=tmp_path, approval=ApprovalPolicy.AUTO, auto_verify=False)
+    cfg = Config(pi_mode=False, cwd=tmp_path, approval=ApprovalPolicy.AUTO, auto_verify=False)
     async with Agent(cfg) as a:
         a.session.tool_registry.register(FakeScout(cfg))
         a.session.client = ScriptedClient([text("done"), text("ok")])
@@ -166,7 +166,7 @@ async def test_overlapping_reads_return_only_the_lines_not_already_in_context(tm
     monkeypatch.setattr("tools.builtin.read_file.WHOLE_FILE_LINES", 0)  # keep slices as asked here
     monkeypatch.setattr("tools.builtin.read_file.MIN_SLICE_LINES", 0)
     (tmp_path / "f.txt").write_text("\n".join(f"line{i}" for i in range(1, 31)) + "\n")
-    cfg = Config(cwd=tmp_path, approval=ApprovalPolicy.AUTO)
+    cfg = Config(pi_mode=False, cwd=tmp_path, approval=ApprovalPolicy.AUTO)
     async with Agent(cfg) as a:
         reg, hs = a.session.tool_registry, a.session.hook_system
 
@@ -186,7 +186,7 @@ async def test_overlapping_reads_return_only_the_lines_not_already_in_context(tm
 async def test_small_slices_are_widened_so_the_model_does_not_drip_feed_a_file(tmp_path):
     (tmp_path / "small.txt").write_text("\n".join(f"s{i}" for i in range(1, 301)) + "\n")
     (tmp_path / "big.txt").write_text("\n".join(f"b{i}" for i in range(1, 1001)) + "\n")
-    cfg = Config(cwd=tmp_path, approval=ApprovalPolicy.AUTO)
+    cfg = Config(pi_mode=False, cwd=tmp_path, approval=ApprovalPolicy.AUTO)
     async with Agent(cfg) as a:
         reg, hs = a.session.tool_registry, a.session.hook_system
 
@@ -220,7 +220,7 @@ def test_learned_lessons_and_edit_history_shape_prompt_and_search(tmp_path):
 async def test_changed_file_is_answered_with_a_diff_not_the_whole_file(tmp_path):
     body = "\n".join(f"line {i} of a long file" for i in range(200))
     (tmp_path / "big.txt").write_text(body)
-    cfg = Config(cwd=tmp_path, approval=ApprovalPolicy.AUTO, auto_verify=False)
+    cfg = Config(pi_mode=False, cwd=tmp_path, approval=ApprovalPolicy.AUTO, auto_verify=False)
     async with Agent(cfg) as a:
         reg = a.session.tool_registry
         await reg.invoke("read_file", {"path": "big.txt"}, tmp_path, a.session.hook_system)
@@ -243,7 +243,7 @@ async def test_hung_subagent_is_cut_off_at_its_timeout(tmp_path, monkeypatch):
         yield
 
     monkeypatch.setattr(LLMClient, "chat_completion", hang)
-    cfg = Config(cwd=tmp_path, approval=ApprovalPolicy.AUTO)
+    cfg = Config(pi_mode=False, cwd=tmp_path, approval=ApprovalPolicy.AUTO)
     tool = SubagentTool(cfg, SubagentDefinition("t", "d", "p", ["read_file"], timeout_seconds=0.5))
     r = await asyncio.wait_for(tool.execute(ToolInvocation(cwd=tmp_path, params={"goal": "x"})), 5)
     assert "timed out" in r.output

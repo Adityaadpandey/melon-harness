@@ -45,7 +45,7 @@ async def test_verifies_existing_missing_and_out_of_range_references(repo):
 
 
 async def test_fabricated_reference_is_sent_back_once_then_reported(repo):
-    cfg = Config(cwd=repo, approval=ApprovalPolicy.AUTO, auto_verify=False)
+    cfg = Config(pi_mode=False, cwd=repo, approval=ApprovalPolicy.AUTO, auto_verify=False)
     async with Agent(cfg) as a:
         a.session.client = ScriptedClient([text("The bug is in src/invented.ts:7."), text("It is in apps/server/src/app.ts:12.")])
         evs = [e async for e in a.run("where is the bug?")]
@@ -56,7 +56,7 @@ async def test_fabricated_reference_is_sent_back_once_then_reported(repo):
 
 
 async def test_uncorrected_fabrication_stays_in_the_report_not_hidden(repo):
-    cfg = Config(cwd=repo, approval=ApprovalPolicy.AUTO, auto_verify=False)
+    cfg = Config(pi_mode=False, cwd=repo, approval=ApprovalPolicy.AUTO, auto_verify=False)
     async with Agent(cfg) as a:
         a.session.client = ScriptedClient([text("See src/invented.ts:7."), text("Still src/invented.ts:7.")])
         evs = [e async for e in a.run("q")]
@@ -67,7 +67,7 @@ async def test_uncorrected_fabrication_stays_in_the_report_not_hidden(repo):
 async def test_edit_requires_a_prior_read_and_detects_changes_since(repo):
     f = repo / "a.py"
     f.write_text("x = 1\n")
-    cfg = Config(cwd=repo, approval=ApprovalPolicy.AUTO, auto_verify=False)
+    cfg = Config(pi_mode=False, cwd=repo, approval=ApprovalPolicy.AUTO, auto_verify=False)
     async with Agent(cfg) as a:
         reg, hook = a.session.tool_registry, a.session.hook_system
         edit = lambda: reg.invoke("edit", {"path": "a.py", "old_string": "x = 1", "new_string": "x = 2"}, repo, hook, a.session.approval_manager)

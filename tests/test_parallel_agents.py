@@ -43,7 +43,7 @@ def slow_child(monkeypatch):
 
 
 async def test_read_only_subagents_in_one_turn_run_concurrently(tmp_path, slow_child):
-    cfg = Config(cwd=tmp_path, approval=ApprovalPolicy.ON_REQUEST, auto_verify=False, check_references=False,
+    cfg = Config(pi_mode=False, cwd=tmp_path, approval=ApprovalPolicy.ON_REQUEST, auto_verify=False, check_references=False,
                  subagents=[spec("a"), spec("b"), spec("c")])
     t = time.perf_counter()
     evs = await run(cfg, [calls(*[(f"subagent_{n}", {"goal": f"look {n}"}) for n in "abc"]), text("merged")])
@@ -54,7 +54,7 @@ async def test_read_only_subagents_in_one_turn_run_concurrently(tmp_path, slow_c
 
 
 async def test_the_concurrency_cap_is_shared_and_respected(tmp_path, slow_child):
-    cfg = Config(cwd=tmp_path, approval=ApprovalPolicy.AUTO, auto_verify=False, check_references=False,
+    cfg = Config(pi_mode=False, cwd=tmp_path, approval=ApprovalPolicy.AUTO, auto_verify=False, check_references=False,
                  max_parallel_agents=2, subagents=[spec("a"), spec("b"), spec("c")])
     t = time.perf_counter()
     await run(cfg, [calls(*[(f"subagent_{n}", {"goal": "x"}) for n in "abc"]), text("done")])
@@ -62,7 +62,7 @@ async def test_the_concurrency_cap_is_shared_and_respected(tmp_path, slow_child)
 
 
 async def test_subagents_that_can_run_commands_are_serialized_and_need_approval(tmp_path, slow_child):
-    cfg = Config(cwd=tmp_path, approval=ApprovalPolicy.AUTO, auto_verify=False, check_references=False,
+    cfg = Config(pi_mode=False, cwd=tmp_path, approval=ApprovalPolicy.AUTO, auto_verify=False, check_references=False,
                  subagents=[spec("dbg", READ_ONLY + ["shell"]), spec("dbg2", READ_ONLY + ["shell"])])
     await run(cfg, [calls(("subagent_dbg", {"goal": "x"}), ("subagent_dbg2", {"goal": "y"})), text("done")])
     assert slow_child["peak"] == 1
@@ -79,7 +79,7 @@ async def test_progress_events_reach_the_ui_hook(tmp_path, monkeypatch):
 
     monkeypatch.setattr(LLMClient, "chat_completion", fake_chat)
     seen = []
-    cfg = Config(cwd=tmp_path, approval=ApprovalPolicy.AUTO, auto_verify=False, check_references=False, subagents=[spec("inv")])
+    cfg = Config(pi_mode=False, cwd=tmp_path, approval=ApprovalPolicy.AUTO, auto_verify=False, check_references=False, subagents=[spec("inv")])
     await run(cfg, [calls(("subagent_inv", {"goal": "map it"}, )), text("ok")], progress=lambda cid, info: seen.append((cid, info["kind"], info.get("name"))))
     kinds = [k for _, k, _ in seen]
     assert kinds[0] == "start" and "tool" in kinds and kinds[-1] == "done"
@@ -118,7 +118,7 @@ async def test_parallel_tasks_tool_fans_out_into_worktrees_and_merges(tmp_path, 
         asked.append(conf.description)
         return True
 
-    cfg = Config(cwd=tmp_path, approval=ApprovalPolicy.ON_REQUEST, auto_verify=False, check_references=False)
+    cfg = Config(pi_mode=False, cwd=tmp_path, approval=ApprovalPolicy.ON_REQUEST, auto_verify=False, check_references=False)
     async with Agent(cfg, approve) as a:
         assert a.session.tool_registry.get("parallel_tasks") is not None
         a.session.client = ScriptedClient([
@@ -137,7 +137,7 @@ async def test_parallel_tasks_tool_fans_out_into_worktrees_and_merges(tmp_path, 
 async def test_parallel_tasks_is_not_offered_outside_git_or_inside_workers(tmp_path):
     from tools.registry import create_default_registry
 
-    assert create_default_registry(Config(cwd=tmp_path)).get("parallel_tasks") is None
+    assert create_default_registry(Config(pi_mode=False, cwd=tmp_path)).get("parallel_tasks") is None
     git(tmp_path, "init", "-q")
-    assert create_default_registry(Config(cwd=tmp_path)).get("parallel_tasks") is not None
-    assert create_default_registry(Config(cwd=tmp_path, enable_parallel_tasks=False)).get("parallel_tasks") is None
+    assert create_default_registry(Config(pi_mode=False, cwd=tmp_path)).get("parallel_tasks") is not None
+    assert create_default_registry(Config(pi_mode=False, cwd=tmp_path, enable_parallel_tasks=False)).get("parallel_tasks") is None
