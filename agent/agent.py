@@ -155,9 +155,13 @@ class Agent:
         self._overflow_retried = False
         self._calls_used = 0
         self._calls_warned = False
+        self._quiet_rounds = 0  # rounds in a row where the model said nothing, only called tools
+        self._edited = False
+        self._fix_nudged = False
         self.capped_last = False
         self._allowance, self.extra_calls = self.extra_calls, 0  # /more applies to this one request
         self._read_only = not wants_change(message)
+        self._wants_change = not self._read_only
         self._usage_base = self._spent()  # budget is per request
         self._review_sec = 0.0
         self._tier = "default"
@@ -348,6 +352,19 @@ class Agent:
                     "(file:line each): old tool results get cleared, your own text stays. If the task asks for an output file, "
                     "write it now with what you have, then refine it."
                 )
+            if self._quiet_rounds >= 8:
+                # reasoning is dropped between turns and old tool results get cleared: only written text survives
+                self._quiet_rounds = 0
+                self.session.context_manager.add_user_message(
+                    "Checkpoint: you have looked things up for several rounds without writing anything down. Before the next lookup, "
+                    "write what you have found so far (file:line each) and what you will check next. If you have found a defect, fix it now."
+                )
+            elif self._wants_change and not self._edited and not self._fix_nudged and self._calls_used >= 15:
+                self._fix_nudged = True
+                self.session.context_manager.add_user_message(
+                    f"{self._calls_used} rounds in and nothing is changed yet. If you have a verified finding, make the smallest fix now, "
+                    "run one check, then continue. If you have none, say what you traced and why it holds."
+                )
             used = self._spent() - self._usage_base
             budget = self.config.max_total_tokens
             if used > budget:
@@ -458,6 +475,8 @@ class Agent:
                     text=response_text,
                 )
 
+            self._quiet_rounds = 0 if response_text else self._quiet_rounds + 1
+            self._edited = self._edited or any(tc.name in {"edit", "write_file"} for tc in tool_calls)
             self._calls_used += 1  # one round trip however many calls it holds: reading 5 files at once costs what reading 1 does
             if any(tc.name in {"edit", "write_file"} for tc in tool_calls):
                 self._read_only = False  # it turned out to be a change after all: the read cap no longer applies

@@ -432,3 +432,14 @@ async def test_running_out_of_time_still_produces_an_answer(cfg):
         events = await run(agent, "explain the repo")
         assert any("Time budget reached" in e.data.get("message", "") for e in events if e.type == AgentEventType.NOTICE)
         assert any(e.type == AgentEventType.TEXT_COMPLETE for e in events)
+
+
+async def test_silent_rounds_get_a_write_down_checkpoint_and_a_fix_now_nudge(cfg):
+    for i in range(16):  # different files each round, so the loop detector stays quiet
+        (cfg.cwd / f"f{i}.txt").write_text(f"file {i}")
+    async with Agent(cfg) as agent:
+        agent.session.client = ScriptedClient([call("read_file", {"path": f"f{i}.txt"}, f"c{i}") for i in range(16)] + [text("done")])
+        await run(agent, "review and fix the files")
+        said = [m.content for m in agent.session.context_manager._messages if m.role == "user"]
+        assert sum("Checkpoint:" in (c or "") for c in said) == 2  # after rounds 8 and 16
+        assert sum("nothing is changed yet" in (c or "") for c in said) == 1  # once, at round 15
