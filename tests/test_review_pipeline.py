@@ -63,7 +63,7 @@ async def test_pipeline_runs_reviewers_then_verifiers_and_hands_the_main_agent_o
         assert any("Reviewing 1 changed file" in n for n in notices) and any("1 confirmed, 1 rejected" in n for n in notices)
         assert agent.session.client.requests == []  # a read-only review is not followed by a model call or a tool loop
         done = [e.data.get("content") for e in events if e.type == AgentEventType.TEXT_COMPLETE]
-        assert done == ["HIGH a.ts:1  write can throw and 500 the page -> catch\n1 more claim(s) were ruled out by the verifier."]
+        assert done == ["HIGH a.ts:1  write can throw and 500 the page -> catch\n\n1 more claim(s) were ruled out by the verifier."]
         sent = " ".join(str(m.content) for m in agent.session.context_manager._messages if m.role == "user")
         assert "[confirmed] HIGH a.ts:1" in sent and "[rejected] a.ts:1" in sent
     assert [r for r, p in prompts if "claims these defects" in p] == ["default"]  # ONE verifier, on the fast model
@@ -117,7 +117,7 @@ def test_format_answer_is_one_line_per_finding_caps_unproven_ones_and_says_when_
         rp.Finding("HIGH", "b.ts:9", "guessed race", "lock", "UNCLEAR"),
         rp.Finding("MEDIUM", "c.ts:1", "redundant chain", "collapse", "REJECTED"),
     ]
-    assert rp.format_answer(f).splitlines() == ["HIGH a.ts:4  insert 500s the list -> catch", "MEDIUM (unverified) b.ts:9  guessed race -> lock", "1 more claim(s) were ruled out by the verifier."]
+    assert rp.format_answer(f).split("\n\n") == ["HIGH a.ts:4  insert 500s the list -> catch", "MEDIUM (unverified) b.ts:9  guessed race -> lock", "1 more claim(s) were ruled out by the verifier."]
     assert rp.format_answer([]) == "No issues found."
     assert rp.format_answer([rp.Finding("LOW", "c.ts:1", "x", "", "REJECTED")]).startswith("No issues found. The verifier ruled out 1")
 

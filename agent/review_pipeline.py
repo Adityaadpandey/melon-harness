@@ -142,7 +142,7 @@ def format_answer(findings: list[Finding]) -> str:
     ruled_out = sum(f.verdict == "REJECTED" for f in findings)
     if not lines:
         return "No issues found." + (f" The verifier ruled out {ruled_out} claim(s)." if ruled_out else "")
-    return "\n".join(lines) + (f"\n{ruled_out} more claim(s) were ruled out by the verifier." if ruled_out else "")
+    return "\n\n".join(lines) + (f"\n\n{ruled_out} more claim(s) were ruled out by the verifier." if ruled_out else "")
 
 
 _spent_log: list[int] = []  # new input + output tokens of each sub-agent, in the order they finished

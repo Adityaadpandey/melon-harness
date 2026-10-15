@@ -256,7 +256,7 @@ class Agent:
                     self.session.context_manager.add_user_message(correction_prompt(problems))
                     continue
 
-            if final_response and not rewrote and shows_second_thoughts(message, final_response):
+            if final_response and not rewrote and not self._pipelined and shows_second_thoughts(message, final_response):
                 rewrote = True
                 yield AgentEvent.notice("The review argues with itself; asking for a clean rewrite")
                 self.session.context_manager.add_user_message(REWRITE_PROMPT)
