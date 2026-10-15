@@ -103,3 +103,12 @@ def test_a_review_that_dismisses_its_own_findings_is_flagged_but_a_clean_one_is_
     assert shows_second_thoughts("review my changes", messy)
     assert not shows_second_thoughts("explain the diff", messy)  # only reviews are judged
     assert not shows_second_thoughts("review my changes", "high a.ts:1 createMany failure 500s the page -> catch and fall back")
+
+
+def test_single_dismissals_and_a_final_answer_header_are_caught_but_no_issues_found_is_not():
+    from agent.grounding import shows_second_thoughts
+
+    assert shows_second_thoughts("review it", "HIGH a.ts:1 reads a cached ref. Consistent. No defect.")
+    assert shows_second_thoughts("review it", "MEDIUM a.ts:9 two entries, coincidence works, not a real defect")
+    assert shows_second_thoughts("review it", "Final answer (verified only):\nHIGH a.ts:1 real thing -> fix")
+    assert not shows_second_thoughts("review it", "No issues found. Not run: tsc.")

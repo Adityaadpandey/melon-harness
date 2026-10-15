@@ -21,7 +21,7 @@ HIGH is for defects you verified by reading the code that proves them. A guess a
 ## Settle it or drop it
 An unverified finding that one grep or file read could settle (an id's format in the schema, a prop's type, a caller) gets that lookup before you write it. If it stays unverified and is below MEDIUM, leave it out. Redundancy, "could drift later" and style are not findings.
 ## Decide before you write
-Think first, then list. A suspicion you checked and cleared never appears in the answer: no "non-issue", "acceptable", "skip" or "verified fine" items, and no finding without a defect you can point to.
+Think first, then list. A suspicion you checked and cleared never appears in the answer, and a severity label is never put on an item you conclude has no defect: no "non-issue", "acceptable", "skip" or "verified fine" items, and no finding without a defect you can point to.
 ## When asked to fix
 "Review and fix" means: the first verified finding gets the smallest fix right away (edit, then one check), and the findings you only state stay stated. Do not keep reading for a second finding before fixing the first, and do not end with "no issues" until you traced each changed gate above.
 ## Each finding

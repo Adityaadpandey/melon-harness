@@ -120,13 +120,19 @@ def has_file_code(answer: str) -> bool:
 
 
 # a review answer that argues with itself: findings the model dismissed in the same breath
-_SECOND_THOUGHTS = re.compile(r"non-issue|not an? (bug|issue|problem)|\bskip\b\.?|acceptable[;.,]|actually (fine|ok|correct)|no collision here|\bverified (correct|fine)", re.I)
+_SECOND_THOUGHTS = re.compile(
+    r"non-issue|not an? (real )?(bug|issue|problem|defect|regression)|no (defect|regression|issue here)|\bskip\b\.?|acceptable[;.,]|"
+    r"actually (fine|ok|correct)|coincidence|no collision here|\bverified (correct|fine)|pre-existing behaviou?r|nothing to fix|"
+    r"^\W*final answer\b",
+    re.I | re.M,
+)
 
 
 def shows_second_thoughts(request: str, answer: str) -> bool:
     """A review that lists a finding and then talks itself out of it ("... actually a non-issue. Skip.") has
-    put its scratch thinking in the answer. Only review requests are checked."""
-    return bool(re.search(r"\breview", request, re.I)) and len(_SECOND_THOUGHTS.findall(answer)) >= 2
+    put its scratch thinking in the answer. One such phrase is enough: a finding is a defect, so any "no defect" is a deleted item.
+    Only review requests are checked."""
+    return bool(re.search(r"\breview", request, re.I)) and _SECOND_THOUGHTS.search(answer) is not None
 
 
 REWRITE_PROMPT = (
