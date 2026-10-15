@@ -40,7 +40,7 @@ def build_fixture(root: Path) -> None:
     (root / "src" / "module_0.ts").write_text("// changed\n" + (root / "src" / "module_0.ts").read_text())
 
 
-def script() -> list:
+def script(pi: bool = False) -> list:
     """20 fresh reads with a search beside each, then the first 8 files and the first
     searches again (what the incident did after its old results were cleared)."""
     turns = []
@@ -49,7 +49,8 @@ def script() -> list:
     for i in range(8):
         turns.append(calls(("read_file", {"path": f"src/module_{i}.ts"}), ("grep", {"pattern": f"value_{i}_1\\b", "path": "src"})))
     for _ in range(4):
-        turns.append(calls(("git", {"op": "status"}), ("git", {"op": "diff"})))
+        turns.append(calls(("shell", {"command": "git status --short"}), ("shell", {"command": "git diff"})) if pi
+                     else calls(("git", {"op": "status"}), ("git", {"op": "diff"})))
     turns.append(text("review done"))
     for n, turn in enumerate(turns):  # a real model never reuses a call id
         for ev in turn:
@@ -90,15 +91,15 @@ class MeteredClient(ScriptedClient):
             yield ev
 
 
-async def replay(compact_at: int, budget: int | None) -> dict:
+async def replay(compact_at: int, budget: int | None, pi: bool = False) -> dict:
     with tempfile.TemporaryDirectory() as d:
         root = Path(d)
         build_fixture(root)
-        cfg = Config(cwd=root, approval=ApprovalPolicy.AUTO, auto_verify=False, auto_review=False, auto_scout=False,
+        cfg = Config(pi_mode=pi, read_call_budget=0, cwd=root, approval=ApprovalPolicy.AUTO, auto_verify=False, auto_review=False, auto_scout=False,
                      check_references=False, compact_at_tokens=compact_at, max_turns=100, trace=False,
                      **({"max_total_tokens": budget} if budget else {}))  # only set here, never in the user's config
         async with Agent(cfg) as agent:
-            client = MeteredClient(script())
+            client = MeteredClient(script(pi))
             client.sizes = []
             agent.session.client = client
             async for _ in agent.run("review the changes in src"):
@@ -133,9 +134,10 @@ def main() -> None:
     ap.add_argument("--label", required=True)
     ap.add_argument("--compact-at", type=int, default=200_000)
     ap.add_argument("--budget", type=int, default=None, help="replay-only override of max_total_tokens; default keeps the config value")
+    ap.add_argument("--pi", action="store_true", help="replay with pi_mode on (seven tools, pi prompt, nothing cleared)")
     ap.add_argument("--out", default=str(Path(__file__).parent / "results"))
     args = ap.parse_args()
-    runs = [asyncio.run(replay(args.compact_at, args.budget)) for _ in range(3)]  # deterministic, but cheap to confirm
+    runs = [asyncio.run(replay(args.compact_at, args.budget, args.pi)) for _ in range(3)]  # deterministic, but cheap to confirm
     keys = runs[0].keys()
     out = {"label": args.label, "compact_at_tokens": args.compact_at, "budget": args.budget or "config default", "runs": runs,
            "median": {k: statistics.median(r[k] for r in runs) for k in keys}}

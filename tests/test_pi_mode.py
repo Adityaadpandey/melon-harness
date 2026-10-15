@@ -13,7 +13,7 @@ def test_anything_set_by_hand_wins_over_pi_defaults(tmp_path):
     assert Config(cwd=tmp_path, pi_mode=False).allowed_tools is None
 
 
-def test_pi_mode_compacts_only_near_the_window_and_never_clears_results(tmp_path):
+def test_pi_mode_compacts_only_near_the_window_and_still_clears_old_results(tmp_path):
     from context.manager import ContextManager
 
     cm = ContextManager(Config(cwd=tmp_path), None, None)
@@ -21,7 +21,10 @@ def test_pi_mode_compacts_only_near_the_window_and_never_clears_results(tmp_path
     assert cm._limit() == 100_000 - 16_384
     cm.add_assistant_message("", [{"id": "a", "type": "function", "function": {"name": "read_file", "arguments": "{}"}}])
     cm.add_tool_result("a", "x" * 400_000)
-    assert cm.prune_tool_outputs() == 0
+    cm.add_assistant_message("", [{"id": "b", "type": "function", "function": {"name": "read_file", "arguments": "{}"}}])
+    cm.add_tool_result("b", "y" * 40_000)  # the newest result stays whole; the older one is cleared
+    assert cm.prune_tool_outputs() == 1
+    assert "Re-run the tool" in cm._messages[1].content and "recall_result" not in cm._messages[1].content
 
 
 def test_pi_read_cuts_at_2000_lines_and_says_where_to_continue():

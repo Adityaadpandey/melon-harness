@@ -238,8 +238,6 @@ class ContextManager:
         # Clearing rewrites old messages, which costs one cache re-read of everything after them. It still
         # pays: prompts stay small, so more calls fit the token budget. What hurts is losing a result the
         # model then needs again, so cleared results are archived and can be recalled exactly.
-        if self.config.pi_mode:
-            return 0  # pi never clears old results; compaction is the only thing that shrinks history
         total_tokens = 0
         pruned_tokens = 0
         to_prune: list[MessageItem] = []
@@ -272,7 +270,7 @@ class ContextManager:
                     pass
             head = (msg.content or "").strip().splitlines()[:1]
             hint = f": {head[0][:100]}" if head else ""
-            if self.archive is not None:
+            if self.archive is not None and not self.config.pi_mode:  # pi mode has no recall_result: re-running is the way back
                 rid = self.archive.put(msg.content or "")
                 msg.content = (
                     f"[Old tool result cleared to save tokens ({rid}, {len(msg.content or '')} chars){hint}. "
