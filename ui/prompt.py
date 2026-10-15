@@ -34,7 +34,7 @@ COMMANDS = {
     "/tools": "list available tools",
     "/skills": "list project playbooks",
     "/verbose": "switch between quiet output (default) and full tool output",
-    "/more": "allow 10 more tool calls after a read-only request hit its budget",
+    "/more": "allow 10 more tool rounds after a read-only request hit its budget",
     "/challenge": "a second model argues against your idea",
     "/mcp": "MCP server status",
     "/copy": "copy the last reply to the clipboard",

@@ -394,3 +394,18 @@ async def test_a_capped_answer_with_unverifiable_refs_is_not_sent_back_for_a_sec
         agent.session.client = ScriptedClient([call("read_file", {"path": "a.txt"}, "c0"), text("see ghost/missing.py:3"), text("second answer")])
         events = await run(agent, "explain what a.txt holds")
         assert sum(e.type == AgentEventType.TEXT_COMPLETE for e in events) == 1
+
+
+async def test_parallel_calls_in_one_turn_count_as_one_round_of_the_read_budget(cfg):
+    cfg.read_call_budget = 2
+    for n in "abcde":
+        (cfg.cwd / f"{n}.txt").write_text(n)
+    async with Agent(cfg) as agent:
+        # five reads at once, then two more single reads: 3 rounds, so the third is cut off
+        agent.session.client = ScriptedClient([
+            calls(*[("read_file", {"path": f"{n}.txt"}) for n in "abcde"]),
+            call("read_file", {"path": "a.txt"}, "r1"), call("read_file", {"path": "b.txt"}, "r2"), text("answer"),
+        ])
+        events = await run(agent, "explain what these files hold")
+        assert sum(e.type == AgentEventType.TOOL_CALL_START for e in events) == 6
+        assert any("Call budget reached (2 tool rounds)" in e.data.get("message", "") for e in events if e.type == AgentEventType.NOTICE)

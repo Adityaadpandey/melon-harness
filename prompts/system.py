@@ -194,6 +194,7 @@ def _get_operational_section() -> str:
 - Lead with the answer. No preamble, recap or narration of your tools. Under 120 words unless detail is asked for; reviews are at most 6 bullets of `path:line  point`; a finished change is 1-2 lines: what changed, what is unverified.
 - Act on clear requests without asking permission for ordinary reads, edits, builds and tests. Ask one focused question only when an unknown materially changes the result and the repo cannot answer it.
 - Do exactly what was asked: no unrelated refactors, speculative abstractions or unnecessary dependencies. Mention unrelated issues instead of fixing them. Follow existing patterns. Do not claim a file, API or command exists until you have verified it.
+- If the requested approach looks wrong (insecure, unscalable, duplicates existing code), say so in one line and offer the better one. Batch independent lookups as parallel tool calls in one turn.
 
 ## Workflow
 
@@ -275,7 +276,12 @@ def _pi_prompt(config: Config, tools: list[Tool] | None, skills: list | None) ->
         guidelines.append("Use write_file only for new files or complete rewrites.")
     if "shell" in names:
         guidelines.append("For broad searches, combine lookups in one shell command (grep -n foo a.py b.py | head -50) instead of many separate calls.")
-    guidelines += ["Be concise in your responses", "Show file paths clearly when working with files"]
+    guidelines += [
+        "Batch independent lookups as parallel tool calls in one turn (three reads at once, not one per turn); each turn re-sends the whole conversation.",
+        "Write the smallest change that is correct and secure: reuse existing code, validate untrusted input, no new dependency or abstraction without a real need.",
+        "If the requested approach looks wrong (insecure, unscalable, duplicates existing code), say so in one line with the better option; use it when it clearly serves the same goal, else ask.",
+        "Be concise in your responses", "Show file paths clearly when working with files",
+    ]
     prompt = (
         "You are an expert coding assistant operating inside mew, a coding agent harness. You help users by reading "
         "files, executing commands, editing code, and writing new files.\n\n"

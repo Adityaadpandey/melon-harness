@@ -329,8 +329,8 @@ class Agent:
             limit = self._call_limit()
             if limit and self._calls_used >= limit:
                 async for ev in self._wrap_up(
-                    task, f"Call budget reached ({limit} tool calls)",
-                    f"The {limit}-call budget for this read-only request is spent (the user can type /more to allow 10 more)",
+                    task, f"Call budget reached ({limit} tool rounds)",
+                    f"The {limit}-round budget for this read-only request is spent (the user can type /more to allow 10 more)",
                 ):
                     yield ev
                 self._budget_hit = False  # the answer was produced; this is not a token-budget failure
@@ -339,8 +339,8 @@ class Agent:
             if limit and self._calls_used >= max(1, int(limit * 0.7)) and not self._calls_warned:
                 self._calls_warned = True
                 self.session.context_manager.add_user_message(
-                    f"Budget check: {self._calls_used} of {limit} tool calls used. Stop exploring; open only what you "
-                    "need to confirm your findings, then answer."
+                    f"Budget check: {self._calls_used} of {limit} tool rounds used. Put every lookup you still need into "
+                    "your next turn as parallel calls, then answer."
                 )
             used = self._spent() - self._usage_base
             budget = self.config.max_total_tokens
@@ -451,7 +451,7 @@ class Agent:
                     text=response_text,
                 )
 
-            self._calls_used += len(tool_calls)
+            self._calls_used += 1  # one round trip however many calls it holds: reading 5 files at once costs what reading 1 does
             if any(tc.name in {"edit", "write_file"} for tc in tool_calls):
                 self._read_only = False  # it turned out to be a change after all: the read cap no longer applies
             if not tool_calls:
@@ -575,8 +575,8 @@ class Agent:
         return u.prompt_tokens - u.cached_tokens + u.completion_tokens
 
     def _call_limit(self) -> int:
-        """Read-only requests (review, explain, find) get a hard cap on tool calls: a model that is only
-        reading never has to stop by itself, and 63 calls on a 3-commit review is a cost, not thoroughness.
+        """Read-only requests (review, explain, find) get a hard cap on tool rounds (model turns that call
+        tools; parallel calls in one turn count once): a model that is only reading never has to stop by itself, and 63 calls on a 3-commit review is a cost, not thoroughness.
         Requests that change files and sub-agents are not capped here (they have turn and token budgets)."""
         if not self._read_only or self.config.model_role != "default" or not self.config.read_call_budget:
             return 0
