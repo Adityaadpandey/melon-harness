@@ -80,6 +80,11 @@ def violation(tool_name: str, params: dict[str, Any], config) -> str | None:
     command = params.get("command")
     if isinstance(command, str):
         if why := ws.shell_violation(command, params.get("cwd") and ws.root / str(params["cwd"])):
+            from agent.skills import skill_roots
+
+            # the model reaches for `ls ~/.pi/agent/skills/x` in the shell: say where skill files can be read instead of leaving it to retry
+            if any(str(r) in why for r in skill_roots(config)):
+                why += ". Skill files are readable with read_file, list_dir or grep, not the shell"
             return why
         for pat in cmds:
             if re.search(pat, command, re.IGNORECASE):

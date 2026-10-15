@@ -165,3 +165,13 @@ def test_os_sandbox_hides_workspace_secrets_from_any_command(ws):
         assert "SECRET" not in r.stdout + r.stderr, script
     r = subprocess.run(sandbox.wrap(["/bin/cat", ".env.example"], cfg), cwd=ws, capture_output=True, text=True)
     assert r.returncode == 0 and "API_KEY=" in r.stdout
+
+
+def test_shell_block_on_a_skill_folder_points_to_the_read_tools(ws, tmp_path):
+    skills = ws.parent / "elsewhere" / "skills" / "review-pr"  # another folder under the fake home
+    skills.mkdir(parents=True)
+    (skills / "SKILL.md").write_text("---\nname: review-pr\ndescription: x\n---\nbody\n")
+    c = Config(cwd=ws, skill_dirs=[str(skills.parent)])
+    why = violation("shell", {"command": f"ls {skills}"}, c)
+    assert why and "read_file" in why
+    assert "read_file" not in violation("shell", {"command": f"ls {ws.parent / 'elsewhere'}"}, c)  # unrelated folders get no hint
