@@ -82,7 +82,8 @@ async def verify_references(text: str, cwd: Path) -> tuple[int, list[Problem]]:
             continue
         if a is not None:
             try:
-                n = sum(1 for _ in f.open("rb"))
+                with f.open("rb") as fh:
+                    n = sum(1 for _ in fh)
             except OSError:
                 continue
             if a > n or (b is not None and b > n + 1):
