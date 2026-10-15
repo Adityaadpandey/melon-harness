@@ -584,7 +584,7 @@ class Agent:
         and summarise if the context is still big. Example: back after 10 minutes with 70k of history,
         the cold call sends ~30k instead of 70k."""
         cm = self.session.context_manager
-        if not self._last_model_call or time.monotonic() - self._last_model_call < self.config.cache_ttl_seconds:
+        if self.config.pi_mode or not self._last_model_call or time.monotonic() - self._last_model_call < self.config.cache_ttl_seconds:
             return
         self._last_model_call = 0.0
         before = cm._latest_usage.total_tokens

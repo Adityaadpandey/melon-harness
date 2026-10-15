@@ -138,6 +138,8 @@ class ContextManager:
         return messages
 
     def _limit(self) -> float:
+        if self.config.pi_mode:
+            return self.context_window - 16_384  # pi: compact only when the next reply would no longer fit
         # a 1M window doesn't mean 800k tokens of history is a good idea:
         # quality drops and every turn resends it, so cap with compact_at_tokens
         return min(self.context_window * 0.8, self.config.compact_at_tokens)
@@ -236,6 +238,8 @@ class ContextManager:
         # Clearing rewrites old messages, which costs one cache re-read of everything after them. It still
         # pays: prompts stay small, so more calls fit the token budget. What hurts is losing a result the
         # model then needs again, so cleared results are archived and can be recalled exactly.
+        if self.config.pi_mode:
+            return 0  # pi never clears old results; compaction is the only thing that shrinks history
         total_tokens = 0
         pruned_tokens = 0
         to_prune: list[MessageItem] = []

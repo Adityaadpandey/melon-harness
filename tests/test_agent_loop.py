@@ -317,6 +317,7 @@ async def test_provider_context_overflow_compacts_once_and_retries(cfg):
 
 
 async def test_a_cold_cache_after_a_pause_shrinks_history_before_the_first_call(cfg):
+    cfg.pi_mode = False  # idle tidying is part of the guarded setup
     cfg.idle_compact_at_tokens = 1000
     async with Agent(cfg) as agent:
         agent.session.client = ScriptedClient([text("done")])
