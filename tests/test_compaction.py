@@ -162,3 +162,15 @@ async def test_pruning_forgets_only_the_files_it_cleared(tmp_path):
         again_a = await reg.invoke("read_file", {"path": "a.txt"}, tmp_path, agent.session.hook_system, None, "c4")
         assert "already in context" in again_b.output and len(again_b.output) < 200
         assert "line 0 " in again_a.output  # cleared, so it is sent again in full
+
+
+def test_cleared_result_names_the_call_that_made_it(tmp_path):
+    cm = ContextManager(Config(pi_mode=True, cwd=tmp_path), None, [])
+    cm.add_user_message("review it")
+    for i in range(20):
+        args = '{"path": "src/a%d.py"}' % i
+        cm.add_assistant_message(None, [{"id": f"c{i}", "type": "function", "function": {"name": "read_file", "arguments": args}}])
+        cm.add_tool_result(f"c{i}", "word " * 3000)
+    assert cm.prune_tool_outputs() > 0
+    first = [m for m in cm._messages if m.role == "tool"][0].content
+    assert "read_file" in first and "src/a0.py" in first  # the model knows what to re-run

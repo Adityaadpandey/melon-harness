@@ -270,6 +270,9 @@ class ContextManager:
                     pass
             head = (msg.content or "").strip().splitlines()[:1]
             hint = f": {head[0][:100]}" if head else ""
+            # name the call that made it, so a model that needs it again re-runs exactly that (and not a search for it)
+            args = fn.get("arguments") or ""
+            hint = f" from {fn.get('name', 'tool')}({args[:120]}){hint}" if fn else hint
             if self.archive is not None and not self.config.pi_mode:  # pi mode has no recall_result: re-running is the way back
                 rid = self.archive.put(msg.content or "")
                 msg.content = (
