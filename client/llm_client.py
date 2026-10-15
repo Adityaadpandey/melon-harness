@@ -36,6 +36,7 @@ class LLMClient:
         self.router = Router(config, self.registry)
         self.last_model: str | None = None
         self._quota_blocked: set[str] = set()  # providers out of quota this session
+        self.auto_effort: str | None = None  # set per request from its difficulty; an explicit config.reasoning_effort wins
 
     async def initialize(self) -> None:
         await self.registry.load()
@@ -116,6 +117,8 @@ class LLMClient:
         info = self.registry.get(model)
         adapter = self._adapter(info.endpoint)
         temperature = None if model in self._no_temperature else self.config.temperature
+        if hasattr(adapter, "_effort"):  # Codex only: summaries never need deep thinking, everything else follows the request
+            adapter._effort = "low" if role == "summarize" else (self.config.reasoning_effort or self.auto_effort)
 
         for attempt in range(self._max_retries + 1):
             started = time.perf_counter()

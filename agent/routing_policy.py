@@ -38,3 +38,22 @@ def classify(request: str) -> tuple[str, str]:
     if len(text) < 200 and FAST.search(text) and not re.search(r"\band\b.*\band\b", text, re.I):
         return "fast", "small, well-defined request"
     return "default", "ordinary task"
+
+
+# fast work needs little thinking, hard work gets the most; "default" leaves the model's own setting alone
+EFFORT = {"fast": "low", "default": None, "strong": "high"}
+
+REVIEWY = re.compile(r"\b(review|audit|critique)\b", re.I)
+EXPLAINY = re.compile(r"\b(explain|walk me through|how does|what does|summari[sz]e)\b", re.I)
+
+
+def length_hint(request: str, tier: str, will_change: bool) -> str:
+    """One line appended to the user's message telling the model how long the answer should be.
+    Debugging and other hard work gets no cap: cutting its reasoning would cost more than it saves."""
+    if REVIEWY.search(request):
+        return "Answer with at most 6 bullets, each a path:line observation."
+    if EXPLAINY.search(request) and not will_change:
+        return "Answer in under 300 words, with file:line references."
+    if tier == "fast" and will_change:
+        return "When done, reply in 1-2 sentences: what changed."
+    return ""

@@ -11,7 +11,7 @@ from agent.root import pick_root
 from agent.grounding import correction_prompt, has_file_code, verify_references, wants_change
 from agent.learn import Learned
 from agent.review import review_changes
-from agent.routing_policy import classify
+from agent.routing_policy import EFFORT, classify, length_hint
 from agent.session import Session
 from agent.skills import match_skills
 from utils.cost import summarize_usage
@@ -143,6 +143,10 @@ class Agent:
                 yield AgentEvent.notice("Challenger found nothing it could back with evidence")
         async for ev in self._tidy_if_cache_went_cold():
             yield ev
+        difficulty = classify(message)[0]
+        self.session.client.auto_effort = EFFORT[difficulty]
+        if hint := length_hint(message, difficulty, wants_change(message)):
+            message_for_model += f"\n\n[{hint}]"
         self.session.context_manager.add_user_message(message_for_model)
 
         self._escalated = False

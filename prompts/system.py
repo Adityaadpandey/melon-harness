@@ -273,6 +273,8 @@ def _pi_prompt(config: Config, tools: list[Tool] | None, skills: list | None) ->
     guidelines = ["Use read_file to examine files instead of cat or sed."] if "read_file" in names else []
     if "write_file" in names:
         guidelines.append("Use write_file only for new files or complete rewrites.")
+    if "shell" in names:
+        guidelines.append("For broad searches, combine lookups in one shell command (grep -n foo a.py b.py | head -50) instead of many separate calls.")
     guidelines += ["Be concise in your responses", "Show file paths clearly when working with files"]
     prompt = (
         "You are an expert coding assistant operating inside mew, a coding agent harness. You help users by reading "
