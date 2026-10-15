@@ -23,13 +23,13 @@ SEVERITY_ORDER = {"CRITICAL": 0, "HIGH": 1, "MEDIUM": 2, "LOW": 3}
 SKIP_SUFFIXES = (".lock", ".png", ".jpg", ".jpeg", ".gif", ".svg", ".ico", ".woff", ".woff2", ".map", "package-lock.json")
 NAMED_SCOPE = re.compile(r"\b(commits?|pr|pull request|HEAD|branch|[0-9a-f]{7,40}|#\d+)\b", re.I)  # a named scope is not "the changes"
 
-REVIEWER_PROMPT = """You are one of {n} reviewers, each reading a different part of the same uncommitted change. You did not write it.
+REVIEWER_PROMPT = """You are reviewing {scope}. You did not write it.
 The request: {request}
 
-YOUR PART: {part}
-OTHER PARTS (not yours; read them only to follow a call chain): {others}
+FILES: {part}
+OTHER CHANGED FILES (read them only to follow a call chain): {others}
 
-DIFF OF YOUR PART:
+DIFF:
 {diff}
 
 Hunt for defects the user would hit. Read the callers and callees with your tools before claiming anything. For every new or changed
@@ -42,22 +42,21 @@ SEVERITY | path:line | what is wrong, and who is affected (the call chain you re
 SEVERITY is HIGH only for a defect you proved by reading the code; a guess is MEDIUM and says "unverified".
 If you found nothing, reply: NONE"""
 
-VERIFIER_PROMPT = """Another agent claims this defect exists in the working tree. Your job is to refute it if you can.
+VERIFIER_PROMPT = """Another agent claims these defects exist in the working tree. Your job is to refute each one if you can.
 
-CLAIM: {severity} | {where} | {what} | fix: {fix}
+CLAIMS:
+{claims}
 
-Read the cited code, then the call chain that reaches it (callers, the route or handler, config that changes behaviour), and check
-whether something already handles it or the behaviour is intended (read the lines the diff deleted too: `git diff` shows them).
-If the claim names a consumer (a component, controller or caller that reads the data), open that file and find the exact line that reads
-it. If that line does not read what the claim says, REJECT it: a wrong consumer is the usual way a plausible claim is false.
-A claim about how a library behaves counts only if you read the library or its docs.
+For each claim read the cited code, then the call chain that reaches it (callers, the route or handler, config that changes behaviour), and
+check whether something already handles it or the behaviour is intended (read the lines the diff deleted too: `git diff` shows them).
+A claim about how a library behaves counts only if you read the library or its docs. If a claim names a consumer (a component,
+controller or caller that reads the data), open that file and find the exact line that reads it; if that line does not read what the
+claim says, REJECT it: a wrong consumer is the usual way a plausible claim is false.
 
-Reply with exactly:
-VERDICT: CONFIRMED | REJECTED | UNCLEAR
-EVIDENCE: path:line what you read that decides it (one or two lines)
-REACH: who is actually affected (one line; write "n/a" if rejected)
+Reply with one line per claim, EXACTLY:
+N | CONFIRMED or REJECTED or UNCLEAR | path:line what you read that decides it | who is actually affected (n/a if rejected)
 CONFIRMED means you read the code that proves it. REJECTED means the code contradicts it or already handles it (say where).
-UNCLEAR means you could not decide with the files available."""
+UNCLEAR means you could not decide with the files available. Nothing else."""
 
 
 @dataclass
@@ -106,14 +105,14 @@ def parse_findings(text: str) -> list[Finding]:
     return out
 
 
-def parse_verdict(text: str) -> tuple[str, str, str]:
-    ms = list(re.finditer(r"VERDICT:\s*(CONFIRMED|REJECTED|UNCLEAR)\b", text or "", re.I))
-    if not ms:
-        return "UNCLEAR", "", ""
-    tail = text[ms[-1].end():]
-    ev = re.search(r"EVIDENCE:\s*(.+)", tail)
-    reach = re.search(r"REACH:\s*(.+)", tail)
-    return ms[-1].group(1).upper(), (ev.group(1).strip() if ev else "")[:400], (reach.group(1).strip() if reach else "")[:200]
+def parse_verdicts(text: str, count: int) -> dict[int, tuple[str, str, str]]:
+    """One `N | VERDICT | evidence | reach` line per claim; a claim the verifier skipped stays UNCLEAR."""
+    out = {n: ("UNCLEAR", "", "") for n in range(1, count + 1)}
+    for m in re.finditer(r"^\W*(\d+)\s*\|\s*(CONFIRMED|REJECTED|UNCLEAR)\s*\|([^|\n]*)\|?(.*)$", text or "", re.I | re.M):
+        n = int(m.group(1))
+        if n in out:
+            out[n] = (m.group(2).upper(), m.group(3).strip()[:400], m.group(4).strip()[:200])
+    return out
 
 
 def compose(findings: list[Finding], reviewers: int) -> str:
@@ -159,37 +158,35 @@ async def ask(config, prompt: str, role: str, max_turns: int, max_tokens: int, d
 
 
 async def run_review_pipeline(config, request: str) -> AsyncGenerator[tuple[str, str], None]:
-    """Yields ("notice", text) as it goes and finally ("result", block), or nothing when there is nothing to review."""
+    """Yields ("notice", text) as it goes and finally ("result", block), or nothing when there is nothing to review.
+    One reviewer reads the whole change (two when the diff is too big for one reading), then ONE verifier checks every claim."""
     cwd = Path(config.cwd)
     files = changed_files(await _git(cwd, "status", "--porcelain"))
     if not files:
         return
-    groups = group_files(files)
-    yield "notice", f"Review: {len(files)} changed files, {len(groups)} reviewer(s) in parallel"
-    slots = asyncio.Semaphore(max(1, config.max_parallel_agents))
+    whole = await build_diff(cwd, files)
+    groups = [("the whole change", files)] if "[diff clipped]" not in whole else group_files(files, 2)
+    yield "notice", f"Reviewing {len(files)} changed file(s)" + (f" with {len(groups)} reviewers in parallel" if len(groups) > 1 else "")
+    role = config.review_pipeline_role
 
     async def review(name: str, fs: list[str]) -> list[Finding]:
-        diff = await build_diff(cwd, fs)
+        diff = whole if len(groups) == 1 else await build_diff(cwd, fs)
         others = ", ".join(f for f in files if f not in fs)[:600] or "(none)"
-        prompt = REVIEWER_PROMPT.format(n=len(groups), request=request[:1500], part=f"{name}: {', '.join(fs[:25])}", others=others, diff=diff)
-        async with slots:
-            return parse_findings(await ask(config, prompt, "review", max_turns=8, max_tokens=config.review_pipeline_tokens))
+        scope = "the whole uncommitted change" if len(groups) == 1 else f"one part ({name}) of an uncommitted change that {len(groups)} reviewers split"
+        prompt = REVIEWER_PROMPT.format(scope=scope, request=request[:1500], part=", ".join(fs[:25]), others=others, diff=diff)
+        return parse_findings(await ask(config, prompt, role, max_turns=8, max_tokens=config.review_pipeline_tokens))
 
     found = [f for part in await asyncio.gather(*(review(n, fs) for n, fs in groups)) for f in part]
     found.sort(key=lambda f: SEVERITY_ORDER[f.severity])
     to_check, extra = found[:MAX_VERIFIED], found[MAX_VERIFIED:]  # past the cap a finding stays unchecked and is reported as unverified
     if to_check:
-        yield "notice", f"Verifying {len(to_check)} finding(s); a separate agent tries to refute each"
-
-    async def verify(f: Finding) -> None:
-        prompt = VERIFIER_PROMPT.format(severity=f.severity, where=f.where, what=f.what, fix=f.fix or "(none)")
-        async with slots:
-            reply = await ask(config, prompt, "review", max_turns=4, max_tokens=config.review_pipeline_tokens // 2, disabled_skills=["code-review"])
-        f.verdict, f.evidence, f.reach = parse_verdict(reply)
-
-    await asyncio.gather(*(verify(f) for f in to_check))
+        yield "notice", f"Verifying {len(to_check)} finding(s) in one pass; the verifier tries to refute each"
+        claims = "\n".join(f"{n}. {f.severity} | {f.where} | {f.what} | fix: {f.fix or '(none)'}" for n, f in enumerate(to_check, 1))
+        reply = await ask(config, VERIFIER_PROMPT.format(claims=claims), role, max_turns=6, max_tokens=config.review_pipeline_tokens, disabled_skills=["code-review"])
+        for n, (f, v) in enumerate(zip(to_check, parse_verdicts(reply, len(to_check)).values()), 1):
+            f.verdict, f.evidence, f.reach = v
     for f in extra:
         f.verdict = "UNCHECKED"
-    kept = sum(f.verdict in ("CONFIRMED", "UNCLEAR", "UNCHECKED") for f in found)
-    yield "notice", f"Verified: {sum(f.verdict == 'CONFIRMED' for f in found)} confirmed, {sum(f.verdict == 'REJECTED' for f in found)} rejected, {kept - sum(f.verdict == 'CONFIRMED' for f in found)} unverified"
+    confirmed = sum(f.verdict == "CONFIRMED" for f in found)
+    yield "notice", f"Verified: {confirmed} confirmed, {sum(f.verdict == 'REJECTED' for f in found)} rejected, {len(found) - confirmed - sum(f.verdict == 'REJECTED' for f in found)} unverified"
     yield "result", compose(found, len(groups))

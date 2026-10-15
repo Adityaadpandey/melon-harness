@@ -129,8 +129,8 @@ class Agent:
                 message_for_model += (
                     "\n\n---\nReview results. Each claim below was checked by a separate agent that read the code and tried to refute it. "
                     "Answer from them with no headings and none of the bracket tags: confirmed items as `severity file:line  what is wrong -> fix`; "
-                    "unverified items the same with (unverified) after the severity, at most MEDIUM, and leave them unverified (you are not to re-check them); "
-                    "rejected items are not findings and are not mentioned. You get at most 2 more tool rounds, only for a fix you were asked to make. "
+                    "unverified items the same with (unverified) after the severity, at most MEDIUM; rejected items are not findings and are not mentioned. "
+                    "One finding per line. "
                     "If the user also asked for a fix, fix the confirmed items first, then check once. If nothing is confirmed or unverified, say: No issues found.\n" + results
                 )
         self._scout_error = ""
@@ -354,6 +354,11 @@ class Agent:
         yield AgentEvent.agent_end(final_response, report=report)
 
     async def _agentic_loop(self, task: TaskState) -> AsyncGenerator[AgentEvent, None]:
+        if self._pipelined and self._read_only:
+            # the reviewer and verifier already read the code: a plain answer from their results, no tool loop to wander in
+            async for ev in self._answer_without_tools(task):
+                yield ev
+            return
         max_turns = self.config.max_turns
 
         loop_warnings = 0
@@ -658,11 +663,7 @@ class Agent:
         """Read-only requests (review, explain, find) get a hard cap on tool rounds (model turns that call
         tools; parallel calls in one turn count once): a model that is only reading never has to stop by itself, and 63 calls on a 3-commit review is a cost, not thoroughness.
         Requests that change files and sub-agents are not capped here (they have turn and token budgets)."""
-        if not self._read_only or self.config.model_role != "default":
-            return 0
-        if self._pipelined:
-            return 2  # the reviewers and verifiers already read the code: the answer is written from their results, whatever the usual cap is
-        if not self.config.read_call_budget:
+        if not self._read_only or self.config.model_role != "default" or not self.config.read_call_budget:
             return 0
         return self._allowance or self.config.read_call_budget  # after /more: exactly that many more calls
 

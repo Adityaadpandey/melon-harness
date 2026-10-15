@@ -176,6 +176,7 @@ class Config(BaseModel):
     auto_challenge: bool = False  # a second model argues against risky requests before mew acts (on in the interactive app, --challenge for one-shot)
     auto_scout: bool = True  # non-trivial requests get a cheap read-only investigator pass first (if the profile defines one)
     review_pipeline: bool = True  # "review the changes": parallel reviewers per area, then a separate verifier per finding that tries to refute it
+    review_pipeline_role: str = "default"  # the fast main model: the slower "review" route took 40s a call
     review_pipeline_tokens: int = 20_000  # new-work cap for each reviewer; a verifier gets half
     auto_review: bool = False  # independent reviewer pass over the real diff before finishing
     max_reviews: int = 2  # a repair after review findings gets looked at again

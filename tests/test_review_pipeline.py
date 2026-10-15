@@ -23,9 +23,10 @@ def test_findings_and_verdicts_parse_from_loose_model_output():
     found = rp.parse_findings("1. HIGH | a.ts:4 | insert can throw and 500 the list | catch it\nnoise line\n- low | b.ts:2 | stale type | update")
     assert [(f.severity, f.where) for f in found] == [("HIGH", "a.ts:4"), ("LOW", "b.ts:2")]
     assert rp.parse_findings("NONE") == []
-    v, ev, reach = rp.parse_verdict("thinking...\nVERDICT: REJECTED\nEVIDENCE: a.ts:9 already wrapped in try/catch\nREACH: n/a")
-    assert v == "REJECTED" and "try/catch" in ev
-    assert rp.parse_verdict("no format at all")[0] == "UNCLEAR"
+    got = rp.parse_verdicts("1 | REJECTED | a.ts:9 already wrapped in try/catch | n/a\n2 | CONFIRMED | b.ts:2 no catch | dashboard users", 3)
+    assert got[1][0] == "REJECTED" and "try/catch" in got[1][1] and got[2][0] == "CONFIRMED" and got[2][2] == "dashboard users"
+    assert got[3][0] == "UNCLEAR"  # a claim the verifier skipped stays unproven
+    assert rp.parse_verdicts("no format at all", 1)[1][0] == "UNCLEAR"
 
 
 def test_compose_keeps_confirmed_downgrades_unproven_and_never_lists_rejected_as_findings():
@@ -48,9 +49,9 @@ async def test_pipeline_runs_reviewers_then_verifiers_and_hands_the_main_agent_o
     prompts = []
 
     async def fake_ask(config, prompt, role, max_turns, max_tokens, disabled_skills=None):
-        prompts.append(prompt)
-        if "claims this defect" in prompt:
-            return "VERDICT: REJECTED\nEVIDENCE: a.ts:1 handled elsewhere\nREACH: n/a" if "guess" in prompt else "VERDICT: CONFIRMED\nEVIDENCE: a.ts:1 no catch\nREACH: dashboard"
+        prompts.append((role, prompt))
+        if "claims these defects" in prompt:
+            return "1 | CONFIRMED | a.ts:1 no catch | dashboard\n2 | REJECTED | a.ts:1 handled elsewhere | n/a"
         return "HIGH | a.ts:1 | write can throw and 500 the page | catch\nHIGH | a.ts:1 | a guess about a race | lock"
 
     monkeypatch.setattr(rp, "ask", fake_ask)
@@ -59,10 +60,12 @@ async def test_pipeline_runs_reviewers_then_verifiers_and_hands_the_main_agent_o
         agent.session.client = ScriptedClient([text("HIGH a.ts:1  write can 500 the page -> catch")])
         events = [e async for e in agent.run("review the changes")]
         notices = [e.data.get("message", "") for e in events if e.type == AgentEventType.NOTICE]
-        assert any("reviewer(s) in parallel" in n for n in notices) and any("1 confirmed, 1 rejected" in n for n in notices)
+        assert any("Reviewing 1 changed file" in n for n in notices) and any("1 confirmed, 1 rejected" in n for n in notices)
+        assert len(agent.session.client.requests) == 1  # a read-only review is answered in one plain call: no tool loop after the pipeline
         sent = " ".join(str(m.content) for m in agent.session.context_manager._messages if m.role == "user")
         assert "[confirmed] HIGH a.ts:1" in sent and "[rejected] a.ts:1" in sent
-    assert sum("claims this defect" in p for p in prompts) == 2
+    assert [r for r, p in prompts if "claims these defects" in p] == ["default"]  # ONE verifier, on the fast model
+    assert sum("You are reviewing" in p for _, p in prompts) == 1  # and one reviewer for a small diff
 
 
 async def test_a_named_scope_or_a_clean_tree_skips_the_pipeline(tmp_path, monkeypatch):
@@ -104,21 +107,3 @@ async def test_pipeline_sub_agents_do_not_spawn_their_own_challengers_or_scouts(
     cfg = Config(pi_mode=True, cwd=tmp_path, approval=ApprovalPolicy.AUTO, auto_challenge=True, auto_scout=True)
     await rp.ask(cfg, "p", "review", 4, 5000)
     assert seen["cfg"].auto_challenge is False and seen["cfg"].auto_scout is False and seen["cfg"].review_pipeline is False
-
-
-async def test_after_the_pipeline_the_main_agent_gets_two_rounds_not_a_second_investigation(tmp_path, monkeypatch):
-    subprocess.run("git init -q && git config user.email a@b.c && git config user.name t", shell=True, cwd=tmp_path)
-    (tmp_path / "a.ts").write_text("x\n")
-    subprocess.run("git add . && git commit -qm init", shell=True, cwd=tmp_path)
-    (tmp_path / "a.ts").write_text("y\n")
-
-    async def fake_ask(config, prompt, role, max_turns, max_tokens, disabled_skills=None):
-        return "HIGH | a.ts:1 | write can throw | catch" if "reviewers" in prompt else "VERDICT: CONFIRMED\nEVIDENCE: a.ts:1\nREACH: x"
-
-    monkeypatch.setattr(rp, "ask", fake_ask)
-    cfg = Config(pi_mode=True, cwd=tmp_path, approval=ApprovalPolicy.AUTO, auto_verify=False)
-    async with Agent(cfg) as agent:
-        agent.session.client = ScriptedClient([call("read_file", {"path": "a.ts", "offset": n}, f"c{n}") for n in range(2)] + [text("HIGH a.ts:1 write can throw -> catch")])
-        events = [e async for e in agent.run("review the changes")]
-        assert sum(e.type == AgentEventType.TOOL_CALL_START for e in events) == 2  # two rounds, then the forced answer
-        assert any("Call budget reached (2 tool rounds)" in e.data.get("message", "") for e in events if e.type == AgentEventType.NOTICE)
