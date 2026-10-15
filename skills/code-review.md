@@ -14,6 +14,10 @@ Read the whole change with ONE `git op=patch` (add `rev=<base>...HEAD` for branc
 Type checks and lint pass on most regressions, so they prove little. For every new or changed condition, flag or gate in the diff (disabled, loading, isFetching, a cache key, a permission check), find everything that changes it at runtime and say what the user sees then. Example: a button disabled while `isFetching` is true, and every like mutation invalidates that query's tag: the button dims after every tap. Grep the mutations, invalidations and refetches that touch it, read them, and judge the visible result. This is the check that finds bugs; do it before running tsc or lint.
 ## Trace what fails
 For every new awaited call or write the diff puts on a request path (a DB insert, a cache write, an outbound fetch), ask what the user gets when it throws. If the data was optional (share links, analytics, badges) and the failure now 500s the whole response, that is a finding: catch it and fall back. A feature that moved onto more pages widens an old risk; say so.
+## Read what the diff deleted
+Before saying a change "has no trigger" or "never runs", read the lines it removed: the deleted effect, refetch or handler is what the author replaced, and the new code usually relies on a library doing that work. Example: a deleted `useEffect(() => refetch())` next to a query whose `skip` now includes `!isAuthenticated`: RTK Query starts a skipped query by itself when `skip` turns false, so nothing is missing. A claim about how a library behaves that you did not read in its docs or in `node_modules` is `unverified`.
+## Severity needs evidence
+HIGH is for defects you verified by reading the code that proves them. A guess about library or runtime behaviour is at most MEDIUM and carries `unverified` plus what would confirm it. Never repeat one guess as a second finding.
 ## Decide before you write
 Think first, then list. A suspicion you checked and cleared never appears in the answer: no "non-issue", "acceptable", "skip" or "verified fine" items, and no finding without a defect you can point to.
 ## When asked to fix
@@ -22,4 +26,4 @@ Think first, then list. A suspicion you checked and cleared never appears in the
 Severity, confidence, `file:line`, how it happens, impact, the fix or test, and a status: verified (you read the code that proves it), likely, or unverified. Never call a guess a confirmed bug. If a check was not run, say so.
 
 ## Answer format (this is what the user reads)
-Findings only, most serious first, at most 6. One finding is at most two lines: `severity file:line  what is wrong -> the fix`. No intro sentence, no restating the scope, no "what I checked" list, no praise. Add ONE closing line only when something matters: a check you could not run, or "no issues found". Never explain how the harness or your budget behaved. Aim for under 150 words.
+Findings only, most serious first, at most 6. One finding is at most two lines: `severity file:line  what is wrong -> the fix`, with `(unverified)` after the severity when you did not read the code that proves it. No intro sentence, no restating the scope, no "what I checked" list, no praise. Add ONE closing line only when something matters: a check you could not run, or "no issues found". Never explain how the harness or your budget behaved. Aim for under 150 words.
