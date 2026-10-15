@@ -83,6 +83,7 @@ class Agent:
         self._calls_warned = False
         self._read_only = False
         self._todos_reminded = ""
+        self._pipelined = False
         self._budget_warned = False
         self._uncached_streak = 0
         self._usage_base = 0
@@ -115,6 +116,7 @@ class Agent:
             message_for_model = f"{message}\n\n---\nPlaybooks selected for this request (follow them{reference}):\n\n{loaded}"
         else:
             message_for_model = message
+        self._pipelined = False
         if self.config.review_pipeline and self.config.model_role == "default" and REVIEWY.search(message) and not NAMED_SCOPE.search(message):
             results = ""
             async for kind, value in run_review_pipeline(self.config, message):
@@ -122,13 +124,14 @@ class Agent:
                     yield AgentEvent.notice(value)
                 else:
                     results = value
+            self._pipelined = bool(results)
             if results:
                 message_for_model += (
                     "\n\n---\nReview results. Each claim below was checked by a separate agent that read the code and tried to refute it. "
-                    "Answer from them: [confirmed] items as `severity file:line  what is wrong -> fix` with their severity; [unverified] items "
-                    "marked (unverified), at most MEDIUM; never list [rejected] items as findings (one closing line may say how many were ruled out). "
-                    "Do not investigate again. If the user also asked for a fix, fix the confirmed items first, then check once. "
-                    "If nothing is confirmed or unverified, say: No issues found.\n" + results
+                    "Answer from them with no headings and none of the bracket tags: confirmed items as `severity file:line  what is wrong -> fix`; "
+                    "unverified items the same with (unverified) after the severity, at most MEDIUM, and leave them unverified (you are not to re-check them); "
+                    "rejected items are not findings and are not mentioned. You get at most 2 more tool rounds, only for a fix you were asked to make. "
+                    "If the user also asked for a fix, fix the confirmed items first, then check once. If nothing is confirmed or unverified, say: No issues found.\n" + results
                 )
         self._scout_error = ""
         self._no_approver = False
@@ -657,6 +660,8 @@ class Agent:
         Requests that change files and sub-agents are not capped here (they have turn and token budgets)."""
         if not self._read_only or self.config.model_role != "default" or not self.config.read_call_budget:
             return 0
+        if self._pipelined:
+            return 2  # the reviewers and verifiers already read the code: the answer is written from their results
         return self._allowance or self.config.read_call_budget  # after /more: exactly that many more calls
 
     async def _tidy_if_cache_went_cold(self) -> AsyncGenerator[AgentEvent, None]:

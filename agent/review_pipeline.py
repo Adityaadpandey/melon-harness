@@ -48,6 +48,8 @@ CLAIM: {severity} | {where} | {what} | fix: {fix}
 
 Read the cited code, then the call chain that reaches it (callers, the route or handler, config that changes behaviour), and check
 whether something already handles it or the behaviour is intended (read the lines the diff deleted too: `git diff` shows them).
+If the claim names a consumer (a component, controller or caller that reads the data), open that file and find the exact line that reads
+it. If that line does not read what the claim says, REJECT it: a wrong consumer is the usual way a plausible claim is false.
 A claim about how a library behaves counts only if you read the library or its docs.
 
 Reply with exactly:
@@ -141,8 +143,8 @@ async def ask(config, prompt: str, role: str, max_turns: int, max_tokens: int, d
         "model_role": role,
         "allowed_tools": ["read_file", "grep", "glob", "list_dir", "graph", "search", "outline", "git"],
         "auto_review": False, "auto_verify": False, "verify_commands": [], "verify_rules": [], "subagents": [],
-        "enable_parallel_tasks": False, "mcp_servers": {}, "review_pipeline": False,
-        "max_turns": max_turns, "max_total_tokens": max_tokens, "max_seconds": 240, "approval": "never",
+        "enable_parallel_tasks": False, "mcp_servers": {}, "review_pipeline": False, "auto_challenge": False, "auto_scout": False,  # a challenger per sub-agent cost 80k tokens and 4 minutes
+        "max_turns": max_turns, "max_total_tokens": max_tokens, "max_seconds": 150, "approval": "never",
         "disabled_skills": [*config.disabled_skills, *(disabled_skills or [])],
     })
     texts: list[str] = []
@@ -171,7 +173,7 @@ async def run_review_pipeline(config, request: str) -> AsyncGenerator[tuple[str,
         others = ", ".join(f for f in files if f not in fs)[:600] or "(none)"
         prompt = REVIEWER_PROMPT.format(n=len(groups), request=request[:1500], part=f"{name}: {', '.join(fs[:25])}", others=others, diff=diff)
         async with slots:
-            return parse_findings(await ask(config, prompt, "review", max_turns=10, max_tokens=config.review_pipeline_tokens))
+            return parse_findings(await ask(config, prompt, "review", max_turns=8, max_tokens=config.review_pipeline_tokens))
 
     found = [f for part in await asyncio.gather(*(review(n, fs) for n, fs in groups)) for f in part]
     found.sort(key=lambda f: SEVERITY_ORDER[f.severity])
@@ -182,7 +184,7 @@ async def run_review_pipeline(config, request: str) -> AsyncGenerator[tuple[str,
     async def verify(f: Finding) -> None:
         prompt = VERIFIER_PROMPT.format(severity=f.severity, where=f.where, what=f.what, fix=f.fix or "(none)")
         async with slots:
-            reply = await ask(config, prompt, "review", max_turns=6, max_tokens=config.review_pipeline_tokens // 2, disabled_skills=["code-review"])
+            reply = await ask(config, prompt, "review", max_turns=4, max_tokens=config.review_pipeline_tokens // 2, disabled_skills=["code-review"])
         f.verdict, f.evidence, f.reach = parse_verdict(reply)
 
     await asyncio.gather(*(verify(f) for f in to_check))

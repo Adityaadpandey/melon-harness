@@ -4,7 +4,7 @@ import agent.review_pipeline as rp
 from agent.agent import Agent
 from agent.events import AgentEventType
 from config.config import ApprovalPolicy, Config
-from tests.fakes import ScriptedClient, text
+from tests.fakes import ScriptedClient, call, text
 
 
 def test_changed_files_skips_deleted_binary_and_follows_renames():
@@ -79,3 +79,46 @@ async def test_a_named_scope_or_a_clean_tree_skips_the_pipeline(tmp_path, monkey
         _ = [e async for e in agent.run("review my last 3 commits")]
         _ = [e async for e in agent.run("review the changes")]  # not a git repo / nothing changed
     assert not called
+
+
+async def test_pipeline_sub_agents_do_not_spawn_their_own_challengers_or_scouts(tmp_path, monkeypatch):
+    import agent.agent as agent_mod
+
+    seen = {}
+
+    class Stub:
+        def __init__(self, cfg):
+            seen["cfg"] = cfg
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *a):
+            return False
+
+        async def run(self, prompt):
+            return
+            yield
+
+    monkeypatch.setattr(agent_mod, "Agent", Stub)
+    cfg = Config(pi_mode=True, cwd=tmp_path, approval=ApprovalPolicy.AUTO, auto_challenge=True, auto_scout=True)
+    await rp.ask(cfg, "p", "review", 4, 5000)
+    assert seen["cfg"].auto_challenge is False and seen["cfg"].auto_scout is False and seen["cfg"].review_pipeline is False
+
+
+async def test_after_the_pipeline_the_main_agent_gets_two_rounds_not_a_second_investigation(tmp_path, monkeypatch):
+    subprocess.run("git init -q && git config user.email a@b.c && git config user.name t", shell=True, cwd=tmp_path)
+    (tmp_path / "a.ts").write_text("x\n")
+    subprocess.run("git add . && git commit -qm init", shell=True, cwd=tmp_path)
+    (tmp_path / "a.ts").write_text("y\n")
+
+    async def fake_ask(config, prompt, role, max_turns, max_tokens, disabled_skills=None):
+        return "HIGH | a.ts:1 | write can throw | catch" if "reviewers" in prompt else "VERDICT: CONFIRMED\nEVIDENCE: a.ts:1\nREACH: x"
+
+    monkeypatch.setattr(rp, "ask", fake_ask)
+    cfg = Config(pi_mode=True, cwd=tmp_path, approval=ApprovalPolicy.AUTO, auto_verify=False)
+    async with Agent(cfg) as agent:
+        agent.session.client = ScriptedClient([call("read_file", {"path": "a.ts", "offset": n}, f"c{n}") for n in range(2)] + [text("HIGH a.ts:1 write can throw -> catch")])
+        events = [e async for e in agent.run("review the changes")]
+        assert sum(e.type == AgentEventType.TOOL_CALL_START for e in events) == 2  # two rounds, then the forced answer
+        assert any("Call budget reached (2 tool rounds)" in e.data.get("message", "") for e in events if e.type == AgentEventType.NOTICE)
