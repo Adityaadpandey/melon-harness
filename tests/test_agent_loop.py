@@ -409,3 +409,26 @@ async def test_parallel_calls_in_one_turn_count_as_one_round_of_the_read_budget(
         events = await run(agent, "explain what these files hold")
         assert sum(e.type == AgentEventType.TOOL_CALL_START for e in events) == 6
         assert any("Call budget reached (2 tool rounds)" in e.data.get("message", "") for e in events if e.type == AgentEventType.NOTICE)
+
+
+async def test_time_spent_waiting_for_approval_does_not_use_up_the_time_budget(tmp_path):
+    cfg = Config(cwd=tmp_path, approval=ApprovalPolicy.ON_REQUEST, max_seconds=0.5)
+
+    async def slow_user(_):  # the user is away for longer than the whole budget, then approves
+        await asyncio.sleep(0.8)
+        return True
+
+    async with Agent(cfg, confirmation_callback=slow_user) as agent:
+        agent.session.client = ScriptedClient([call("shell", {"command": "touch made.txt"}), text("done")])
+        events = await run(agent, "create made.txt")
+        assert not any(e.type == AgentEventType.AGENT_ERROR for e in events)
+        assert (tmp_path / "made.txt").exists() and agent.task.paused >= 0.8
+
+
+async def test_running_out_of_time_still_produces_an_answer(cfg):
+    cfg.max_seconds = 0.0001
+    async with Agent(cfg) as agent:
+        agent.session.client = ScriptedClient([text("here is what I know")])
+        events = await run(agent, "explain the repo")
+        assert any("Time budget reached" in e.data.get("message", "") for e in events if e.type == AgentEventType.NOTICE)
+        assert any(e.type == AgentEventType.TEXT_COMPLETE for e in events)

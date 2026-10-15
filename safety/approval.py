@@ -2,6 +2,7 @@ from dataclasses import dataclass
 from enum import Enum
 from pathlib import Path
 import re
+import time
 import shlex
 from typing import Any, Awaitable, Callable
 from config.config import ApprovalPolicy
@@ -205,6 +206,7 @@ class ApprovalManager:
         self.confirmation_callback = confirmation_callback
         self.always_commands: set[str] = set()  # "don't ask again" choices made this session
         self.verify_commands = {c.strip() for c in verify_commands or [] if c.strip()}
+        self.waited = 0.0  # total seconds spent waiting for the user's answer; the agent's clock stops meanwhile
 
     def _is_verify_command(self, command: str) -> bool:
         """The repo's own check, e.g. `pnpm check-types`, optionally followed by `2>&1` and a safe
@@ -291,9 +293,13 @@ class ApprovalManager:
                 feedback="This needs approval but the run is non-interactive. Re-run with "
                 "--approval auto-edit (allow edits) or --approval auto (edits and commands).",
             )
-        result = self.confirmation_callback(confirmation)
-        if hasattr(result, "__await__"):
-            result = await result
+        started = time.monotonic()
+        try:
+            result = self.confirmation_callback(confirmation)
+            if hasattr(result, "__await__"):
+                result = await result
+        finally:
+            self.waited += time.monotonic() - started
         return result if isinstance(result, Decision) else Decision(bool(result))
 
     def remember(self, confirmation: ToolConfirmation) -> None:

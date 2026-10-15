@@ -687,6 +687,7 @@ class TUI:
             self.console.print(Panel(Group(*parts), title=Text(f" {title.split(chr(10))[0]} ", style=f"bold {danger}"), title_align="left",
                                      border_style=danger, box=box.ROUNDED, padding=(0, 1)))
             self._phase = "Waiting for your answer"
+            self.console.bell()  # a run that waits unnoticed for minutes looks stuck
             choice = await ask_choice(self.console, q, ["Yes", always, "No, and tell me what to do differently"])
             if choice < 2:  # answer at once, the command itself may take a while
                 self.console.print(Text("  ▸ approved, running…", style=MINT))

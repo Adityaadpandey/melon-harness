@@ -72,6 +72,7 @@ class TaskState:
     review: dict | None = None  # {verdict, findings} from the independent reviewer
     grounding: dict | None = None  # {checked, unverified[]}: file references in the final answer vs the real tree
     started: float = field(default_factory=time.monotonic)
+    paused: float = 0.0  # seconds spent waiting for the user (approval prompts), left out of the time budget
 
     def __post_init__(self) -> None:
         self.tracer.emit("task_start", task=self.id, request=self.request[:300])
@@ -81,10 +82,10 @@ class TaskState:
         return self.status in TERMINAL
 
     def remaining(self) -> float:
-        return max(0.0, self.max_seconds - (time.monotonic() - self.started))
+        return max(0.0, self.max_seconds - (time.monotonic() - self.started - self.paused))
 
     def expired(self) -> bool:
-        return time.monotonic() - self.started > self.max_seconds
+        return self.remaining() <= 0
 
     def transition(self, to: TaskStatus, note: str = "") -> None:
         if to not in _ALLOWED.get(self.status, set()):

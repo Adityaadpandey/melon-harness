@@ -179,6 +179,7 @@ class Agent:
             max_seconds=self.config.max_seconds,
             max_repairs=self.config.max_repairs,
         )
+        self._waited_base = self.session.approval_manager.waited
         before = await snapshot(self.config.cwd)
         backup_ref = await backup(self.config.cwd) if before is not None else None
         final_response: str | None = None
@@ -322,9 +323,12 @@ class Agent:
 
         loop_warnings = 0
         for turn_num in range(max_turns):
+            # minutes spent on an approval prompt are the user's, not the agent's: they never use up the budget
+            task.paused = self.session.approval_manager.waited - self._waited_base
             if task.expired():
-                self._failed = True
-                yield AgentEvent.agent_error(f"Time budget of {self.config.max_seconds:.0f}s exhausted")
+                # out of time: answer from what is known instead of failing with nothing to show
+                async for ev in self._wrap_up(task, f"Time budget reached ({self.config.max_seconds:.0f}s)", "The time budget is spent"):
+                    yield ev
                 return
             limit = self._call_limit()
             if limit and self._calls_used >= limit:
