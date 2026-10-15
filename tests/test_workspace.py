@@ -134,3 +134,34 @@ async def test_fetch_refuses_redirect_to_localhost(monkeypatch):
     monkeypatch.setattr(httpx, "AsyncClient", lambda **kw: real(transport=httpx.MockTransport(handler), **kw))
     r = await WebFetchTool(Config(cwd=".")).execute(ToolInvocation(params={"url": "https://public.example/x"}, cwd=__import__("pathlib").Path(".")))
     assert not r.success and "Blocked" in r.error
+
+
+@pytest.mark.parametrize("cmd", ["cd /; cat etc/passwd", "cd && cat .ssh/config", "cd ~ ; ls", "cd - ; ls", "if true; then cd /; fi"])
+def test_a_shell_may_not_cd_out_of_the_workspace(ws, cmd):
+    assert "leaves the workspace" in Workspace(ws).shell_violation(cmd), cmd
+
+
+def test_cd_inside_the_workspace_or_to_temp_is_fine(ws):
+    for cmd in ["cd src && ls", "cd /tmp && ls", "cd ./src; pwd"]:
+        assert Workspace(ws).shell_violation(cmd) is None, cmd
+
+
+def test_secret_files_are_protected_in_every_spelling_but_templates_stay_readable(ws):
+    c = Config(cwd=ws)
+    for cmd in ["git show HEAD:.env", "git show HEAD:apps/prod.env", "cat .npmrc", "cat deploy/credentials.json", "cat .env.staging"]:
+        assert violation("shell", {"command": cmd}, c), cmd
+    for path in [".env.example", "apps/.env.sample", "src/environment.py"]:
+        assert violation("read_file", {"path": path}, c) is None, path
+
+
+@pytest.mark.skipif(not sandbox.available(), reason="needs macOS sandbox-exec")
+def test_os_sandbox_hides_workspace_secrets_from_any_command(ws):
+    (ws / ".env").write_text("API_KEY=sk-SECRET\n")
+    (ws / ".env.example").write_text("API_KEY=\n")
+    (ws / "src" / "prod.env").write_text("TOKEN=sk-SECRET\n")
+    cfg = Config(cwd=ws)
+    for script in ["grep -r KEY .", "cat .e*", "cat $(printf .en)v", "python3 -c 'print(open(\".env\").read())'", "cat src/prod.env"]:
+        r = subprocess.run(sandbox.wrap(["/bin/bash", "-c", script], cfg), cwd=ws, capture_output=True, text=True)
+        assert "SECRET" not in r.stdout + r.stderr, script
+    r = subprocess.run(sandbox.wrap(["/bin/cat", ".env.example"], cfg), cwd=ws, capture_output=True, text=True)
+    assert r.returncode == 0 and "API_KEY=" in r.stdout

@@ -12,6 +12,8 @@ from typing import Any
 from safety.workspace import Workspace
 
 PATH_KEYS = {"path", "file_path", "cwd", "directory", "dir", "paths", "source", "destination"}
+# templates document which secrets exist without holding any: .env.example stays readable while .env.prod is not
+TEMPLATE_SUFFIXES = (".example", ".sample", ".template", ".dist")
 
 
 def is_forbidden_path(path: str | Path, patterns: list[str]) -> str | None:
@@ -20,6 +22,8 @@ def is_forbidden_path(path: str | Path, patterns: list[str]) -> str | None:
         return None
     for part in Path(str(path)).parts:
         low = part.lower()
+        if low.endswith(TEMPLATE_SUFFIXES):
+            continue
         for pat in patterns:
             if fnmatch.fnmatch(low, pat.lower()):
                 return pat
@@ -31,10 +35,11 @@ def _tokens(command: str) -> list[str]:
         toks = shlex.split(command, posix=True)
     except ValueError:
         toks = command.split()
-    # also split on redirections / pipes glued to words, e.g. "cat<.env"
+    # also split on redirections / pipes glued to words ("cat<.env") and on git's
+    # rev:path spelling, which reads a file out of history ("git show HEAD:.env")
     out: list[str] = []
     for t in toks:
-        out.extend(x for x in re.split(r"[<>|;&=]", t) if x)
+        out.extend(x for x in re.split(r"[<>|;&=:]", t) if x)
     return out
 
 

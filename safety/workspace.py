@@ -11,6 +11,10 @@ from pathlib import Path
 SENSITIVE_ROOTS = ("/etc", "/private/etc", "/root", "/var/root", "/Users", "/home", "/Volumes", "/mnt", "/media")
 
 # command text that names a path: ~, $HOME, absolute paths (not URLs), and ../ traversal
+# `cd` and `pushd` with their target, which may be missing (plain `cd` goes home)
+_CD_RE = re.compile(r"(?:^|[;&|(]|\b(?:then|do))\s*(?:cd|pushd)(?:\s+(?P<to>[^\s;&|)]+))?\s*(?=$|[;&|)])")
+TEMP_DIRS = ("/tmp", "/private/tmp", "/var/folders", "/private/var/folders", "/var/tmp", "/private/var/tmp")
+
 _PATH_RE = re.compile(
     r"""(?x)
     (?P<home>(?<![\w$])~(?:/[^\s"';|&<>()`]*)?)
@@ -51,6 +55,17 @@ class Workspace:
         workspace. Static analysis only: the OS sandbox is the backstop for
         anything built dynamically ($(...), eval, encoded paths)."""
         base = _real(cwd or self.root)
+        for m in _CD_RE.finditer(command):
+            # after `cd /` every relative path ("cat etc/passwd") means something else, so a shell
+            # may only move inside the workspace or into a temp dir. Plain `cd` and `cd -` count as leaving.
+            to = (m.group("to") or "~").strip("'\"")
+            target = _real(base / os.path.expanduser(to.replace("$HOME", "~").replace("${HOME}", "~"))) if to != "-" else self.home
+            inside = any(target == r or target.is_relative_to(r) for r in self.roots)
+            # a temp dir is fine unless it holds home or the workspace (`cd /private/var` is not a scratch dir)
+            temp = any(target.is_relative_to(_real(t)) for t in TEMP_DIRS) and not (
+                self.home.is_relative_to(target) or self.root.is_relative_to(target))
+            if not (inside or temp):
+                return f"'cd {to}' leaves the workspace {self.root}; run the command from inside it"
         for m in _PATH_RE.finditer(command):
             raw = m.group(0)
             expanded = raw.replace("${HOME}", str(self.home)).replace("$HOME", str(self.home))

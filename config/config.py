@@ -148,8 +148,11 @@ class Config(BaseModel):
     # forbidden_paths are fnmatch globs on file names; forbidden_commands are
     # regexes tried against shell commands.
     forbidden_paths: list[str] = Field(
-        default_factory=lambda: [".env", ".env.local", ".env.development", ".env.production", ".env.staging",
-                                 ".env.test", ".env.*.local", "*.pem", "*.key", "id_rsa*", "id_ed25519*", "*.p12"]
+        default_factory=lambda: [
+            ".env", ".env.*", "*.env",  # .env.example and other templates stay readable, see is_forbidden_path
+            "*.pem", "*.key", "*.p12", "*.pfx", "*.jks", "*.keystore", "id_rsa*", "id_ed25519*", "id_ecdsa*", "id_dsa*",
+            ".npmrc", ".pypirc", ".netrc", ".git-credentials", ".htpasswd", "credentials.json", "service-account*.json", "*.tfvars",
+        ]
     )
     forbidden_commands: list[str] = Field(default_factory=list)
     profile: str | None = None

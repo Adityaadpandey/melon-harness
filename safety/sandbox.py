@@ -7,6 +7,7 @@ read credential stores (~/.ssh, ~/.aws, ...), however the path is spelled."""
 from __future__ import annotations
 
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -21,6 +22,9 @@ DEFAULT_WRITE_EXTRA = [
 SECRET_READ_DENY = [
     "~/.ssh", "~/.aws", "~/.gnupg", "~/.azure", "~/.kube", "~/.config/gcloud", "~/.config/gh",
     "~/.docker/config.json", "~/.netrc", "~/.npmrc", "~/.git-credentials", "~/Library/Keychains",
+    "~/.codex", "~/.claude", "~/.config/claude", "~/.pypirc", "~/.vault-token", "~/.password-store", "~/.terraform.d",
+    "~/.cargo/credentials.toml", "~/.gem/credentials", "~/.config/hub",
+    "~/Library/Application Support/ai-agent", "~/.local/share/ai-agent", "~/.config/ai-agent",  # mew's own config and traces
 ]
 TEMP_WRITE = ["/private/tmp", "/tmp", "/private/var/folders", "/private/var/tmp"]
 
@@ -42,16 +46,29 @@ def available() -> bool:
         return False
 
 
+def _name_regex(glob: str) -> str:
+    """A file-name glob as a sandbox regex on the last part of a path, any letter case.
+    Example: ".env.*" -> "/\\.[eE][nN][vV]\\.[^/]*(/.*)?$", which also covers everything inside a matching folder."""
+    out = ""
+    for ch in glob:
+        out += "[^/]*" if ch == "*" else "[^/]" if ch == "?" else f"[{ch.lower()}{ch.upper()}]" if ch.isalpha() else re.escape(ch)
+    return f"/{out}(/.*)?$"
+
+
 def build_profile(config) -> str:
     writable = [config.cwd, *config.allowed_dirs, *TEMP_WRITE, *DEFAULT_WRITE_EXTRA, *config.sandbox_write_extra]
     allow = " ".join(f'(subpath "{_sb(p)}")' for p in writable)
     deny = " ".join(f'(subpath "{_sb(p)}")' for p in SECRET_READ_DENY)
+    # the workspace's own secret files too, however the command reaches them: `grep -r KEY .` or `cat .e*`
+    names = " ".join(f'(regex #"{_name_regex(g)}")' for g in config.forbidden_paths if '"' not in g)
+    templates = '(regex #"\\.(example|sample|template|dist)$")'
     return (
         "(version 1)(allow default)"
         "(deny file-write*)"
         f"(allow file-write* {allow} (literal \"/dev/null\") (literal \"/dev/tty\") "
         '(regex #"^/dev/(fd/[0-9]+|std(out|err|in)|ttys?[0-9]*)$"))'
         f"(deny file-read* {deny})"
+        + (f"(deny file-read* {names})(allow file-read* {templates})" if names else "")
     )
 
 
