@@ -57,11 +57,13 @@ async def test_pipeline_runs_reviewers_then_verifiers_and_hands_the_main_agent_o
     monkeypatch.setattr(rp, "ask", fake_ask)
     cfg = Config(pi_mode=True, cwd=tmp_path, approval=ApprovalPolicy.AUTO, auto_verify=False)
     async with Agent(cfg) as agent:
-        agent.session.client = ScriptedClient([text("HIGH a.ts:1  write can 500 the page -> catch")])
+        agent.session.client = ScriptedClient([])  # the answer is built from the verified findings: the model is not called again
         events = [e async for e in agent.run("review the changes")]
         notices = [e.data.get("message", "") for e in events if e.type == AgentEventType.NOTICE]
         assert any("Reviewing 1 changed file" in n for n in notices) and any("1 confirmed, 1 rejected" in n for n in notices)
-        assert len(agent.session.client.requests) == 1  # a read-only review is answered in one plain call: no tool loop after the pipeline
+        assert agent.session.client.requests == []  # a read-only review is not followed by a model call or a tool loop
+        done = [e.data.get("content") for e in events if e.type == AgentEventType.TEXT_COMPLETE]
+        assert done == ["HIGH a.ts:1  write can throw and 500 the page -> catch\n1 more claim(s) were ruled out by the verifier."]
         sent = " ".join(str(m.content) for m in agent.session.context_manager._messages if m.role == "user")
         assert "[confirmed] HIGH a.ts:1" in sent and "[rejected] a.ts:1" in sent
     assert [r for r, p in prompts if "claims these defects" in p] == ["default"]  # ONE verifier, on the fast model
@@ -107,3 +109,32 @@ async def test_pipeline_sub_agents_do_not_spawn_their_own_challengers_or_scouts(
     cfg = Config(pi_mode=True, cwd=tmp_path, approval=ApprovalPolicy.AUTO, auto_challenge=True, auto_scout=True)
     await rp.ask(cfg, "p", "review", 4, 5000)
     assert seen["cfg"].auto_challenge is False and seen["cfg"].auto_scout is False and seen["cfg"].review_pipeline is False
+
+
+def test_format_answer_is_one_line_per_finding_caps_unproven_ones_and_says_when_nothing_is_left():
+    f = [
+        rp.Finding("HIGH", "a.ts:4", "insert 500s the list", "catch", "CONFIRMED"),
+        rp.Finding("HIGH", "b.ts:9", "guessed race", "lock", "UNCLEAR"),
+        rp.Finding("MEDIUM", "c.ts:1", "redundant chain", "collapse", "REJECTED"),
+    ]
+    assert rp.format_answer(f).splitlines() == ["HIGH a.ts:4  insert 500s the list -> catch", "MEDIUM (unverified) b.ts:9  guessed race -> lock", "1 more claim(s) were ruled out by the verifier."]
+    assert rp.format_answer([]) == "No issues found."
+    assert rp.format_answer([rp.Finding("LOW", "c.ts:1", "x", "", "REJECTED")]).startswith("No issues found. The verifier ruled out 1")
+
+
+async def test_a_reviewer_that_returns_nothing_is_a_failure_and_the_normal_review_loop_runs(tmp_path, monkeypatch):
+    subprocess.run("git init -q && git config user.email a@b.c && git config user.name t", shell=True, cwd=tmp_path)
+    (tmp_path / "a.ts").write_text("x\n")
+    subprocess.run("git add . && git commit -qm init", shell=True, cwd=tmp_path)
+    (tmp_path / "a.ts").write_text("y\n")
+
+    async def dead_ask(*a, **k):
+        return ""  # a crashed or stopped reviewer
+
+    monkeypatch.setattr(rp, "ask", dead_ask)
+    cfg = Config(pi_mode=True, cwd=tmp_path, approval=ApprovalPolicy.AUTO, auto_verify=False)
+    async with Agent(cfg) as agent:
+        agent.session.client = ScriptedClient([text("HIGH a.ts:1  found by the normal loop -> fix")])
+        events = [e async for e in agent.run("review the changes")]
+        done = [e.data.get("content") for e in events if e.type == AgentEventType.TEXT_COMPLETE]
+        assert done == ["HIGH a.ts:1  found by the normal loop -> fix"]  # not a false "No issues found"

@@ -131,6 +131,20 @@ def compose(findings: list[Finding], reviewers: int) -> str:
     return "\n".join(lines)
 
 
+def format_answer(findings: list[Finding]) -> str:
+    """The review a user reads, built from the verified findings with no model call: one line each, rejected ones dropped."""
+    live = sorted((f for f in findings if f.verdict != "REJECTED"), key=lambda f: SEVERITY_ORDER[f.severity])
+    lines = []
+    for f in live:
+        proven = f.verdict == "CONFIRMED"
+        sev = f.severity if proven else ("MEDIUM" if f.severity in ("CRITICAL", "HIGH") else f.severity)  # an unproven claim is at most MEDIUM
+        lines.append(f"{sev}{'' if proven else ' (unverified)'} {f.where}  {f.what}" + (f" -> {f.fix}" if f.fix else ""))
+    ruled_out = sum(f.verdict == "REJECTED" for f in findings)
+    if not lines:
+        return "No issues found." + (f" The verifier ruled out {ruled_out} claim(s)." if ruled_out else "")
+    return "\n".join(lines) + (f"\n{ruled_out} more claim(s) were ruled out by the verifier." if ruled_out else "")
+
+
 async def ask(config, prompt: str, role: str, max_turns: int, max_tokens: int, disabled_skills: list[str] | None = None) -> str:
     """One read-only sub-agent with its own context; returns its last text. A crash or a stop is an empty answer, never an error."""
     from agent.agent import Agent
@@ -169,14 +183,19 @@ async def run_review_pipeline(config, request: str) -> AsyncGenerator[tuple[str,
     yield "notice", f"Reviewing {len(files)} changed file(s)" + (f" with {len(groups)} reviewers in parallel" if len(groups) > 1 else "")
     role = config.review_pipeline_role
 
-    async def review(name: str, fs: list[str]) -> list[Finding]:
+    async def review(name: str, fs: list[str]) -> list[Finding] | None:
         diff = whole if len(groups) == 1 else await build_diff(cwd, fs)
         others = ", ".join(f for f in files if f not in fs)[:600] or "(none)"
         scope = "the whole uncommitted change" if len(groups) == 1 else f"one part ({name}) of an uncommitted change that {len(groups)} reviewers split"
         prompt = REVIEWER_PROMPT.format(scope=scope, request=request[:1500], part=", ".join(fs[:25]), others=others, diff=diff)
-        return parse_findings(await ask(config, prompt, role, max_turns=8, max_tokens=config.review_pipeline_tokens))
+        reply = await ask(config, prompt, role, max_turns=8, max_tokens=config.review_pipeline_tokens)
+        return parse_findings(reply) if reply.strip() else None
 
-    found = [f for part in await asyncio.gather(*(review(n, fs) for n, fs in groups)) for f in part]
+    replies = await asyncio.gather(*(review(n, fs) for n, fs in groups))
+    if all(r is None for r in replies):
+        yield "notice", "The reviewer gave no answer; reviewing without the pipeline"
+        return  # an empty answer is a failure, not "no defects": the normal review loop takes over
+    found = [f for part in replies if part for f in part]
     found.sort(key=lambda f: SEVERITY_ORDER[f.severity])
     to_check, extra = found[:MAX_VERIFIED], found[MAX_VERIFIED:]  # past the cap a finding stays unchecked and is reported as unverified
     if to_check:
@@ -189,4 +208,5 @@ async def run_review_pipeline(config, request: str) -> AsyncGenerator[tuple[str,
         f.verdict = "UNCHECKED"
     confirmed = sum(f.verdict == "CONFIRMED" for f in found)
     yield "notice", f"Verified: {confirmed} confirmed, {sum(f.verdict == 'REJECTED' for f in found)} rejected, {len(found) - confirmed - sum(f.verdict == 'REJECTED' for f in found)} unverified"
+    yield "answer", format_answer(found)
     yield "result", compose(found, len(groups))

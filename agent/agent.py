@@ -84,6 +84,7 @@ class Agent:
         self._read_only = False
         self._todos_reminded = ""
         self._pipelined = False
+        self._pipeline_answer = ""
         self._budget_warned = False
         self._uncached_streak = 0
         self._usage_base = 0
@@ -117,11 +118,14 @@ class Agent:
         else:
             message_for_model = message
         self._pipelined = False
+        self._pipeline_answer = ""
         if self.config.review_pipeline and self.config.model_role == "default" and REVIEWY.search(message) and not NAMED_SCOPE.search(message):
             results = ""
             async for kind, value in run_review_pipeline(self.config, message):
                 if kind == "notice":
                     yield AgentEvent.notice(value)
+                elif kind == "answer":
+                    self._pipeline_answer = value
                 else:
                     results = value
             self._pipelined = bool(results)
@@ -355,9 +359,11 @@ class Agent:
 
     async def _agentic_loop(self, task: TaskState) -> AsyncGenerator[AgentEvent, None]:
         if self._pipelined and self._read_only:
-            # the reviewer and verifier already read the code: a plain answer from their results, no tool loop to wander in
-            async for ev in self._answer_without_tools(task):
-                yield ev
+            # the reviewer and verifier already read the code, and each finding is already one line: no model call, no tool loop to wander in
+            text = self._pipeline_answer
+            self.session.context_manager.add_assistant_message(text, None)
+            yield AgentEvent.text_delta(text)
+            yield AgentEvent.text_complete(text)
             return
         max_turns = self.config.max_turns
 
