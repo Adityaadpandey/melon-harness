@@ -264,6 +264,7 @@ _PI_SNIPPETS = {
     "grep": "Search file contents for patterns (respects .gitignore)",
     "glob": "Find files by glob pattern (respects .gitignore)",
     "list_dir": "List directory contents",
+    "todos": "Step list for 3+ step work: `set` all steps with done flags in one call",
     "graph": "Who calls a symbol, what a change breaks, how two parts connect (prebuilt code graph; one call replaces several greps)",
 }
 

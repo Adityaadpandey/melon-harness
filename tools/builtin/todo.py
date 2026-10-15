@@ -4,10 +4,16 @@ from tools.base import Tool, ToolInvocation, ToolKind, ToolResult
 from pydantic import BaseModel, Field
 
 
+class TodoItem(BaseModel):
+    content: str
+    done: bool = False
+
+
 class TodosParams(BaseModel):
-    action: str = Field(..., description="Action: 'add', 'complete', 'list', 'clear'")
+    action: str = Field(..., description="Action: 'set' (replace the whole list in one call), 'add', 'complete', 'list', 'clear'")
     id: str | None = Field(None, description="Todo ID (for complete)")
     content: str | None = Field(None, description="Todo content (for add)")
+    items: list[TodoItem] | None = Field(None, description="The full list, for 'set': every step with done true/false. One call replaces many add/complete calls")
 
 
 class TodosTool(Tool):
@@ -24,10 +30,20 @@ class TodosTool(Tool):
         """(content, done) in creation order, for the live checklist in the UI."""
         return [(t["content"], t["done"]) for t in self._todos.values()]
 
+    def render(self) -> str:
+        """The list as plain text, so it can be put back into the conversation after old results are cleared."""
+        return "\n".join(f"[{'x' if t['done'] else ' '}] {t['content']}" for t in self._todos.values())
+
     async def execute(self, invocation: ToolInvocation) -> ToolResult:
         params = TodosParams(**invocation.params)
 
-        if params.action.lower() == "add":
+        if params.action.lower() == "set":
+            if not params.items:
+                return ToolResult.error_result("`items` required for 'set' action")
+            self._todos = {str(i + 1): {"content": it.content, "done": it.done} for i, it in enumerate(params.items)}
+            done = sum(it.done for it in params.items)
+            return ToolResult.success_result(f"Todo list set: {len(params.items)} steps, {done} done")
+        elif params.action.lower() == "add":
             if not params.content:
                 return ToolResult.error_result("`content` required for 'add' action")
             todo_id = str(uuid.uuid4())[:8]

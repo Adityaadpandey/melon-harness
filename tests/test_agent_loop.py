@@ -480,3 +480,15 @@ async def test_a_review_near_the_call_cap_is_told_to_verify_its_top_two_candidat
         await run(agent, "review the files")
         said = [m.content or "" for m in agent.session.context_manager._messages if m.role == "user"]
         assert any("two candidates most likely to be real defects" in c for c in said)
+
+
+async def test_todo_set_replaces_the_list_in_one_call_and_survives_a_clear(cfg):
+    async with Agent(cfg) as agent:
+        todos = agent.session.tool_registry.get("todos")
+        res = await todos.execute(type("I", (), {"params": {"action": "set", "items": [{"content": "read diff", "done": True}, {"content": "fix bug"}]}})())
+        assert res.success and "2 steps, 1 done" in res.output
+        agent._remind_todos()
+        said = [m.content or "" for m in agent.session.context_manager._messages if m.role == "user"]
+        assert any("[x] read diff" in c and "[ ] fix bug" in c for c in said)
+        agent._remind_todos()  # unchanged list: not repeated
+        assert sum("Task list (still current" in (m.content or "") for m in agent.session.context_manager._messages) == 1

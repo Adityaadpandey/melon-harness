@@ -81,6 +81,7 @@ class Agent:
         self._calls_used = 0
         self._calls_warned = False
         self._read_only = False
+        self._todos_reminded = ""
         self._budget_warned = False
         self._uncached_streak = 0
         self._usage_base = 0
@@ -560,7 +561,7 @@ class Agent:
                     )
 
             self._last_model_call = time.monotonic()
-            self._prune()
+            self._prune(remind=True)
         async for ev in self._wrap_up(task, f"Turn limit reached ({max_turns})", "Turn limit reached"):
             yield ev
 
@@ -652,13 +653,24 @@ class Agent:
             return
         self._last_model_call = 0.0
         before = cm._latest_usage.total_tokens
-        self._prune()
+        self._prune(remind=True)
         if before > self.config.idle_compact_at_tokens and await self._compact():
             yield AgentEvent.notice(f"Cache had expired: compacted {before // 1000}k of context before the first call")
 
-    def _prune(self) -> None:
+    def _remind_todos(self) -> None:
+        """Old results get cleared and history gets folded, but the task list is small and still the plan:
+        put it back after a clear so the agent does not rediscover what is left to do."""
+        todos = self.session.tool_registry.get("todos")
+        text = todos.render() if todos else ""
+        if text and "[ ]" in text and text != self._todos_reminded:
+            self._todos_reminded = text
+            self.session.context_manager.add_user_message(f"Task list (still current; old tool results were cleared):\n{text}")
+
+    def _prune(self, remind: bool = False) -> None:
         cm = self.session.context_manager
         if cm.prune_tool_outputs():
+            if remind:
+                self._remind_todos()
             # only the files whose text was cleared are forgotten; files still in context are not sent again
             reg = self.session.tool_registry
             reader = reg.get("read_file")
@@ -674,6 +686,7 @@ class Agent:
         before = cm._latest_usage.total_tokens
         self.session.tool_registry.epoch += 1  # earlier reads are no longer in context
         cm.apply_compaction(summary, cut)
+        self._remind_todos()
         cm.set_latest_usage(usage)
         cm.add_usage(usage)
         self.session.tracer.emit("compaction", cut=cut, tokens_before=before, summary_tokens=usage.completion_tokens if usage else None)
