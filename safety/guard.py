@@ -43,7 +43,18 @@ def _tokens(command: str) -> list[str]:
     return out
 
 
+# tools that only look: they may open skill files outside the workspace, nothing else
+READ_TOOLS = {"read_file", "list_dir", "grep", "glob", "outline"}
+
 BUILTIN_TOOLS = {"read_file", "write_file", "edit", "shell", "list_dir", "grep", "search", "outline", "git", "glob", "web_search", "web_fetch", "todos", "memory", "use_skill", "graph", "parallel_tasks"}
+
+
+def _in_skill_dir(path: str, config) -> bool:
+    from agent.skills import skill_roots
+
+    real = Path(path).expanduser()
+    real = (real if real.is_absolute() else Path(config.cwd) / real).resolve()
+    return any(real == r or real.is_relative_to(r) for r in skill_roots(config))
 
 
 def violation(tool_name: str, params: dict[str, Any], config) -> str | None:
@@ -55,7 +66,7 @@ def violation(tool_name: str, params: dict[str, Any], config) -> str | None:
             for v in value if isinstance(value, list) else [value]:
                 if not isinstance(v, str):
                     continue
-                if not ws.contains(v):
+                if not ws.contains(v) and not (tool_name in READ_TOOLS and _in_skill_dir(v, config)):
                     return f"path '{v}' is outside the workspace ({ws.root}). Work inside the workspace, or ask the user to add the directory with --add-dir"
                 if hit := is_forbidden_path(v, paths):
                     return f"path '{v}' matches protected pattern '{hit}'"

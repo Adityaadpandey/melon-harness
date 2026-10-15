@@ -2,7 +2,7 @@ from pathlib import Path
 
 
 def resolve_path(base: str | Path, path: str | Path):
-    path = Path(path)
+    path = Path(path).expanduser()  # skill locations are shown as ~/... to keep the prompt short
     if path.is_absolute():
         return path.resolve()
 

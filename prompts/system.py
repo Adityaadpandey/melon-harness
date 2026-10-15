@@ -7,6 +7,7 @@ from datetime import datetime
 import os
 import platform
 import sys
+from pathlib import Path
 
 from config.config import Config
 from tools.base import Tool
@@ -263,7 +264,20 @@ _PI_SNIPPETS = {
     "grep": "Search file contents for patterns (respects .gitignore)",
     "glob": "Find files by glob pattern (respects .gitignore)",
     "list_dir": "List directory contents",
+    "graph": "Who calls a symbol, what a change breaks, how two parts connect (prebuilt code graph; one call replaces several greps)",
 }
+
+
+def _skill_rows(skills: list) -> str:
+    """Skills grouped by folder, so a long plugin path is written once instead of once per skill.
+    Example:  ~/.claude/plugins/.../superpowers/6.1.1/skills/
+                - brainstorming/SKILL.md: Use before any creative work"""
+    home, groups = str(Path.home()), {}
+    for k in skills:
+        base = k.path.parent.parent if k.path.name == "SKILL.md" else k.path.parent
+        desc = k.description if len(k.description) <= 90 else k.description[:87].rsplit(" ", 1)[0] + "..."
+        groups.setdefault(str(base).replace(home, "~", 1), []).append(f"- {k.path.relative_to(base)}: {desc}")
+    return "\n".join(f"{base}/\n" + "\n".join(rows) for base, rows in groups.items())
 
 
 def _pi_prompt(config: Config, tools: list[Tool] | None, skills: list | None) -> str:
@@ -292,20 +306,18 @@ def _pi_prompt(config: Config, tools: list[Tool] | None, skills: list | None) ->
     context = [i for i in (config.developer_instructions, config.user_instructions) if i]
     if context:
         prompt += "\n\n<project_context>\n\nProject-specific instructions and guidelines:\n\n" + "\n\n".join(context) + "\n\n</project_context>"
+    # always-on skills (ponytail, typescript, ...) are rules for every reply, so they are inlined, not listed
+    prompt += "".join(f"\n\n{k.body}" for k in skills or [] if getattr(k, "always", False) and getattr(k, "body", None))
     if config.repo_map:
         from utils.repomap import build
 
         if repo := build(config.cwd):
             prompt += f"\n\nMost-imported files first, with their top-level symbols:\n<repo_map>\n{repo}\n</repo_map>"
-    listed = [k for k in skills or [] if getattr(k, "path", None) and "read_file" in names]
+    listed = [k for k in skills or [] if getattr(k, "path", None) and not getattr(k, "always", False) and "read_file" in names]
     if listed:
-        rows = "\n".join(
-            f"  <skill>\n    <name>{k.name}</name>\n    <description>{k.description}</description>\n    <location>{k.path}</location>\n  </skill>"
-            for k in listed
-        )
         prompt += (
             "\n\nThe following skills provide specialized instructions for specific tasks.\n"
             "Use the read_file tool to load a skill's file when the task matches its description.\n\n"
-            f"<available_skills>\n{rows}\n</available_skills>"
+            f"<available_skills>\n{_skill_rows(listed)}\n</available_skills>"
         )
     return prompt + f"\nCurrent working directory: {config.cwd}"

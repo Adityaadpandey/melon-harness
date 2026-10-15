@@ -16,6 +16,8 @@ the full document in the repo; the agent pulls single sections of it on demand
 (use_skill with `section`) so an 80KB runbook never lands in context whole."""
 from __future__ import annotations
 
+import itertools
+import json
 import re
 from dataclasses import dataclass, field
 from functools import lru_cache
@@ -23,7 +25,6 @@ from pathlib import Path
 
 PROFILES_DIR = Path(__file__).resolve().parent.parent / "profiles"
 BUILTIN_DIR = Path(__file__).resolve().parent.parent / "skills"  # ship with the harness, apply to every project
-USER_DIRS = (Path.home() / ".pi" / "agent" / "skills",)  # shared with pi: <name>/SKILL.md folders
 SECTION_CAP = 14_000
 AUTO_LOAD_CAP = 9_000  # total chars of playbooks auto-injected per request
 
@@ -43,22 +44,40 @@ class Skill:
         return sum(1 for t in self.triggers if re.search(rf"(?<!\w){re.escape(t.lower())}", low))
 
 
+def _user_dirs() -> tuple[list[Path], list[Path]]:
+    """Skill folders shared with other agents, as (below mew's built-ins, above them).
+    Claude Code's (plugins, then ~/.claude/skills) rank below, so mew's compact always-on ponytail
+    beats the plugin's longer Claude Code one; pi's folder ranks above, as it always has."""
+    home = Path.home()
+    below = []
+    try:
+        plugins = json.loads((home / ".claude" / "plugins" / "installed_plugins.json").read_text())["plugins"]
+        below = [Path(v[-1]["installPath"]) / "skills" for v in plugins.values() if v]  # the newest install of each
+    except (OSError, ValueError, KeyError, TypeError):
+        pass
+    return [*below, home / ".claude" / "skills"], [home / ".pi" / "agent" / "skills"]
+
+
 def parse_skill(text: str, path: Path | None = None) -> Skill | None:
     m = re.match(r"---\n(.*?)\n---\n(.*)", text, re.S)
     if not m:
         return None
     meta = {}
-    for line in m.group(1).splitlines():
-        if ":" in line:
+    lines = m.group(1).splitlines()
+    for i, line in enumerate(lines):
+        if ":" in line and not line[:1].isspace():
             k, v = line.split(":", 1)
-            meta[k.strip()] = v.split("  #")[0].strip()
+            v = v.split("  #")[0].strip()
+            if v in ("|", ">", "|-", ">-"):  # a YAML block: the value is the indented lines below it
+                v = " ".join(x.strip() for x in itertools.takewhile(lambda x: not x or x[:1].isspace(), lines[i + 1:]))
+            meta[k.strip()] = v.strip().strip("'\"")
     if "name" not in meta:
         return None
     return Skill(
         name=meta["name"],
         description=meta.get("description", ""),
         body=m.group(2).strip(),
-        triggers=[t.strip() for t in meta.get("triggers", "").split(",") if t.strip()],
+        triggers=[t.strip() for t in (meta.get("triggers") or meta.get("trigger", "")).split(",") if t.strip()],
         canonical=meta.get("canonical") or None,
         path=path,
         always=meta.get("always", "").lower() == "true",
@@ -66,8 +85,9 @@ def parse_skill(text: str, path: Path | None = None) -> Skill | None:
 
 
 @lru_cache(maxsize=16)
-def _load(profile: str | None, cwd: str, skill_dirs: tuple[str, ...]) -> tuple[Skill, ...]:
-    dirs: list[Path] = [BUILTIN_DIR, *USER_DIRS]
+def _load(profile: str | None, cwd: str, skill_dirs: tuple[str, ...], home: str) -> tuple[Skill, ...]:
+    shared, pi = _user_dirs()
+    dirs: list[Path] = [*shared, BUILTIN_DIR, *pi]
     if profile:
         dirs.append(PROFILES_DIR / profile / "skills")
     root = Path(cwd)
@@ -77,10 +97,15 @@ def _load(profile: str | None, cwd: str, skill_dirs: tuple[str, ...]) -> tuple[S
         if d.is_dir():
             # flat files (skills/debugging.md) and pi-style folders (skills/review-pr/SKILL.md)
             for f in sorted([*d.glob("*.md"), *d.glob("*/SKILL.md")]):
-                sk = parse_skill(f.read_text(encoding="utf-8"), f)
+                try:
+                    sk = parse_skill(f.read_text(encoding="utf-8", errors="replace"), f)
+                except OSError:  # a broken symlink (an uninstalled skill pack) is skipped, not fatal
+                    continue
                 if sk:
-                    if not sk.triggers and f.name == "SKILL.md" and not sk.always:
-                        sk.triggers = [sk.name, sk.name.replace("-", " ")]  # pi skills carry no trigger words, the name is the hint
+                    # pi skills carry no trigger words, so their name is the hint. Claude Code ones are only
+                    # listed: names like "review" or "ship" would fire on half of all requests.
+                    if not sk.triggers and f.name == "SKILL.md" and not sk.always and d not in shared:
+                        sk.triggers = [sk.name, sk.name.replace("-", " ")]
                     found[sk.name] = sk  # later dirs (repo-local) override profile ones
     if profile:
         # a profile's own playbook (e.g. tunyt-debugging) replaces the generic one it specialises
@@ -92,7 +117,13 @@ def _load(profile: str | None, cwd: str, skill_dirs: tuple[str, ...]) -> tuple[S
 
 def load_skills(config) -> list[Skill]:
     off = set(config.disabled_skills)
-    return [s for s in _load(config.profile, str(config.cwd), tuple(config.skill_dirs)) if s.name not in off]
+    return [s for s in _load(config.profile, str(config.cwd), tuple(config.skill_dirs), str(Path.home())) if s.name not in off]
+
+
+def skill_roots(config) -> list[Path]:
+    """Folders the model may read skill files from, wherever the repo is: each folder skill's own
+    folder (its references come along) and the folders holding flat skill files."""
+    return sorted({s.path.parent.resolve() for s in load_skills(config) if s.path})
 
 
 def match_skills(skills: list[Skill], request: str, limit: int = 2) -> list[Skill]:
