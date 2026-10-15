@@ -658,10 +658,12 @@ class Agent:
         """Read-only requests (review, explain, find) get a hard cap on tool rounds (model turns that call
         tools; parallel calls in one turn count once): a model that is only reading never has to stop by itself, and 63 calls on a 3-commit review is a cost, not thoroughness.
         Requests that change files and sub-agents are not capped here (they have turn and token budgets)."""
-        if not self._read_only or self.config.model_role != "default" or not self.config.read_call_budget:
+        if not self._read_only or self.config.model_role != "default":
             return 0
         if self._pipelined:
-            return 2  # the reviewers and verifiers already read the code: the answer is written from their results
+            return 2  # the reviewers and verifiers already read the code: the answer is written from their results, whatever the usual cap is
+        if not self.config.read_call_budget:
+            return 0
         return self._allowance or self.config.read_call_budget  # after /more: exactly that many more calls
 
     async def _tidy_if_cache_went_cold(self) -> AsyncGenerator[AgentEvent, None]:
