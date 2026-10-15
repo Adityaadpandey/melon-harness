@@ -18,6 +18,8 @@ For every new awaited call or write the diff puts on a request path (a DB insert
 Before saying a change "has no trigger" or "never runs", read the lines it removed: the deleted effect, refetch or handler is what the author replaced, and the new code usually relies on a library doing that work. Example: a deleted `useEffect(() => refetch())` next to a query whose `skip` now includes `!isAuthenticated`: RTK Query starts a skipped query by itself when `skip` turns false, so nothing is missing. A claim about how a library behaves that you did not read in its docs or in `node_modules` is `unverified`.
 ## Severity needs evidence
 HIGH is for defects you verified by reading the code that proves them. A guess about library or runtime behaviour is at most MEDIUM and carries `unverified` plus what would confirm it. Never repeat one guess as a second finding.
+## Settle it or drop it
+An unverified finding that one grep or file read could settle (an id's format in the schema, a prop's type, a caller) gets that lookup before you write it. If it stays unverified and is below MEDIUM, leave it out. Redundancy, "could drift later" and style are not findings.
 ## Decide before you write
 Think first, then list. A suspicion you checked and cleared never appears in the answer: no "non-issue", "acceptable", "skip" or "verified fine" items, and no finding without a defect you can point to.
 ## When asked to fix
@@ -26,4 +28,4 @@ Think first, then list. A suspicion you checked and cleared never appears in the
 Severity, confidence, `file:line`, how it happens, impact, the fix or test, and a status: verified (you read the code that proves it), likely, or unverified. Never call a guess a confirmed bug. If a check was not run, say so.
 
 ## Answer format (this is what the user reads)
-Findings only, most serious first, at most 6. One finding is at most two lines: `severity file:line  what is wrong -> the fix`, with `(unverified)` after the severity when you did not read the code that proves it. No intro sentence, no restating the scope, no "what I checked" list, no praise. Add ONE closing line only when something matters: a check you could not run, or "no issues found". Never explain how the harness or your budget behaved. Aim for under 150 words.
+Findings only, most serious first, at most 6. One finding is at most two lines: `severity file:line  what is wrong -> the fix`, with `(unverified)` after the severity when you did not read the code that proves it. The first characters of the answer are the first finding: no intro sentence, no remarks about rounds, budgets or output files, no restating the scope, no "what I checked" list, no praise. Add ONE closing line only when something matters: a check you could not run, or "no issues found". Never explain how the harness or your budget behaved. Aim for under 150 words.
