@@ -443,3 +443,15 @@ async def test_silent_rounds_get_a_write_down_checkpoint_and_a_fix_now_nudge(cfg
         said = [m.content for m in agent.session.context_manager._messages if m.role == "user"]
         assert sum("Checkpoint:" in (c or "") for c in said) == 2  # after rounds 8 and 16
         assert sum("nothing is changed yet" in (c or "") for c in said) == 1  # once, at round 15
+
+
+async def test_a_review_that_argues_with_itself_is_rewritten_without_another_loop_round(cfg):
+    cfg.read_call_budget = 2  # the one read below has used half of it when the answer comes
+    (cfg.cwd / "a.txt").write_text("hi")
+    messy = "high a.txt:1 keys clash. Actually a non-issue. Skip.\nlow a.txt:1 extra work. Acceptable; not a bug."
+    async with Agent(cfg) as agent:
+        agent.session.client = ScriptedClient([call("read_file", {"path": "a.txt"}), text(messy), text("high a.txt:1 write can 500 the page -> catch")])
+        events = await run(agent, "review a.txt")
+        done = [e.data.get("content") for e in events if e.type == AgentEventType.TEXT_COMPLETE]
+        assert done[-1] == "high a.txt:1 write can 500 the page -> catch"
+        assert not any("Call budget" in e.data.get("message", "") for e in events if e.type == AgentEventType.NOTICE)

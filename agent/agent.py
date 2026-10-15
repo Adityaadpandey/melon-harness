@@ -236,7 +236,11 @@ class Agent:
                 rewrote = True
                 yield AgentEvent.notice("The review argues with itself; asking for a clean rewrite")
                 self.session.context_manager.add_user_message(REWRITE_PROMPT)
-                continue
+                # a plain tool-free answer: re-entering the loop would hit the call cap and ask for a "next step" summary instead
+                async for ev in self._answer_without_tools(task):
+                    yield ev
+                    if ev.type == AgentEventType.TEXT_COMPLETE:
+                        final_response = ev.data.get("content")
 
             if before is None:  # started above the repo and the request did not name it: the files touched tell
                 targets = [e.get("target", "") for e in self.session.tracer.events if e["event"] == "tool_call"]
@@ -578,6 +582,11 @@ class Agent:
             "what is still unknown, and the next step. List every finding with its file:line: this text is all that survives into the next request. "
             "Under 250 words, no preamble. If you were asked for a specific reply format, use it."
         )
+        async for ev in self._answer_without_tools(task):
+            yield ev
+
+    async def _answer_without_tools(self, task: TaskState) -> AsyncGenerator[AgentEvent, None]:
+        """One last model call with no tools, answering from what is already in context."""
         text = ""
         async for event in self.session.client.chat_completion(
             self.session.context_manager.get_messages(), tools=None, role=self._role(task)
