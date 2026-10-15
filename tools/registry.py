@@ -1,3 +1,5 @@
+import os
+import tempfile
 from pathlib import Path
 from typing import Any
 from config.config import Config
@@ -13,6 +15,9 @@ from utils.archive import ResultStore
 from tools.subagents import SubagentTool, get_default_subagent_definitions
 
 logger = logging.getLogger(__name__)
+
+PI_MAX_LINES = 2000
+PI_MAX_BYTES = 50 * 1024
 
 
 # read-only lookups whose answer only changes when something is written; read_file has its own finer dedup
@@ -97,7 +102,7 @@ class ToolRegistry:
             elif name in REUSABLE and result.success and call_id:
                 self._answered[key] = (call_id, self._writes)
         self._note_file_state(name, params, cwd, result)
-        self._cap_output(result)
+        self._cap_output(result, name)
         if self.tracer:
             self.tracer.emit(
                 "tool_call", tool=name, ok=result.success,
@@ -162,9 +167,11 @@ class ToolRegistry:
             if path is not None and (stamp := self._stamp(path)):
                 self._read_state[str(path)] = stamp  # after our own write we know the content too
 
-    def _cap_output(self, result: ToolResult) -> None:
+    def _cap_output(self, result: ToolResult, name: str = "") -> None:
         """One tool result must never be able to eat the context: keep the head
         and the tail (errors and summaries usually live at the end)."""
+        if self.config.pi_mode:
+            return self._pi_cap(result, name)
         limit = self.config.tool_output_max_chars
         out = result.output
         if len(out) > limit:
@@ -176,6 +183,31 @@ class ToolRegistry:
                 + out[-tail:]
             )
             result.truncated = True
+
+    def _pi_cap(self, result: ToolResult, name: str) -> None:
+        """Pi's limit: 2000 lines or 50KB, whichever is hit first, whole lines only. Shell output keeps its
+        tail (the error is at the end); everything else keeps its head. The full text goes to a temp file the
+        model can open, e.g. 'Showing last 2000 of 9120 lines. Full output: /tmp/mew-ab12.log ...'."""
+        lines = result.output.split("\n")
+        kept = lines[-PI_MAX_LINES:] if name == "shell" else lines[:PI_MAX_LINES]
+        if name == "shell":
+            kept = kept[::-1]  # walk from the end so the byte cut drops the oldest lines
+        out, size = [], 0
+        for line in kept:
+            size += len(line.encode("utf-8")) + 1
+            if size > PI_MAX_BYTES and out:
+                break
+            out.append(line)
+        if name == "shell":
+            out.reverse()
+        if len(out) == len(lines):
+            return
+        fd, full = tempfile.mkstemp(prefix="mew-", suffix=".log")
+        with os.fdopen(fd, "w", encoding="utf-8") as f:
+            f.write(result.output)
+        which = "last" if name == "shell" else "first"
+        result.output = "\n".join(out) + f"\n\n[Showing {which} {len(out)} of {len(lines)} lines. Full output: {full} (outside the workspace, so page it with shell: sed -n '1,200p')]"
+        result.truncated = True
 
     async def _invoke(
         self,

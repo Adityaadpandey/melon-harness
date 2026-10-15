@@ -46,3 +46,19 @@ def test_pi_prompt_is_small_and_lists_only_the_tools_given(tmp_path):
     prompt = get_system_prompt(cfg, "remembered", tools, [])
     assert len(tools) == 7 and "- shell:" in prompt and "- git:" not in prompt and "remembered" not in prompt
     assert count_tokens(prompt, cfg.model_name) < 400
+
+
+def test_pi_cap_keeps_the_tail_of_shell_output_and_the_head_of_everything_else(tmp_path):
+    from tools.base import ToolResult
+    from tools.registry import ToolRegistry
+
+    reg = ToolRegistry(Config(cwd=tmp_path))
+    text = "\n".join(f"line{i}" for i in range(1, 3001))
+    sh, rd = ToolResult.success_result(text), ToolResult.success_result(text)
+    reg._cap_output(sh, "shell")
+    reg._cap_output(rd, "grep")
+    assert "line3000" in sh.output and "line1\n" not in sh.output and "Showing last 2000 of 3000 lines" in sh.output
+    assert "line1\n" in rd.output and "line3000" not in rd.output and "Showing first 2000 of 3000 lines" in rd.output
+    small = ToolResult.success_result("a\nb")
+    reg._cap_output(small, "shell")
+    assert small.output == "a\nb"
