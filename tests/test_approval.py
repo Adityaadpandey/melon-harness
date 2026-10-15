@@ -168,3 +168,22 @@ async def test_verify_commands_run_without_asking_but_chains_still_ask(tmp_path)
     assert await decide("pnpm check-types | sh") == ApprovalDecision.NEEDS_CONFIRMATION
     assert await decide("pnpm check-types && rm -rf build") == ApprovalDecision.NEEDS_CONFIRMATION
     assert await decide("pnpm install") == ApprovalDecision.NEEDS_CONFIRMATION
+
+
+def test_everyday_searches_run_without_asking_and_tricks_still_ask():
+    from safety.approval import is_safe_command
+
+    for ok in [
+        'grep -rnE "foo|bar" src', "grep -rn TODO . 2>/dev/null | head -50", "cd src && grep -n def a.py",
+        "rg -n 'fn main' --type rust", "fd -e py src", "sed -n '10,40p' a.py", "ls; pwd", "git log -5 2>&1 | head",
+        'grep -n "a\\"b" f', "tree -L 2", "nl a.py | head",
+    ]:
+        assert is_safe_command(ok), ok
+    for bad in [
+        'find . "|" ls -delete',  # a quoted pipe is an argument: this still deletes
+        "grep x f > out", "grep x f 2>/dev/null > out", "grep x f >/dev/nullx", "cd src && rm a",
+        "rg --pre ./run.sh x", "rg --pre=./run.sh x", "fd -x rm", "sort -ro out f", "sort --output=out f",
+        "sed -n '1w out' a", "sed -n '1e id' a", "sed -i -n 1p a", "sed 1d a", "(rm x)", "ls \; rm x",
+        "grep '$(id)' f", 'grep "x', "tail -qf log", "ls |& sh",
+    ]:
+        assert not is_safe_command(bad), bad

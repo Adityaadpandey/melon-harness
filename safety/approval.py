@@ -95,6 +95,8 @@ _PLAIN_SAFE = {
     "sort": {"-o", "--output"}, "date": {"-s", "--set"}, "uname": set(), "whoami": set(), "id": set(),
     "groups": set(), "uptime": set(), "ps": set(), "pgrep": set(), "cd": set(), "true": set(),
     "find": {"-exec", "-execdir", "-ok", "-okdir", "-delete", "-fprint", "-fprint0", "-fprintf", "-fls"},
+    "rg": {"--pre", "--pre-glob"},  # --pre runs a program on every file
+    "fd": {"-x", "--exec", "-X", "--exec-batch"}, "tree": {"-o"}, "nl": set(),
 }
 # env, printenv and set are left out on purpose: they print every secret in the environment.
 _GIT_READ = {"status", "log", "diff", "show", "blame", "rev-parse", "ls-files", "shortlog", "describe", "grep"}
@@ -103,16 +105,43 @@ _GIT_LISTING = {"branch": {"-a", "-r", "-v", "-vv", "--list", "--show-current", 
 _GIT_BAD_FLAGS = ("--output", "--ext-diff", "--textconv", "--open-files-in-pager", "-c", "-C", "--exec-path", "--git-dir", "--work-tree")
 _PKG_READ = {"npm": {"list", "ls", "outdated"}, "yarn": {"list", "outdated"}, "pnpm": {"list", "ls", "outdated"},
              "pip": {"list", "show", "freeze"}, "cargo": {"tree"}}
+# sed only as a line printer: `sed -n '10,40p' a.py`. Its w and e commands write files and run programs.
+_SED_PRINT = re.compile(r"(\d+|\$)(,(\d+|\$))?p")
+# output thrown away or merged into the pipe writes nothing, so `grep -rn x . 2>/dev/null` stays a read
+_HARMLESS_REDIRECT = re.compile(r"(?:[12&]?>\s*/dev/null|2>&1)(?=[\s|;&]|$)")
 
 
 def split_pipeline(command: str) -> list[list[str]] | None:
-    """The commands of `a | b | c` as word lists, or None when the line does anything beyond
-    piping: chaining (; && ||), background (&), redirects (> <), substitution ($( ), ` `, ${ }),
-    or a second line. Characters inside quotes count too: a refusal here only means "ask"."""
-    if re.search(r"[;&<>`\n\\]|\$[({]|\|\|", command):
+    """The commands of `a | b && c; d` as word lists, or None when the line does more than run
+    commands one after another: a redirect into a file, background (&), substitution ($( ), ` `, ${ }),
+    a subshell, an unquoted backslash or a second line. Quotes are respected, so
+    `grep -E "foo|bar" src` is one command, not a pipe. A refusal here only means "ask"."""
+    if re.search(r"`|\$[({]", command):
+        return None
+    parts, cur, quote, i = [], "", None, 0
+    while i < len(command):
+        c = command[i]
+        if quote:
+            if c == "\\" and quote == '"':  # inside double quotes a backslash only escapes the next character
+                cur, i = cur + command[i:i + 2], i + 2
+                continue
+            quote = None if c == quote else quote
+        elif c in "'\"":
+            quote = c
+        elif m := _HARMLESS_REDIRECT.match(command, i):
+            i = m.end()
+            continue
+        elif op := next((o for o in ("&&", "||", "|", ";") if command.startswith(o, i)), None):
+            parts.append(cur)
+            cur, i = "", i + len(op)
+            continue
+        elif c in "<>&()\\\n":
+            return None
+        cur, i = cur + c, i + 1
+    if quote:
         return None
     out = []
-    for part in command.split("|"):
+    for part in parts + [cur]:
         try:
             words = shlex.split(part)
         except ValueError:
@@ -123,10 +152,21 @@ def split_pipeline(command: str) -> list[list[str]] | None:
     return out
 
 
+def _has_flag(args: list[str], flags: set[str]) -> bool:
+    """Catches every spelling of a flag: `-o`, `--output=x` and `-ro` (short flags bundled together)."""
+    short = {f[1] for f in flags if len(f) == 2 and f[1] != "-"}
+    return any(
+        a in flags or a.split("=", 1)[0] in flags or (a[:1] == "-" and a[1:2] != "-" and short & set(a[1:]))
+        for a in args
+    )
+
+
 def _safe_words(words: list[str]) -> bool:
     name, args = words[0], words[1:]
     if name in _PLAIN_SAFE:
-        return not set(args) & _PLAIN_SAFE[name]
+        return not _has_flag(args, _PLAIN_SAFE[name])
+    if name == "sed":
+        return len(args) >= 2 and args[0] == "-n" and bool(_SED_PRINT.fullmatch(args[1])) and not any(a.startswith("-") for a in args[2:])
     if name == "git":
         if not args or any(a.startswith(_GIT_BAD_FLAGS) for a in args):
             return False
