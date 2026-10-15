@@ -58,9 +58,12 @@ claim says, REJECT it: a wrong consumer is the usual way a plausible claim is fa
 
 Also settle how bad it is. Is the failing state permanent, or does it go away by itself (entries that expire, a one-time migration,
 a window after deploy)? Did the code at HEAD (`git show HEAD:<file>`) already fail the same way, so the change did not add it?
+Say ALREADY_AT_HEAD too when the request already depends on the same thing and fails without the change whenever this fails
+(a new write to the same Postgres the request already reads: if Postgres is down it 500s anyway; only "reads work, the write fails" is new).
+If two claims are the same cause (one missing guard hit from several callers), write SAME_AS <the lower number> on the later one.
 
 Reply with one line per claim, EXACTLY:
-N | CONFIRMED or REJECTED or UNCLEAR | path:line what you read that decides it | who is actually affected (n/a if rejected) | ONGOING or TEMPORARY (for how long, e.g. "cache entries written before deploy, 15 min") | NEW or ALREADY_AT_HEAD
+N | CONFIRMED or REJECTED or UNCLEAR | path:line what you read that decides it | who is actually affected (n/a if rejected) | ONGOING or TEMPORARY (in under 10 words, e.g. "cache entries before deploy, 15 min") | NEW or ALREADY_AT_HEAD | NONE or SAME_AS <number>
 CONFIRMED means you read the code that proves it. REJECTED means the code contradicts it or already handles it (say where).
 UNCLEAR means you could not decide with the files available. Nothing else."""
 
@@ -76,6 +79,7 @@ class Finding:
     reach: str = ""
     temporary: str = ""  # how long a self-healing failing state lasts, empty when it stays
     at_head: bool = False  # the code before the change already failed the same way
+    same_as: int = 0  # claim number this one repeats (one cause, several callers); 0 when it stands alone
 
 
 def changed_files(porcelain: str) -> list[str]:
@@ -113,20 +117,21 @@ def parse_findings(text: str) -> list[Finding]:
     return out
 
 
-def parse_verdicts(text: str, count: int) -> dict[int, tuple[str, str, str, str, bool]]:
+def parse_verdicts(text: str, count: int) -> dict[int, tuple[str, str, str, str, bool, int]]:
     """One `N | VERDICT | evidence | reach | ONGOING/TEMPORARY (how long) | NEW/ALREADY_AT_HEAD` line per claim.
     A claim the verifier skipped stays UNCLEAR; the last two fields are optional (an older reply without them reads as ongoing and new)."""
-    out = {n: ("UNCLEAR", "", "", "", False) for n in range(1, count + 1)}
+    out = {n: ("UNCLEAR", "", "", "", False, 0) for n in range(1, count + 1)}
     for m in re.finditer(r"^\W*(\d+)\s*\|\s*(CONFIRMED|REJECTED|UNCLEAR)\s*\|(.*)$", text or "", re.I | re.M):
         n = int(m.group(1))
         if n not in out:
             continue
         rest = [p.strip() for p in m.group(3).split("|")]
-        rest += [""] * (4 - len(rest))
+        rest += [""] * (5 - len(rest))
+        twin = re.search(r"SAME_AS\s*#?(\d+)", rest[4], re.I)
         lasts = re.sub(r"^TEMPORARY\b[\s:(-]*", "", rest[2], flags=re.I).rstrip(") ") if rest[2].upper().startswith("TEMPORARY") else ""
         if rest[2].upper().startswith("TEMPORARY") and not lasts:
             lasts = "temporary"
-        out[n] = (m.group(2).upper(), rest[0][:400], rest[1][:200], lasts[:120], "ALREADY" in rest[3].upper())
+        out[n] = (m.group(2).upper(), rest[0][:400], rest[1][:200], lasts[:120], "ALREADY" in rest[3].upper(), int(twin.group(1)) if twin else 0)
     return out
 
 
@@ -136,6 +141,21 @@ def shown_severity(f: Finding) -> str:
     if f.severity in ("CRITICAL", "HIGH") and (f.verdict != "CONFIRMED" or f.temporary or f.at_head):
         return "MEDIUM"
     return f.severity
+
+
+def merge_same_cause(checked: list[Finding]) -> list[Finding]:
+    """The verifier saw every claim at once: a claim it marked `SAME_AS 1` is folded into claim 1 (even across files),
+    so one missing guard hit from a dashboard and three event pages is one finding naming every place."""
+    keep: list[Finding] = []
+    for n, f in enumerate(checked, 1):
+        twin = checked[f.same_as - 1] if 0 < f.same_as < n else None
+        if twin is None or twin.verdict == "REJECTED" or f.verdict == "REJECTED":
+            keep.append(f)
+            continue
+        twin.where += ", " + f.where
+        twin.at_head = twin.at_head and f.at_head
+        twin.temporary = twin.temporary if f.temporary else ""  # one lasting place makes the whole thing lasting
+    return keep
 
 
 def merge_duplicates(findings: list[Finding]) -> list[Finding]:
@@ -187,6 +207,20 @@ def format_answer(findings: list[Finding]) -> str:
 
 
 _spent_log: list[int] = []  # new input + output tokens of each sub-agent, in the order they finished
+
+
+async def fix_paths(findings: list[Finding], cwd: Path) -> None:
+    """A path the reviewer wrote must exist. A near miss (`services/event-discovery.service.ts` for `services/event/event-discovery.service.ts`)
+    is mended when exactly one file has that name; anything else is marked so the reader does not go looking for it."""
+    from agent.grounding import _resolve, _tree
+
+    tree = await _tree(cwd)
+    for f in findings:
+        path, sep, rest = f.where.partition(":")
+        if not path.strip() or _resolve(cwd, path.strip(), tree):
+            continue
+        same_name = [t for t in tree if t.rsplit("/", 1)[-1] == path.strip().rsplit("/", 1)[-1]]
+        f.where = (same_name[0] + sep + rest) if len(same_name) == 1 else f.where + " (file not found)"
 
 
 async def ask(config, prompt: str, role: str, max_turns: int, max_tokens: int, disabled_skills: list[str] | None = None) -> str:
@@ -244,15 +278,17 @@ async def run_review_pipeline(config, request: str) -> AsyncGenerator[tuple[str,
         return  # an empty answer is a failure, not "no defects": the normal review loop takes over
     found = [f for part in replies if part for f in part]
     found = merge_duplicates(sorted(found, key=lambda f: SEVERITY_ORDER[f.severity]))
+    await fix_paths(found, cwd)
     to_check, extra = found[:MAX_VERIFIED], found[MAX_VERIFIED:]  # past the cap a finding stays unchecked and is reported as unverified
     if to_check:
         yield "notice", f"Verifying {len(to_check)} finding(s) in one pass; the verifier tries to refute each"
         claims = "\n".join(f"{n}. {f.severity} | {f.where} | {f.what} | fix: {f.fix or '(none)'}" for n, f in enumerate(to_check, 1))
         reply = await ask(config, VERIFIER_PROMPT.format(claims=claims), role, max_turns=6, max_tokens=config.review_pipeline_tokens, disabled_skills=["code-review"])
         for n, (f, v) in enumerate(zip(to_check, parse_verdicts(reply, len(to_check)).values()), 1):
-            f.verdict, f.evidence, f.reach, f.temporary, f.at_head = v
+            f.verdict, f.evidence, f.reach, f.temporary, f.at_head, f.same_as = v
     for f in extra:
         f.verdict = "UNCHECKED"
+    found = merge_same_cause(to_check) + extra
     confirmed = sum(f.verdict == "CONFIRMED" for f in found)
     rejected = sum(f.verdict == "REJECTED" for f in found)
     verify_tokens = sum(_spent_log) - review_tokens

@@ -142,7 +142,7 @@ async def test_a_reviewer_that_returns_nothing_is_a_failure_and_the_normal_revie
 
 def test_a_self_healing_or_already_present_failure_is_capped_at_medium_and_says_why():
     got = rp.parse_verdicts("1 | CONFIRMED | a.ts:4 no catch | every visitor | TEMPORARY (cache entries before deploy, 15 min) | NEW\n2 | CONFIRMED | b.ts:2 no catch | all | ONGOING | ALREADY_AT_HEAD\n3 | CONFIRMED | c.ts:1 x | all | ONGOING | NEW", 3)
-    assert got[1][3] == "cache entries before deploy, 15 min" and got[2][4] is True and got[3][3:] == ("", False)
+    assert got[1][3] == "cache entries before deploy, 15 min" and got[2][4] is True and got[3][3:] == ("", False, 0)
     f = [rp.Finding("HIGH", "a.ts:4", "backfill can 500", "bump the key", "CONFIRMED", temporary="15 min"),
          rp.Finding("HIGH", "b.ts:2", "write throws", "catch", "CONFIRMED", at_head=True),
          rp.Finding("HIGH", "c.ts:1", "proven and lasting", "fix", "CONFIRMED")]
@@ -156,3 +156,25 @@ def test_the_same_cause_in_one_file_is_one_finding_naming_every_line():
     c = rp.Finding("MEDIUM", "svc/other.ts:3", "unrelated", "catch the short-link write")
     got = rp.merge_duplicates([a, b, c])
     assert [f.where for f in got] == ["svc/read.ts:121-126, 189-198", "svc/other.ts:3"]
+
+
+def test_the_verifier_can_fold_claims_with_one_cause_into_one_finding_even_across_files():
+    got = rp.parse_verdicts("1 | CONFIRMED | a.ts:4 no catch | all | ONGOING | NEW | NONE\n2 | CONFIRMED | b.ts:2 same | all | TEMPORARY (15 min) | ALREADY_AT_HEAD | SAME_AS 1", 2)
+    assert got[2][5] == 1 and got[1][5] == 0
+    a = rp.Finding("HIGH", "a.ts:4", "no catch", "wrap", "CONFIRMED")
+    b = rp.Finding("MEDIUM", "b.ts:2", "same", "wrap", "CONFIRMED", temporary="15 min", at_head=True, same_as=1)
+    c = rp.Finding("LOW", "c.ts:1", "other", "x", "CONFIRMED")
+    one = rp.merge_same_cause([a, b, c])
+    assert [f.where for f in one] == ["a.ts:4, b.ts:2", "c.ts:1"] and one[0].temporary == "" and not one[0].at_head
+
+
+async def test_a_near_miss_path_is_mended_and_an_unknown_one_is_marked(tmp_path):
+    import subprocess
+
+    (tmp_path / "svc" / "event").mkdir(parents=True)
+    (tmp_path / "svc" / "event" / "disc.ts").write_text("x")
+    subprocess.run(["git", "init", "-q"], cwd=tmp_path)
+    subprocess.run(["git", "add", "-A"], cwd=tmp_path)
+    f = [rp.Finding("HIGH", "svc/disc.ts:9", "w", "f"), rp.Finding("HIGH", "svc/nope.ts:1", "w", "f"), rp.Finding("HIGH", "svc/event/disc.ts:2", "w", "f")]
+    await rp.fix_paths(f, tmp_path)
+    assert [x.where for x in f] == ["svc/event/disc.ts:9", "svc/nope.ts:1 (file not found)", "svc/event/disc.ts:2"]
