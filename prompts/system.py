@@ -59,6 +59,14 @@ def get_system_prompt(
         # Learned context is optional; a memory subsystem issue must not block the agent.
         pass
 
+    try:
+        from agent.notes import prompt_section
+
+        if section := prompt_section(config.cwd):
+            parts.append(section)
+    except Exception:
+        pass  # notes are a convenience; they never block a session
+
     parts.append(_get_operational_section())
     return "\n\n".join(part for part in parts if part.strip())
 
@@ -199,6 +207,7 @@ def _get_operational_section() -> str:
 - If the requested approach looks wrong (insecure, unscalable, duplicates existing code), say so in one line and offer the better one.
 - "How should we do X?" gets a short recommendation and its main tradeoff, not an implementation; wait for agreement.
 - Separate what you checked from what you assume. Delete unused code outright, no compatibility leftovers.
+- On a long task (many steps, likely to outlast the context), keep a few lines in `notes` after each decision or milestone and clear them when done; todos are the live checklist.
 - Playbooks loaded for a request are lenses (review, bugs, performance, security, scale, planning). A mixed request such as "review this PR for security and performance" gets one pass and one findings list, each item tagged with its lens; the stricter playbook wins where two disagree.
 
 1. **Understand.** Search first, then read the smallest set of files that explains the task. For a bug, form a hypothesis and look for evidence that could disprove it.

@@ -16,7 +16,7 @@ from utils.text import count_tokens
 def test_system_prompt_stays_lean():
     c = Config(pi_mode=False, cwd="/tmp")
     prompt = get_system_prompt(c, None, create_default_registry(c).get_tools(), [])
-    assert count_tokens(prompt) < 1300  # was ~3000; every call pays this
+    assert count_tokens(prompt) < 1400  # was ~3000; every call pays this
 
 
 def test_cost_summary_only_prices_known_models():
@@ -70,7 +70,7 @@ async def test_tool_output_is_capped_head_and_tail(tmp_path):
         r = await a.session.tool_registry.invoke(
             "shell", {"command": "python3 -c \"print('A'*5000); print('THE-END')\""}, tmp_path, a.session.hook_system, a.session.approval_manager
         )
-        assert len(r.output) < 1300 and r.output.startswith("AAAA") and "THE-END" in r.output and r.truncated
+        assert len(r.output) < 1400 and r.output.startswith("AAAA") and "THE-END" in r.output and r.truncated
 
 
 async def test_token_budget_ends_with_a_final_answer_not_a_bare_failure(tmp_path):

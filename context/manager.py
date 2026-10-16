@@ -199,6 +199,14 @@ class ContextManager:
         if reads:
             files += f"\nFiles read so far: {', '.join(reads[:40])}"
         self.summary = summary + files
+        try:
+            from agent.notes import read as read_notes
+
+            if notes := read_notes(self.config.cwd):
+                files += f"\n\nTask notes (kept with the notes tool, still current):\n{notes[:1500]}"
+                self.summary = summary + files
+        except Exception:
+            pass  # a notes problem must never fail a compaction
         content = (
             f"{self.COMPACT_HEAD}\n\n"
             "Older messages were replaced by this summary to save context. Actions listed as "
