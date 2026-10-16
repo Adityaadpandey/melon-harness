@@ -412,11 +412,11 @@ class Agent:
                 # reasoning is dropped between turns and old tool results get cleared: only written text survives
                 self._quiet_rounds = 0
                 self.session.context_manager.add_user_message(
+                    SWEEP_CHECKPOINT if self._broad else
                     "Checkpoint: you have looked things up for several rounds without writing anything down. Before the next lookup, "
                     "jot working notes (candidate, file:line, checked or not; no severity) and what you will check next. If you have verified a defect, fix it now."
                 )
             elif self._wants_change and not self._broad and not self._edited and not self._fix_nudged and self._calls_used >= 15:
-                    SWEEP_CHECKPOINT if self._broad else
                 self._fix_nudged = True
                 self.session.context_manager.add_user_message(
                     f"{self._calls_used} rounds in and nothing is changed yet. If you have a verified finding, name your root cause in one line "
@@ -488,11 +488,11 @@ class Agent:
                         break
                     failed = True
                     self._failed = True
+                    await self.session.hook_system.fire(HookTrigger.ON_ERROR, error=event.error or "")
                     yield AgentEvent.agent_error(
                         event.error or "Unknown error occurred.",
                     )
                     break
-                    await self.session.hook_system.fire(HookTrigger.ON_ERROR, error=event.error or "")
                 elif event.type == StreamEventType.MESSAGE_COMPLETE:
                     usage = event.usage
 
@@ -544,10 +544,6 @@ class Agent:
                     self.session.context_manager.set_latest_usage(usage)
                     self.session.context_manager.add_usage(usage)
 
-                self._prune()
-                return
-
-            tool_call_results: list[ToolResultMessage] = []
                 left = unfinished(self.session.tool_registry.get("todos")) if self._broad else []
                 if left and self._sweep_pushed < 2:
                     # a sweep that ends with open steps stops after the first few files, which is what this guards against
@@ -557,6 +553,10 @@ class Agent:
                         + ". Finish them (fix, or mark done with a one-line reason it is fine) before you answer."
                     )
                     continue
+                self._prune()
+                return
+
+            tool_call_results: list[ToolResultMessage] = []
 
             async for item in self._run_tool_calls(tool_calls):
                 if isinstance(item, AgentEvent):
@@ -715,16 +715,16 @@ class Agent:
 
     def _prune(self, remind: bool = False, force: bool = False) -> None:
         cm = self.session.context_manager
-        if cm.prune_tool_outputs():
-            if remind:
-                self._remind_todos()
-            # only the files whose text was cleared are forgotten; files still in context are not sent again
         # Clearing results early only hurts: the model re-reads what it just lost (and any subagent report
         # or AGENTS.md read goes with them), and the rewrite throws away the provider's cache. Claude Code
         # waits until the context is genuinely filling up; so do we (half of the compaction limit), unless
         # the cache has gone cold anyway and the rewrite is free.
         if not force and cm._latest_usage.total_tokens < 0.5 * cm._limit():
             return
+        if cm.prune_tool_outputs():
+            if remind:
+                self._remind_todos()
+            # only the files whose text was cleared are forgotten; files still in context are not sent again
             reg = self.session.tool_registry
             reader = reg.get("read_file")
             for rel in cm.last_prune["read_paths"]:
@@ -733,21 +733,20 @@ class Agent:
 
     async def _compact(self) -> bool:
         cm = self.session.context_manager
+        before = cm._latest_usage.total_tokens
+        await self.session.hook_system.fire(HookTrigger.PRE_COMPACT, tokens=before)
         summary, usage, cut = await self.session.chat_compactor.compress(cm)
         if not summary:
             return False
-        before = cm._latest_usage.total_tokens
-        before = cm._latest_usage.total_tokens
-        await self.session.hook_system.fire(HookTrigger.PRE_COMPACT, tokens=before)
         self.session.tool_registry.epoch += 1  # earlier reads are no longer in context
         cm.apply_compaction(summary, cut)
         self._remind_todos()
         cm.set_latest_usage(usage)
         cm.add_usage(usage)
+        await self.session.hook_system.fire(HookTrigger.POST_COMPACT, tokens_before=before, summary=summary)
         self.session.tracer.emit("compaction", cut=cut, tokens_before=before, summary_tokens=usage.completion_tokens if usage else None)
         return True
 
-        await self.session.hook_system.fire(HookTrigger.POST_COMPACT, tokens_before=before, summary=summary)
     def _is_parallel_safe(self, tool_call: ToolCall) -> bool:
         tool = self.session.tool_registry.get(tool_call.name)
         return bool(tool) and tool.kind == ToolKind.READ and not tool.is_mutating(
