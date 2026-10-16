@@ -48,6 +48,7 @@ VERDICT: ISSUES
 class ReviewResult:
     verdict: str  # PASS | ISSUES | UNPARSED
     findings: str
+    blocked: int = 0  # reviewer tool calls a hook or rule refused: its checks were narrower than intended
 
 
 async def _git(cwd: Path, *args: str) -> str:
@@ -110,6 +111,7 @@ async def review_changes(config, request: str, files: list[str], checks: list[di
     prompt = REVIEW_PROMPT.format(request=request[:3000], files=", ".join(files[:30]), checks=summary, claims=(claims or "(none given)")[:2500], diff=diff, impact=impact)
     texts: list[str] = []
     error = ""
+    blocked = 0
     try:
         async with Agent(cfg) as reviewer:
             async for ev in reviewer.run(prompt):
@@ -117,9 +119,12 @@ async def review_changes(config, request: str, files: list[str], checks: list[di
                     texts.append(ev.data["content"])
                 elif ev.type == AgentEventType.AGENT_ERROR:
                     error = ev.data.get("error", "")
+                elif ev.type == AgentEventType.TOOL_CALL_COMPLETE and (ev.data.get("metadata") or {}).get("blocked"):
+                    blocked += 1
     except Exception as e:  # a broken reviewer must never block or fail the task
         return ReviewResult("UNPARSED", f"reviewer crashed: {type(e).__name__}: {e}")
     result = parse_verdict("\n".join(texts))  # the verdict may sit in an earlier turn than the last text
+    result.blocked = blocked
     if result.verdict == "UNPARSED" and error:
         result.findings = f"reviewer stopped: {error[:300]}"
     elif result.verdict == "UNPARSED" and not texts:

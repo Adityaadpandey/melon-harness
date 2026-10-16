@@ -6,7 +6,7 @@ import time
 from pathlib import Path
 from typing import AsyncGenerator, Awaitable, Callable
 from agent.challenge import challenge_request, is_risky, render as render_objections
-from agent.brevity import HOLD_CHARS, interim_line
+from agent.brevity import HOLD_CHARS, LONG_ANSWER_WORDS, interim_line
 from agent.events import AgentEvent, AgentEventType
 from agent.root import pick_root
 from agent.grounding import REWRITE_PROMPT, correction_prompt, has_file_code, shows_second_thoughts, verify_references, wants_change
@@ -92,6 +92,7 @@ class Agent:
         self._usage_base = 0
         self._review_sec = 0.0
         self.undo_info: dict | None = None
+        self._long_answer = 0  # words in the last final answer when it ran over the limit; reminded on the next request
         self.checkpoints: list[dict] = []  # one entry per request that changed files, for /rewind
         self._root_hint: Path | None = None  # the repo the last request worked in, when mew starts above it
         self._scout_error = ""
@@ -120,6 +121,9 @@ class Agent:
             message_for_model = f"{message}\n\n---\nPlaybooks selected for this request (follow them; they are already below, so do not read their files again{reference}):\n\n{loaded}"
         else:
             message_for_model = message
+        if self._long_answer:
+            message_for_model += f"\n\n[Reminder: your last final answer ran {self._long_answer} words. Keep this one to the final-answer limit (120 words, 6 bullets) unless the user asked for detail.]"
+            self._long_answer = 0
         self._pipelined = False
         self._pipeline_answer = ""
         if self.config.review_pipeline and self.config.model_role == "default" and REVIEWY.search(message) and not NAMED_SCOPE.search(message):
@@ -330,6 +334,8 @@ class Agent:
                 t_review = time.monotonic()
                 res = await review_changes(self.config, message, task.changed_files, task.verification, final_response or "")
                 self._review_sec += time.monotonic() - t_review
+                if res.blocked:
+                    yield AgentEvent.notice(f"The reviewer had {res.blocked} tool call(s) blocked by hooks or permission rules, so its check was narrower than usual")
                 task.review = {"verdict": res.verdict, "findings": res.findings}
                 self.session.tracer.emit("review", task=task.id, verdict=res.verdict, findings=res.findings[:1500])
                 if res.verdict == "ISSUES" and task.repairs < task.max_repairs:
@@ -363,6 +369,8 @@ class Agent:
             created = [f for f in task.changed_files if f not in (before or {})]
             self.undo_info = {"ref": backup_ref, "files": list(task.changed_files), "created": created}
             self.checkpoints = [*self.checkpoints, {**self.undo_info, "request": message[:80]}][-20:]
+        if final_response and len(final_response.split()) > LONG_ANSWER_WORDS and not REVIEWY.search(message):
+            self._long_answer = len(final_response.split())
         await self.session.hook_system.trigger_after_agent(message, final_response)
         report = task.report()
         report["undo"] = bool(self.undo_info)

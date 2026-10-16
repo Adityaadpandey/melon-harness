@@ -7,6 +7,7 @@ import re
 
 HOLD_CHARS = 1500  # text this long with no tool call yet is a real answer: stop holding it back and stream it
 LINE_CHARS = 140
+LONG_ANSWER_WORDS = 250  # a final answer past this (outside reviews) earns the model a reminder on the next request
 
 
 def interim_line(text: str) -> str:
