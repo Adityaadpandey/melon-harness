@@ -64,7 +64,7 @@ cwd = "apps/crm"
 commands = ["pnpm typecheck", "npx biome check --no-errors-on-unmatched {files}"]
 
 [routing]
-# measured in bench/results: deepseek-v4-flash passed (v4.1-flash is the routed model now) every fixture task at low latency
+# deepseek-v4-flash passed every fixture task at low latency (bench/results); v4.1-flash replaces it here, not benchmarked yet
 fast      = ["deepseek/deepseek-v4.1-flash", "deepseek/deepseek-v4-pro"]
 strong    = ["claude-sonnet-5-5", "deepseek/deepseek-v4-pro"]
 explore   = ["deepseek/deepseek-v4.1-flash", "deepseek/deepseek-v4-pro"]
