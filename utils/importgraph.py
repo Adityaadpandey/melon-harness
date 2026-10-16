@@ -21,6 +21,7 @@ SOURCE = {".py", ".ts", ".tsx", ".js", ".jsx", ".mjs", ".cjs"}
 JS_SPEC = re.compile(r"""(?:\bfrom|\bimport|\brequire\(|\bimport\()\s*['"]([^'"\n]+)['"]""")
 JS_EXT = ("", ".ts", ".tsx", ".js", ".jsx", ".mjs", ".cjs", ".json", "/index.ts", "/index.tsx", "/index.js", "/index.jsx")
 TEST_HINT = re.compile(r"(^|/)(__tests__|tests?|e2e|spec)(/|$)|\.(test|spec)\.[jt]sx?$|(^|/)test_[^/]+\.py$|_test\.py$")
+PY_DYNAMIC = re.compile(r"""(?:import_module|__import__)\(\s*['"]([\w.]+)['"]""")
 MAX_FILES = 8000
 
 _CACHE: dict[str, tuple[tuple, "ImportGraph"]] = {}
@@ -48,6 +49,46 @@ def _jsonc(path: Path) -> dict:
         return {}
 
 
+def _compiler_options(path: Path, seen: set[Path] | None = None) -> tuple[dict, Path]:
+    """compilerOptions of a tsconfig with its `extends` chain folded in (the child wins, like tsc), plus the folder that
+    `paths` is relative to when no baseUrl is set. Handles `"extends": "./tsconfig.base.json"`, a list of them, and a
+    workspace package such as "@repo/typescript-config/base.json" found in node_modules or a sibling packages/ folder."""
+    seen = seen or set()
+    path = path.resolve()
+    if path in seen:
+        return {}, path.parent
+    seen.add(path)
+    conf = _jsonc(path)
+    opts: dict = {}
+    paths_dir = path.parent
+    parents = conf.get("extends") or []
+    for ref in [parents] if isinstance(parents, str) else parents:
+        base = _find_extended(path.parent, ref)
+        if base:
+            inherited, inherited_dir = _compiler_options(base, seen)
+            if "paths" in inherited:
+                paths_dir = inherited_dir if "paths" not in (conf.get("compilerOptions") or {}) else paths_dir
+            opts.update(inherited)
+            if inherited.get("baseUrl") and "baseUrl" not in (conf.get("compilerOptions") or {}):
+                opts["baseUrl"] = str((base.parent / inherited["baseUrl"]).resolve())  # relative to the file that set it
+    own = conf.get("compilerOptions") or {}
+    opts.update(own)
+    if "paths" in own:
+        paths_dir = path.parent
+    return opts, paths_dir
+
+
+def _find_extended(folder: Path, ref: str) -> Path | None:
+    if not isinstance(ref, str):
+        return None
+    cand = [folder / ref] if ref.startswith(".") else [d / "node_modules" / ref for d in [folder, *folder.parents]]
+    for c in cand:
+        for form in (c, c.with_suffix(".json"), c / "tsconfig.json"):
+            if form.is_file():
+                return form
+    return None
+
+
 class Aliases:
     """`paths` entries of the nearest tsconfig.json/jsconfig.json above a file, as (prefix, [targets relative to the repo])."""
 
@@ -55,8 +96,8 @@ class Aliases:
         self.rules: dict[str, list[tuple[str, list[str]]]] = {}  # config dir (repo-relative) -> rules
         for cfg in ("tsconfig.json", "jsconfig.json"):
             for found in self._configs(cwd, cfg):
-                conf = _jsonc(found).get("compilerOptions", {})
-                base = (found.parent / conf.get("baseUrl", ".")).resolve()
+                conf, paths_dir = _compiler_options(found)
+                base = (found.parent / conf["baseUrl"]).resolve() if conf.get("baseUrl") else paths_dir.resolve()
                 rules = []
                 for pat, targets in (conf.get("paths") or {}).items():
                     prefix = pat.split("*")[0]
@@ -123,6 +164,7 @@ def _py_targets(rel: str, src: str, known: set[str]) -> set[str]:
                 names += [f"{mod}/{a.name}".lstrip("./").replace("/", ".") for a in n.names] + [mod.replace("/", ".")]
             elif n.module:
                 names += [n.module] + [f"{n.module}.{a.name}" for a in n.names]  # `from pkg import mod` imports pkg/mod.py
+    names += PY_DYNAMIC.findall(src)  # importlib.import_module("pkg.mod"), __import__("pkg.mod")
     found = set()
     for name in names:
         parts = name.split(".")
