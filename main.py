@@ -1,4 +1,5 @@
 import asyncio
+import subprocess
 import re
 import json
 import os
@@ -600,6 +601,33 @@ class CLI:
                     )
             else:
                 console.print(f"Current approval policy: {self.config.approval.value}")
+        elif cmd_name == "/plan":
+            mgr = self.agent.session.approval_manager
+            if mgr.approval_policy == ApprovalPolicy.PLAN:
+                mgr.approval_policy = self.config.approval = getattr(self, "_before_plan", ApprovalPolicy.ON_REQUEST)
+                console.print(f"[success]Plan mode off, approval: {mgr.approval_policy.value}[/success]")
+            else:
+                self._before_plan = mgr.approval_policy
+                mgr.approval_policy = self.config.approval = ApprovalPolicy.PLAN
+                console.print("[success]Plan mode on: mew can read and search but changes nothing. /plan again to leave.[/success]")
+        elif cmd_name == "/diff":
+            git = ["git", "-C", str(self.config.cwd), "diff"] + ([] if cmd_args == "full" else ["--stat"])
+            out = subprocess.run(git, capture_output=True, text=True).stdout.strip()
+            console.print(out or "[dim]No unstaged changes[/dim]", markup=False, highlight=False)
+        elif cmd_name == "/context":
+            cm = self.agent.session.context_manager
+            used, limit = cm._latest_usage.prompt_tokens, int(cm._limit())
+            cleared = sum(1 for m in cm._messages if m.pruned_at)
+            console.print(f"\n[bold]Context[/bold]  {used:,} / {limit:,} tokens before compaction ({used * 100 // max(limit, 1)}%), window {cm.context_window:,}")
+            console.print(f"   system prompt  {len(cm._system_prompt):,} chars")
+            console.print(f"   messages       {cm.message_count} ({cleared} old tool results cleared)")
+            console.print(f"   summary        {'yes, ' + str(len(cm.summary)) + ' chars' if cm.summary else 'none yet'}")
+        elif cmd_name == "/hooks":
+            hooks = self.agent.session.hook_system.hooks
+            if not hooks:
+                console.print("[dim]No hooks configured (see hooks in config.toml)[/dim]")
+            for h in hooks:
+                console.print(f"  • {h.name}: {h.trigger.value}" + (f" [{h.matcher}]" if h.matcher else "") + f" -> {h.command or 'script'}", markup=False, highlight=False)
         elif cmd_name == "/stats":
             stats = self.agent.session.get_stats()
             console.print("\n[bold]Session Statistics [/bold]")
