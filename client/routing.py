@@ -154,6 +154,8 @@ class Router:
         if role == "default":
             extra = self.config.routing.get("default", [])
             return [primary] + [m for m in extra if m != primary]
+        if role in ("strong", "debug") and self.config.model_pinned:
+            return [primary]  # escalation never swaps the model the user picked (-m, /model, the remembered one) for another
         configured = self.config.routing.get(role)
         chain = list(configured) if configured else self.chain("default")
         if primary not in chain:
