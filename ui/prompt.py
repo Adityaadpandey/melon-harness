@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import asyncio
 import re
+import sys
 import time
 from pathlib import Path
 from typing import Callable
@@ -23,11 +24,35 @@ from ui.palette import ACCENT, AMBER, BG_BOX, BG_PANEL, BG_RAISED, CORAL, FG, IN
 
 MAX_ATTACH_BYTES = 60_000
 
-# Shift+Enter as kitty/WezTerm/Ghostty (CSI u) and xterm (modifyOtherKeys) report it. Terminals that
-# send a plain Enter for it (Terminal.app, a default iTerm2) need Shift+Return mapped to "Send Hex
-# Code 0a" in their key settings, which lands on the ctrl+j binding below.
-for _seq in ("\x1b[13;2u", "\x1b[27;2;13~"):
-    ANSI_SEQUENCES[_seq] = Keys.ControlJ
+# Shift+Enter. A terminal sends a plain Enter for it unless the app asks for modifiers, so after the
+# first frame we push the kitty keyboard protocol (flag 1, "disambiguate"); iTerm2, kitty, WezTerm
+# and Ghostty then report Shift+Enter as ESC [ 13 ; 2 u. Terminals that don't know the request
+# ignore it, and Ctrl+J still works there. That mode also reports Ctrl+letter, Alt+letter and
+# Esc in the same CSI-u form, so those are mapped back to the keys the bindings expect.
+for _seq in ("\x1b[13;2u", "\x1b[13;5u", "\x1b[27;2;13~"):
+    ANSI_SEQUENCES[_seq] = Keys.ControlJ  # shift+enter and ctrl+enter: newline
+ANSI_SEQUENCES["\x1b[13;3u"] = (Keys.Escape, Keys.ControlM)  # alt+enter
+ANSI_SEQUENCES["\x1b[27u"] = Keys.Escape
+ANSI_SEQUENCES["\x1b[9;2u"] = Keys.BackTab
+ANSI_SEQUENCES["\x1b[127;3u"] = (Keys.Escape, Keys.Backspace)  # alt+backspace: delete a word
+for _i, _c in enumerate("abcdefghijklmnopqrstuvwxyz"):
+    ANSI_SEQUENCES[f"\x1b[{ord(_c)};5u"] = getattr(Keys, f"Control{_c.upper()}")
+    ANSI_SEQUENCES[f"\x1b[{ord(_c)};3u"] = (Keys.Escape, _c)
+
+_kitty_on = False
+
+
+def enable_kitty_keys(app) -> None:
+    """Asks the terminal to report modifiers on Enter once; undone when the process exits."""
+    global _kitty_on
+    if _kitty_on:
+        return
+    _kitty_on = True
+    import atexit
+
+    app.output.write_raw("\x1b[>1u")
+    app.output.flush()
+    atexit.register(lambda: (sys.__stdout__.write("\x1b[<u"), sys.__stdout__.flush()))
 
 COMMANDS = {
     "/help": "show commands and shortcuts",
@@ -292,6 +317,8 @@ class InputSession:
             }),
             input=input, output=output,
         )
+        if input is None and sys.stdout.isatty():  # real terminal only, not tests or pipes
+            self.app.after_render += enable_kitty_keys
 
     def _input_height(self) -> Dimension:
         """Rows the typed text needs once long lines wrap, up to ~40% of the screen; past that it scrolls."""
