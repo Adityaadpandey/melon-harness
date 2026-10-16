@@ -117,7 +117,7 @@ Order: runtime/safety rules, maintainer instructions, the user's current request
 def _get_agents_md_section() -> str:
     return """# Repository Instructions
 
-Instruction files are not preloaded. Before editing, read the applicable `AGENTS.md` (root and nested; the deeper one wins in its subtree) plus relevant `CLAUDE.md`, `CONTRIBUTING.md`, README and package scripts. Follow the project's conventions. """
+The first time you read or edit a file in a folder, that folder's `AGENTS.md` / `CLAUDE.md` (and those above it, `@imports` inlined) are attached to the result. Follow them for work there; the deeper one wins. Read `CONTRIBUTING.md`, the README or package scripts only when the task needs them."""
 
 
 def _get_security_section() -> str:

@@ -34,6 +34,7 @@ class ToolRegistry:
     def __init__(self, config: Config):
         self._tools: dict[str, Tool] = {}
         self._mcp_tools: dict[str, Tool] = {}
+        self._instructions_seen: set = set()  # folders whose AGENTS.md / CLAUDE.md were already attached to a result
         self._read_state: dict[str, tuple[int, int]] = {}  # path -> (mtime_ns, size) when last seen by the agent
         self.config = config
         self._answered: dict[tuple, tuple[str, int]] = {}  # (tool, args, workspace) -> (call id that got the answer, write generation)
@@ -103,6 +104,11 @@ class ToolRegistry:
             elif name in REUSABLE and result.success and call_id:
                 self._answered[key] = (call_id, self._writes)
         self._note_file_state(name, params, cwd, result)
+        if name in {"read_file", "edit", "write_file"} and result.success and not self.config.pi_mode and (path := self._target(params, cwd)):
+            from agent.instructions import for_path
+
+            if extra := for_path(self.config.cwd, path, self._instructions_seen):
+                result.output = f"{result.output}\n\n{extra}"
         self._cap_output(result, name)
         if self.tracer:
             self.tracer.emit(
