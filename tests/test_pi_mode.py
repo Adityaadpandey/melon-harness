@@ -60,7 +60,7 @@ def test_pi_cap_keeps_the_tail_of_shell_output_and_the_head_of_everything_else(t
     sh, rd = ToolResult.success_result(text), ToolResult.success_result(text)
     reg._cap_output(sh, "shell")
     reg._cap_output(rd, "grep")
-    assert "line3000" in sh.output and "line1\n" not in sh.output and "Showing last 2000 of 3000 lines" in sh.output
+    assert "line3000" in sh.output and "line1\n" not in sh.output and "Showing last " in sh.output and "of 3000 lines" in sh.output and len(sh.output) < 13_000
     assert "line1\n" in rd.output and "line3000" not in rd.output and "Showing first 2000 of 3000 lines" in rd.output
     small = ToolResult.success_result("a\nb")
     reg._cap_output(small, "shell")

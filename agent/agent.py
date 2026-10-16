@@ -114,7 +114,7 @@ class Agent:
             loaded = "\n\n".join(f"### Playbook: {p.name}\n{p.body}" for p in playbooks)
             # a playbook's long reference is pulled with use_skill; pi mode has no such tool, so it is not offered
             reference = "; use `use_skill` with `section` for the full reference" if any(t.name == "use_skill" for t in self.session.tool_registry.get_tools()) else ""
-            message_for_model = f"{message}\n\n---\nPlaybooks selected for this request (follow them{reference}):\n\n{loaded}"
+            message_for_model = f"{message}\n\n---\nPlaybooks selected for this request (follow them; they are already below, so do not read their files again{reference}):\n\n{loaded}"
         else:
             message_for_model = message
         self._pipelined = False

@@ -18,6 +18,7 @@ logger = logging.getLogger(__name__)
 
 PI_MAX_LINES = 2000
 PI_MAX_BYTES = 50 * 1024
+SHELL_MAX_BYTES = 12 * 1024  # a 28k-char test log costs ~7k tokens on every later call; the tail has the summary, the rest is in the temp file
 
 
 # read-only lookups whose answer only changes when something is written; read_file has its own finer dedup
@@ -195,7 +196,7 @@ class ToolRegistry:
         out, size = [], 0
         for line in kept:
             size += len(line.encode("utf-8")) + 1
-            if size > PI_MAX_BYTES and out:
+            if size > (SHELL_MAX_BYTES if name == "shell" else PI_MAX_BYTES) and out:
                 break
             out.append(line)
         if name == "shell":
