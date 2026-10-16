@@ -45,6 +45,7 @@ _ALLOWED = {
         TaskStatus.FAILED,
     },
     TaskStatus.REPAIRING: {
+        TaskStatus.REPAIRING,  # reviewer finds issues in a run that is already being repaired
         TaskStatus.VERIFYING,
         TaskStatus.UNVERIFIED,  # review-triggered repair on a run with no checks
         TaskStatus.DONE_NO_CHANGES,

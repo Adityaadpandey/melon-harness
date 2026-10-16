@@ -31,3 +31,8 @@ def test_review_commits_beats_the_bare_word_commit():
 
 def test_plain_chat_loads_nothing():
     assert names("hello there") == []
+
+
+def test_repairing_can_repeat():
+    from agent.task import _ALLOWED, TaskStatus
+    assert TaskStatus.REPAIRING in _ALLOWED[TaskStatus.REPAIRING]

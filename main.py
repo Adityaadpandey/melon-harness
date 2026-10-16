@@ -305,6 +305,11 @@ class CLI:
             self.tui.end_turn()
             console.print("\n[warning]Interrupted[/warning]")
             self.agent.session.context_manager.repair_orphans()  # providers reject unanswered tool calls
+        except Exception as e:  # a bug in one turn must not end the session or lose the chat
+            self.tui.end_turn()
+            console.print(f"\n[error]This request crashed ({type(e).__name__}: {e}). Your session is saved; carry on or /exit.[/error]")
+            self.agent.session.tracer.emit("turn_crash", error=repr(e))
+            self.agent.session.context_manager.repair_orphans()
         finally:
             self._autosave()
             if inputs:
