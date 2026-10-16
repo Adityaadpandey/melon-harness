@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import asyncio
 import hashlib
+import json
 import os
 import re
 import shlex
@@ -75,6 +76,49 @@ def detect_verify_commands(cwd: Path) -> list[str]:
     return []
 
 
+JS_SUFFIX = {".ts", ".tsx", ".js", ".jsx", ".mjs", ".cjs"}
+TYPECHECK_SCRIPTS = ("typecheck", "type-check", "check-types", "tsc")
+UNSAFE_SCRIPT = re.compile(r"--fix|--write|\bbuild\b|\bdeploy\b|\bpublish\b|\bmigrate\b|\bdb:|\bprisma\b")
+
+
+def _package_runner(cwd: Path, pkg_dir: Path) -> str:
+    for d in (pkg_dir, *pkg_dir.parents):
+        for lock, runner in (("pnpm-lock.yaml", "pnpm"), ("yarn.lock", "yarn"), ("bun.lockb", "bun"), ("bun.lock", "bun"), ("package-lock.json", "npm")):
+            if (d / lock).exists():
+                return runner
+        if d == cwd:
+            break
+    return "npm"
+
+
+def detect_js_checks(cwd: Path, changed: list[str]) -> list[tuple[str, str]]:
+    """The typecheck script of each package a changed .ts/.tsx/.js file belongs to, e.g. `pnpm run check-types` in apps/web.
+    Only a script named like a typecheck and free of --fix, build, deploy or database words runs, and only when the
+    packages are installed: a type error is the most common silent break and costs no services. Tests stay opt-in."""
+    cwd = cwd.resolve()
+    found: dict[Path, tuple[str, str]] = {}
+    for f in changed:
+        if Path(f).suffix not in JS_SUFFIX:
+            continue
+        d = (cwd / f).parent
+        while True:
+            pkg = d / "package.json"
+            if pkg.is_file():
+                try:
+                    scripts = json.loads(pkg.read_text(encoding="utf-8")).get("scripts") or {}
+                except (OSError, ValueError):
+                    scripts = {}
+                name = next((n for n in TYPECHECK_SCRIPTS if isinstance(scripts.get(n), str) and not UNSAFE_SCRIPT.search(scripts[n])), None)
+                if name and any((x / "node_modules").is_dir() for x in (d, cwd)):
+                    found[d] = (f"{_package_runner(cwd, d)} run {name}", d.relative_to(cwd).as_posix() or ".")
+                if name or d == cwd:
+                    break
+            if d == cwd or cwd not in d.parents:
+                break
+            d = d.parent
+    return list(found.values())
+
+
 def related_tests(root: Path, rule, hits: list[str]) -> list[str]:
     """Specs (under the rule's cwd, matching tests_glob) that import one of the changed files."""
     if not rule.tests_glob:
@@ -110,7 +154,7 @@ def select_checks(config, changed: list[str]) -> list[tuple[str, str]]:
             if item not in checks:
                 checks.append(item)
     if not checks and config.auto_verify:
-        checks = [(c, ".") for c in detect_verify_commands(config.cwd)]
+        checks = [(c, ".") for c in detect_verify_commands(config.cwd)] + detect_js_checks(config.cwd, changed)
     return checks
 
 
