@@ -64,11 +64,11 @@ cwd = "apps/crm"
 commands = ["pnpm typecheck", "npx biome check --no-errors-on-unmatched {files}"]
 
 [routing]
-# measured in bench/results: deepseek-v4-flash passed every fixture task at low latency
-fast      = ["deepseek/deepseek-v4-flash", "deepseek/deepseek-v4-pro"]
+# measured in bench/results: deepseek-v4-flash passed (v4.1-flash is the routed model now) every fixture task at low latency
+fast      = ["deepseek/deepseek-v4.1-flash", "deepseek/deepseek-v4-pro"]
 strong    = ["claude-sonnet-5-5", "deepseek/deepseek-v4-pro"]
-explore   = ["deepseek/deepseek-v4-flash", "deepseek/deepseek-v4-pro"]
-summarize = ["deepseek/deepseek-v4-flash"]
+explore   = ["deepseek/deepseek-v4.1-flash", "deepseek/deepseek-v4-pro"]
+summarize = ["deepseek/deepseek-v4.1-flash"]
 debug     = ["claude-sonnet-5-5", "deepseek/deepseek-v4-pro"]
 review    = ["deepseek/deepseek-v4-pro", "claude-sonnet-5-5"]  # the router puts non-author models first
 

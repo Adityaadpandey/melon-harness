@@ -199,9 +199,9 @@ Approval modes: `on-request` (default), `auto-edit`, `auto`, `never`, `yolo`.
   ```toml
   [routing]
   default   = ["claude-sonnet-5-5", "deepseek/deepseek-v4-pro"]
-  fast      = ["deepseek/deepseek-v4-flash"]       # easy requests
+  fast      = ["deepseek/deepseek-v4.1-flash"]       # easy requests
   strong    = ["claude-opus-5-5"]                  # hard ones, and escalation
-  summarize = ["deepseek/deepseek-v4-flash"]       # context compaction
+  summarize = ["deepseek/deepseek-v4.1-flash"]       # context compaction
   review    = ["gpt-5.6-sol"]
   ```
 
@@ -276,7 +276,7 @@ Per repo, stored outside it. mew only keeps what can't be invented: what *you* t
 ```bash
 .venv/bin/python -m pytest -q                       # 224 offline unit tests
 .venv/bin/python -m bench.run --model claude-haiku-5-5 --runs 3 --label mine
-.venv/bin/python -m bench.run --mode parallel --model deepseek/deepseek-v4-flash --jobs 1 --runs 3
+.venv/bin/python -m bench.run --mode parallel --model deepseek/deepseek-v4.1-flash --jobs 1 --runs 3
 .venv/bin/python -m bench.run --summarize bench/results/*.json
 .venv/bin/python -m bench.tunyt_tasks --clone <scratch clone> --out <dir> --model <model> --tasks <name>
 ```
