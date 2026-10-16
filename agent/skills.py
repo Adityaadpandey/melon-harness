@@ -26,7 +26,7 @@ from pathlib import Path
 PROFILES_DIR = Path(__file__).resolve().parent.parent / "profiles"
 BUILTIN_DIR = Path(__file__).resolve().parent.parent / "skills"  # ship with the harness, apply to every project
 SECTION_CAP = 14_000
-AUTO_LOAD_CAP = 9_000  # total chars of playbooks auto-injected per request
+AUTO_LOAD_CAP = 16_000  # total chars of playbooks auto-injected per request
 
 
 @dataclass
@@ -41,7 +41,8 @@ class Skill:
 
     def score(self, text: str) -> int:
         low = text.lower()
-        return sum(1 for t in self.triggers if re.search(rf"(?<!\w){re.escape(t.lower())}", low))
+        # a phrase counts for its words: "review the commits" is a stronger hint than the bare word "commit"
+        return sum(len(t.split()) for t in self.triggers if re.search(rf"(?<!\w){re.escape(t.lower())}", low))
 
 
 def _user_dirs() -> tuple[list[Path], list[Path]]:
@@ -127,7 +128,7 @@ def skill_roots(config) -> list[Path]:
     return sorted({s.path.parent.resolve() for s in load_skills(config) if s.path})
 
 
-def match_skills(skills: list[Skill], request: str, limit: int = 2) -> list[Skill]:
+def match_skills(skills: list[Skill], request: str, limit: int = 4) -> list[Skill]:
     """Deterministic keyword routing: no model call, so it is free, instant and testable."""
     scored = sorted(((s.score(request), s) for s in skills if not s.always), key=lambda x: -x[0])
     picked, used = [], 0
