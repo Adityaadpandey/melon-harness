@@ -1,5 +1,6 @@
 import asyncio
 import re
+import time
 
 import pytest
 from prompt_toolkit.completion import CompleteEvent
@@ -177,12 +178,15 @@ def test_live_state_todos_agents_and_phase(tmp_path):
     tui.agent_progress("c2", {"kind": "start", "agent": "debugger", "goal": "why"})
     tui.start_turn("Thinking")
     text = "\n".join(r.plain for r in tui._renderable().renderables if hasattr(r, "plain"))
-    assert "Scout  Search(needle)" in text and "Debugger  starting" in text
+    assert "Scout  map it" in text and "Search(needle)" in text and "2 tools" not in text and "3 tools" in text
+    assert "Debugger  why" in text and "starting…" in text
     assert "◼ write tests" in text and "◻ fix bug" in text and "Thinking…" in text
-    tui.agent_progress("c1", {"kind": "done", "agent": "investigator"})
+    tui.agent_progress("c1", {"kind": "done", "agent": "investigator", "ok": True, "tokens": 18400})
     assert "c1" not in tui.agents and "c2" in tui.agents
+    done = "\n".join(r.plain for r in tui._agent_rows(time.monotonic()))
+    assert "✓ Scout  map it" in done and "18k tok" in done  # a finished agent stays as one line
     tui.end_turn()
-    assert tui.agents == {}  # nothing lingers after the turn
+    assert tui.agents == {} and tui.agent_log == []  # nothing lingers after the turn
 
 
 def test_expand_shows_full_output_of_recent_tool_calls(tmp_path):

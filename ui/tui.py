@@ -28,7 +28,7 @@ from safety.approval import Decision
 from tools.base import ToolConfirmation
 from utils.paths import display_path_rel_to_cwd
 
-from ui.palette import ACCENT, AMBER, CORAL, FG, INK, LAVENDER, MINT, MUTED, SKY, TEAL, BG_BOX, RULE
+from ui.palette import ACCENT, AMBER, CORAL, FG, INK, LAVENDER, MINT, MUTED, SKY, TEAL, BG_BOX, FAINT, RULE
 
 AGENT_THEME = Theme(
     {
@@ -348,6 +348,15 @@ def context_bar(pct: float, width: int = 10) -> str:
     return "▰" * filled + "▱" * (width - filled) + f" {pct:.0f}%"
 
 
+def agent_stats(a: dict[str, Any], seconds: float) -> str:
+    """`12s · 7 tools · 18k tok`"""
+    tok = a.get("tokens", 0)
+    parts = [f"{int(seconds)}s", f"{a['tools']} tool{'s' if a['tools'] != 1 else ''}"]
+    if tok:
+        parts.append(f"{tok / 1000:.0f}k tok" if tok >= 1000 else f"{tok} tok")
+    return " · ".join(parts)
+
+
 SPIN = "⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏"
 
 
@@ -391,7 +400,8 @@ class TUI:
         self._out_chars = 0
         self._phase = "Thinking"
         self.todos: list[tuple[str, bool]] = []
-        self.agents: dict[str, dict[str, Any]] = {}
+        self.agents: dict[str, dict[str, Any]] = {}  # sub-agents running now
+        self.agent_log: list[dict[str, Any]] = []  # ones that finished this turn
         self.results: deque = deque(maxlen=30)  # full tool results for /expand
         self.last_reply = ""
         self.fullscreen = False  # a full-screen pane shows the status line, so no Live region
@@ -417,14 +427,30 @@ class TUI:
         status = Text.assemble((f" {frame} ", f"bold {ACCENT}"), shimmer(f"{self._phase}…", now))
         status.append(f"   {elapsed}s{tokens}  ·  ctrl+c to stop", style=MUTED)
         rows.append(status)
-        for a in self.agents.values():
-            rows.append(Text.assemble(("   ╰ ◆ ", ACCENT), (agent_title(a["agent"]), f"bold {ACCENT}"), (f"  {a['last']}  {int(now - a['started'])}s", MUTED)))
+        rows.extend(self._agent_rows(now))
         if self.todos:
             done_n = sum(d for _, d in self.todos)
             rows.append(Text.assemble(("   ✦ tasks ", f"bold {LAVENDER}"), (f"{done_n}/{len(self.todos)}", MUTED)))
             for content, done in self.todos[:8]:
                 rows.append(Text(f"     {'◼' if done else '◻'} {content[:90]}", style=f"{MUTED} strike" if done else FG))
         return Group(*rows)
+
+    def _agent_rows(self, now: float) -> list[Text]:
+        """Each sub-agent as a small block: goal and stats on top, its last few tool calls under it,
+        the newest one marked as running. Finished ones stay as one line until the turn ends."""
+        rows: list[Text] = []
+        for a in self.agent_log:
+            mark, color = ("✓", MINT) if a["ok"] else ("✗", CORAL)
+            rows.append(Text.assemble((f"   {mark} ", color), (agent_title(a["agent"]), f"bold {FG}"), (f"  {a['goal']}", MUTED), (f"   {agent_stats(a, a['seconds'])}", FAINT)))
+        for a in self.agents.values():
+            rows.append(Text.assemble(("   ◆ ", ACCENT), (agent_title(a["agent"]), f"bold {ACCENT}"), (f"  {a['goal']}", FG), (f"   {agent_stats(a, now - a['started'])}", MUTED)))
+            recent = list(a["recent"])
+            for i, label in enumerate(recent):
+                last = i == len(recent) - 1
+                rows.append(Text.assemble(("   ╰ " if last else "   │ ", RULE), ("▸ " if last else "✓ ", ACCENT if last else FAINT), (label, FG if last else MUTED)))
+            if not recent:
+                rows.append(Text.assemble(("   ╰ ", RULE), ("starting…", MUTED)))
+        return rows
 
     def _start_live(self) -> None:
         if self._live_ok() and self.live is None:
@@ -447,6 +473,7 @@ class TUI:
         self._turn_active = False
         self._stop_live()
         self.agents.clear()
+        self.agent_log.clear()
 
     def pause(self) -> None:
         """Stop the live region while something else needs the terminal (approval prompt)."""
@@ -544,16 +571,24 @@ class TUI:
     def agent_progress(self, call_id: str, info: dict[str, Any]) -> None:
         kind = info.get("kind")
         if kind == "start":
-            self.agents[call_id] = {"agent": info["agent"], "last": "starting", "started": time.monotonic()}
+            goal = " ".join(str(info.get("goal", "")).split())
+            self.agents[call_id] = {"agent": info["agent"], "goal": goal[:60] + ("…" if len(goal) > 60 else ""), "started": time.monotonic(),
+                                    "recent": deque(maxlen=3), "tools": 0, "tokens": 0}
         elif kind == "tool" and call_id in self.agents:
             name, args = info.get("name", ""), info.get("args", {})
-            self.agents[call_id]["last"] = tool_label(name, args, self.cwd)
+            a = self.agents[call_id]
+            a["recent"].append(tool_label(name, args, self.cwd))
+            a["tools"] += 1
+            a["tokens"] = info.get("tokens", a["tokens"])
             if name == "read_file" and args.get("path"):  # files a sub-agent opens count as read too
                 path = display_path_rel_to_cwd(str(args["path"]), self.cwd)
                 self.read_files[path] = self.read_files.get(path, 0) + 1
                 self.touched["read:" + path] = time.monotonic()
         elif kind == "done":
-            self.agents.pop(call_id, None)
+            a = self.agents.pop(call_id, None)
+            if a:
+                a["tokens"] = info.get("tokens", a["tokens"])
+                self.agent_log.append({**a, "ok": info.get("ok", True), "seconds": time.monotonic() - a["started"]})
 
     def tool_call_start(self, call_id: str, name: str, tool_kind: str | None, arguments: dict[str, Any]) -> None:
         """Only remembers the call. The header is printed together with its result

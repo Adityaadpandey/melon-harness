@@ -24,7 +24,7 @@ from rich.console import Console
 from rich.text import Text
 
 from ui.palette import BG_BOX, BG_GLOW, BG_PANEL, FAINT, INK, RULE
-from ui.tui import _mix, ACCENT, AGENT_THEME, AMBER, CORAL, FG, LAVENDER, MINT, MUTED, SKY, TUI, redirect_console
+from ui.tui import _mix, ACCENT, agent_stats, agent_title, AGENT_THEME, AMBER, CORAL, FG, LAVENDER, MINT, MUTED, SKY, TUI, redirect_console
 
 SIDE_WIDTH = 38
 MIN_COLUMNS = 100  # narrower terminals get the conversation only
@@ -173,11 +173,11 @@ class Screen:
         # the output and parking it higher up holds the view still while new lines arrive below
         self.main = Window(_Pane(self._transcript, self.scroll, self._cursor, self._mouse_main), wrap_lines=False, height=Dimension(weight=1))
         self.status = Window(_Pane(self._status, self.scroll, on_mouse=self._mouse_elsewhere), height=lambda: Dimension.exact(self._status_render()[1]))
-        self.sections = [Window(_Pane(lambda k=k: self._section(k), self.scroll, on_mouse=self._mouse_elsewhere), wrap_lines=False, style=f"bg:{BG_PANEL}", height=Dimension(weight=1)) for k in ("read", "write", "cmd")]
+        self.sections = [Window(_Pane(lambda k=k: self._section(k), self.scroll, on_mouse=self._mouse_elsewhere), wrap_lines=False, style=f"bg:{BG_PANEL}", height=Dimension(weight=1)) for k in ("agents", "read", "write", "cmd")]
         rule = lambda: Window(height=1, char="─", style=f"fg:{RULE} bg:{BG_PANEL}")
         side = VSplit([
             Window(width=1, char="│", style=f"fg:{RULE}"),
-            HSplit([self.sections[0], rule(), self.sections[1], rule(), self.sections[2]], width=SIDE_WIDTH, style=f"bg:{BG_PANEL}"),
+            HSplit([self.sections[0], rule(), self.sections[1], rule(), self.sections[2], rule(), self.sections[3]], width=SIDE_WIDTH, style=f"bg:{BG_PANEL}"),
         ])
         wide = Condition(lambda: _size()[0] >= MIN_COLUMNS)
         header = Window(_Pane(self._header, self.scroll), height=1, style=f"bg:{BG_BOX}")
@@ -408,9 +408,34 @@ class Screen:
         adds, dels = sum(v[0] for _, v in items), sum(v[1] for _, v in items)
         return [("", "  "), (f"fg:{MINT}", f"+{adds}"), (f"fg:{CORAL}", f" −{dels}")]
 
+    def _agents_section(self, rows: int) -> list[tuple[str, str]]:
+        """Sub-agents: running ones with their current tool, finished ones with time and tool count."""
+        t = self.tui
+        now = time.monotonic()
+        width = SIDE_WIDTH - 3
+        count = len(t.agents) + len(t.agent_log)
+        out: list[tuple[str, str]] = [("", " "), (f"bold fg:{INK} bg:{ACCENT}", " AGENTS "), (f"bold fg:{ACCENT}", f" {len(t.agents)} running" if t.agents else f" {count}"), ("", "\n")]
+        if not count:
+            return out + [(f"fg:{MUTED} italic", "\n   sub-agents show up here live")]
+        lines: list[list[tuple[str, str]]] = []
+        for a in t.agents.values():
+            lines.append([(f"fg:{ACCENT}", " ◆ "), (f"bold fg:{FG}", agent_title(a["agent"])), (f"fg:{MUTED}", f"  {agent_stats(a, now - a['started'])}")])
+            lines.append([(f"fg:{MUTED}", "   ╰ "), (f"fg:{FG}", _clip(a["recent"][-1] if a["recent"] else "starting…", width - 5))])
+        for a in t.agent_log:
+            lines.append([(f"fg:{MINT if a['ok'] else CORAL}", " ✓ " if a["ok"] else " ✗ "), (f"fg:{FG}", agent_title(a["agent"])), (f"fg:{MUTED}", f"  {agent_stats(a, a['seconds'])}")])
+        hidden = max(0, len(lines) - rows)
+        if hidden:
+            out.append((f"fg:{MUTED}", f"  ⋯ {hidden} more\n"))
+        for i, ln in enumerate(lines[hidden:]):
+            out += ln + ([("", "\n")] if i < len(lines) - hidden - 1 else [])
+        return out
+
     def _section(self, kind: str):
         t = self.tui
-        win = self.sections[("read", "write", "cmd").index(kind)]
+        if kind == "agents":
+            win = self.sections[0]
+            return self._agents_section(max(1, (win.render_info.window_height - 2) if win.render_info else 4))
+        win = self.sections[("agents", "read", "write", "cmd").index(kind)]
         rows = max(1, (win.render_info.window_height - 1) if win.render_info else 5)
         width = SIDE_WIDTH - 3
         title, color, items = {
