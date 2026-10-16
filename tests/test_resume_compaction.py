@@ -62,3 +62,24 @@ def asyncio_run(coro):
     import asyncio
 
     return asyncio.run(coro)
+
+
+def test_compaction_that_overflows_drops_the_oldest_messages_and_asks_again(tmp_path):
+    from client.response import StreamEvent, StreamEventType, TextDelta, TokenUsage
+
+    cfg = Config(cwd=tmp_path, keep_recent_tokens=600)
+    cm = ContextManager(cfg, None, [])
+    for i in range(10):
+        add_pair(cm, i, "read_file", f"app/f{i}.py")
+    sizes = []
+
+    class TooLongOnce:
+        async def chat_completion(self, messages, stream=False, role=""):
+            sizes.append(len(messages[-1]["content"]))
+            if len(sizes) == 1:
+                yield StreamEvent(type=StreamEventType.ERROR, error="prompt is too long")
+            else:
+                yield StreamEvent(type=StreamEventType.MESSAGE_COMPLETE, text_delta=TextDelta("SUMMARY"), usage=TokenUsage(1, 1, 2))
+
+    summary, _, cut = asyncio_run(ChatCompactor(TooLongOnce()).compress(cm))
+    assert summary == "SUMMARY" and cut > 0 and sizes[1] < sizes[0]

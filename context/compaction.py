@@ -67,22 +67,33 @@ class ChatCompactor:
         if cut <= 0:
             return None, None, 0
 
-        history = self._format_history_for_compaction(cm.history_for_summary(cut))
-        if cm.summary:
-            history = f"PREVIOUS SUMMARY (update it, do not drop facts that still matter):\n{cm.summary}\n\n---\n\nNEW MESSAGES TO FOLD IN:\n{history}"
-        compression_messages = [
-            {"role": "system", "content": get_compression_prompt()},
-            {"role": "user", "content": history},
-        ]
-
-        try:
-            summary, usage = "", None
-            async for event in self.client.chat_completion(compression_messages, stream=False, role="summarize"):
-                if event.type == StreamEventType.MESSAGE_COMPLETE:
-                    usage = event.usage
-                    summary += event.text_delta.content if event.text_delta else ""
-            if not summary:
-                return None, None, 0
-            return summary, usage, cut
-        except Exception:
-            return None, None, 0
+        msgs = cm.history_for_summary(cut)
+        # Claude Code's trick when the summary request is itself too long: drop the oldest
+        # fifth of the messages and ask again (3 tries). Losing the far past beats losing the whole compaction.
+        for attempt in range(4):
+            history = self._format_history_for_compaction(msgs)
+            if cm.summary:
+                history = f"PREVIOUS SUMMARY (update it, do not drop facts that still matter):\n{cm.summary}\n\n---\n\nNEW MESSAGES TO FOLD IN:\n{history}"
+            compression_messages = [
+                {"role": "system", "content": get_compression_prompt()},
+                {"role": "user", "content": history},
+            ]
+            summary, usage, failed = "", None, False
+            try:
+                async for event in self.client.chat_completion(compression_messages, stream=False, role="summarize"):
+                    if event.type == StreamEventType.MESSAGE_COMPLETE:
+                        usage = event.usage
+                        summary += event.text_delta.content if event.text_delta else ""
+                    elif event.type == StreamEventType.ERROR:
+                        failed = True
+            except Exception:
+                failed = True
+            if summary and not failed:
+                return summary, usage, cut
+            if len(msgs) < 5:
+                break
+            drop = len(msgs) // 5
+            while drop < len(msgs) and msgs[drop]["role"] == "tool":
+                drop += 1  # a tool result must not lose the assistant call that made it
+            msgs = msgs[drop:]
+        return None, None, 0
