@@ -92,6 +92,7 @@ class Agent:
         self._usage_base = 0
         self._review_sec = 0.0
         self.undo_info: dict | None = None
+        self.checkpoints: list[dict] = []  # one entry per request that changed files, for /rewind
         self._root_hint: Path | None = None  # the repo the last request worked in, when mew starts above it
         self._scout_error = ""
         self._no_approver = False
@@ -361,6 +362,7 @@ class Agent:
         if backup_ref and task.changed_files:
             created = [f for f in task.changed_files if f not in (before or {})]
             self.undo_info = {"ref": backup_ref, "files": list(task.changed_files), "created": created}
+            self.checkpoints = [*self.checkpoints, {**self.undo_info, "request": message[:80]}][-20:]
         await self.session.hook_system.trigger_after_agent(message, final_response)
         report = task.report()
         report["undo"] = bool(self.undo_info)

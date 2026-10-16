@@ -736,7 +736,37 @@ class CLI:
                 if pick == 0:
                     restored, deleted, skipped = await undo(self.config.cwd, info["ref"], info["files"], info["created"])
                     self.agent.undo_info = None
+                    self.agent.checkpoints = self.agent.checkpoints[:-1]
                     self.agent.session.tool_registry.epoch += 1  # files on disk changed under earlier reads
+                    console.print(f"[success]Restored {len(restored)}, removed {len(deleted)} new file(s).[/success]")
+                    if skipped:
+                        console.print(f"[warning]Left alone (no earlier copy): {', '.join(skipped)}[/warning]")
+        elif cmd_name == "/rewind":
+            from agent.verify import undo
+            from ui.prompt import ask_choice
+
+            marks = self.agent.checkpoints
+            if not marks:
+                console.print("[dim]Nothing to rewind: no request in this session has changed files.[/dim]")
+            elif not cmd_args.strip().isdigit():
+                for i, m in enumerate(reversed(marks), 1):
+                    console.print(f"  {i}. {m['request']}  [dim]({len(m['files'])} file(s))[/dim]", highlight=False)
+                console.print("[dim]/rewind <n> puts the files back to how they were before request n (1 = the latest)[/dim]")
+            else:
+                n = max(1, min(int(cmd_args), len(marks)))
+                chosen = marks[-n:]
+                files = sorted({f for m in chosen for f in m["files"]})
+                created = sorted({f for m in chosen for f in m["created"]})
+                pick = await ask_choice(console, f"Rewind {len(files)} file(s) to before: {chosen[0]['request']}?", ["Yes, rewind", "No"])
+                if pick == 0:
+                    restored, deleted, skipped = await undo(self.config.cwd, chosen[0]["ref"], files, created)
+                    self.agent.checkpoints = marks[:-n]
+                    self.agent.undo_info = None
+                    self.agent.session.tool_registry.epoch += 1
+                    self.agent.session.context_manager.add_user_message(
+                        f"[The user rewound the last {n} request(s): {len(restored)} file(s) restored and {len(deleted)} new file(s) removed, "
+                        f"so the working tree is back to how it was before \"{chosen[0]['request']}\". Earlier edits in this chat no longer exist on disk.]"
+                    )
                     console.print(f"[success]Restored {len(restored)}, removed {len(deleted)} new file(s).[/success]")
                     if skipped:
                         console.print(f"[warning]Left alone (no earlier copy): {', '.join(skipped)}[/warning]")
