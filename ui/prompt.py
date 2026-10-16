@@ -17,9 +17,8 @@ from prompt_toolkit.styles import Style
 
 from utils.search import list_files
 
-ACCENT = "#ff7eb6"
-LAVENDER = "#b49cff"
-MUTED = "#6c7393"
+from ui.palette import ACCENT, AMBER, BG_BOX, BG_PANEL, BG_RAISED, CORAL, FG, INK, LAVENDER, MINT, MUTED, RULE
+
 MAX_ATTACH_BYTES = 60_000
 
 COMMANDS = {
@@ -266,7 +265,7 @@ class InputSession:
             return left + ([("class:toolbar", " " * room)] + hints if self.fullscreen and room > 2 else [])
 
         footer = Window(FormattedTextControl(footer_all), height=1, style="class:statusbar")
-        bar = Window(width=1, char="▍", style=f"fg:{ACCENT} bg:#1d2033")  # accent edge down the whole input box
+        bar = Window(width=1, char="▍", style=f"fg:{ACCENT} bg:{BG_BOX}")  # accent edge down the whole input box
         input_box = [Window(height=1, style="class:box"), VSplit([bar, self.area]), Window(height=1, style="class:box"), footer]
         root = FloatContainer(
             content=HSplit(([body] if body is not None else []) + input_box),
@@ -277,10 +276,11 @@ class InputSession:
             erase_when_done=not self.fullscreen, full_screen=self.fullscreen, mouse_support=(mouse if mouse is not None else self.fullscreen),
             refresh_interval=0.1 if self.fullscreen else None,
             style=Style.from_dict({
-                "prompt": f"bg:#1d2033 {ACCENT} bold", "box": "bg:#1d2033 #d5d9ec", "statusbar": "bg:#151826", "tb.key": "bg:#2a2e48 #c5cae9", "bar": f"bg:#1d2033 {ACCENT} bold", "toolbar": MUTED, "tb.dot": "#3a3f5c",
-                "tb.chip": f"bg:{LAVENDER} #14161f bold", "tb.model": f"{ACCENT} bold", "tb.ok": "#6ee7b7", "tb.warn": "#fbbf6a", "tb.bad": "#ff6b7f",
-                "completion-menu.completion": "bg:#1d2033 #c5cae9", "completion-menu.completion.current": f"bg:{ACCENT} #14161f bold",
-                "completion-menu.meta.completion": "bg:#1d2033 #6c7393", "completion-menu.meta.completion.current": f"bg:{ACCENT} #14161f",
+                "prompt": f"bg:{BG_BOX} {ACCENT} bold", "box": f"bg:{BG_BOX} {FG}", "statusbar": f"bg:{BG_PANEL}", "tb.key": f"bg:{BG_RAISED} {FG}",
+                "bar": f"bg:{BG_BOX} {ACCENT} bold", "toolbar": MUTED, "tb.dot": RULE,
+                "tb.chip": f"bg:{LAVENDER} {INK} bold", "tb.model": f"{ACCENT} bold", "tb.ok": MINT, "tb.warn": AMBER, "tb.bad": CORAL,
+                "completion-menu.completion": f"bg:{BG_BOX} {FG}", "completion-menu.completion.current": f"bg:{ACCENT} {INK} bold",
+                "completion-menu.meta.completion": f"bg:{BG_BOX} {MUTED}", "completion-menu.meta.completion.current": f"bg:{ACCENT} {INK}",
             }),
             input=input, output=output,
         )
@@ -349,7 +349,7 @@ async def ask_choice(console, question: str, options: list[str], *, input=None, 
             ACTIVE.question = None
     console.print(f"\n [bold {LAVENDER}]?[/] [bold]{question}[/bold]")
     for i, opt in enumerate(options, 1):
-        key = "#ff6b7f" if i == len(options) else ACCENT
+        key = CORAL if i == len(options) else ACCENT
         console.print(f"  [bold {key}]\\[{i}][/] {opt}" + ("  [dim](enter)[/dim]" if i == 1 else ""))
     kb = KeyBindings()
     for i in range(len(options)):

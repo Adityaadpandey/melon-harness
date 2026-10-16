@@ -28,16 +28,7 @@ from safety.approval import Decision
 from tools.base import ToolConfirmation
 from utils.paths import display_path_rel_to_cwd
 
-ACCENT = "#ff7eb6"    # mew pink
-LAVENDER = "#b49cff"
-MINT = "#6ee7b7"
-AMBER = "#fbbf6a"
-SKY = "#7cc4ff"
-TEAL = "#5eead4"
-CORAL = "#ff6b7f"
-FG = "#d5d9ec"
-MUTED = "#6c7393"
-INK = "#14161f"       # text on top of a coloured chip
+from ui.palette import ACCENT, AMBER, CORAL, FG, INK, LAVENDER, MINT, MUTED, SKY, TEAL, BG_BOX, RULE
 
 AGENT_THEME = Theme(
     {
@@ -48,7 +39,7 @@ AGENT_THEME = Theme(
         "success": MINT,
         "dim": MUTED,
         "muted": MUTED,
-        "border": "#3a3f5c",
+        "border": RULE,
         "highlight": f"bold {ACCENT}",
         "user": f"bold {ACCENT}",
         "assistant": FG,
@@ -67,15 +58,15 @@ AGENT_THEME = Theme(
         "markdown.h2": f"bold {LAVENDER}",
         "markdown.h3": f"bold {SKY}",
         "markdown.h4": f"bold {TEAL}",
-        "markdown.code": f"{AMBER} on #232640",
-        "markdown.strong": "bold #f4f5ff",
-        "markdown.em": "italic #c9cdea",
+        "markdown.code": f"{AMBER} on #2a2723",
+        "markdown.strong": "bold #f6f1e4",
+        "markdown.em": "italic #cfc8b8",
         "markdown.link": f"underline {SKY}",
         "markdown.link_url": MUTED,
         "markdown.item.bullet": f"bold {ACCENT}",
         "markdown.item.number": f"bold {ACCENT}",
-        "markdown.block_quote": f"italic #8f96b8",
-        "markdown.hr": "#3a3f5c",
+        "markdown.block_quote": f"italic #a39c8c",
+        "markdown.hr": RULE,
     }
 )
 
@@ -128,7 +119,7 @@ KIND_COLOR = {
 def kind_color(name: str) -> str:
     if name.startswith("subagent_") or name == "parallel_tasks":
         return ACCENT
-    return KIND_COLOR.get(name, "#9aa3c7")
+    return KIND_COLOR.get(name, "#a39c8c")
 
 
 AGENT_NAMES = {"investigator": "Scout", "codebase_investigator": "Scout", "code_reviewer": "Reviewer"}
@@ -238,7 +229,7 @@ def parse_unified_diff(diff: str) -> tuple[list[tuple[str, int | None, str]], in
     return rows, adds, dels
 
 
-ADD_BG, DEL_BG = "#12291f", "#33161c"
+ADD_BG, DEL_BG = "#1b2616", "#33181a"
 
 
 def _highlight(code: str, lexer: str) -> Text:
@@ -506,7 +497,7 @@ class TUI:
     def echo_user(self, text: str) -> None:
         first, *rest = text.strip().split("\n")
         shown = first + (f"  (+{len(rest)} lines)" if rest else "")
-        self.console.print(Padding(Text.assemble(("▍ ", f"bold {ACCENT}"), (shown[:300], f"bold {FG}")), (0, 1), style="on #1d2033"))
+        self.console.print(Padding(Text.assemble(("▍ ", f"bold {ACCENT}"), (shown[:300], f"bold {FG}")), (0, 1), style=f"on {BG_BOX}"))
 
     def _assistant_grid(self, md: str, first: bool):
         return Rail(MewMarkdown(md.rstrip(), code_theme="dracula"), LAVENDER, "▎", "◆" if first else None)

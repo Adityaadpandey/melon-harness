@@ -23,6 +23,7 @@ from prompt_toolkit.mouse_events import MouseEventType
 from rich.console import Console
 from rich.text import Text
 
+from ui.palette import BG_BOX, BG_GLOW, BG_PANEL, FAINT, INK, RULE
 from ui.tui import _mix, ACCENT, AGENT_THEME, AMBER, CORAL, FG, LAVENDER, MINT, MUTED, SKY, TUI, redirect_console
 
 SIDE_WIDTH = 38
@@ -172,14 +173,14 @@ class Screen:
         # the output and parking it higher up holds the view still while new lines arrive below
         self.main = Window(_Pane(self._transcript, self.scroll, self._cursor, self._mouse_main), wrap_lines=False, height=Dimension(weight=1))
         self.status = Window(_Pane(self._status, self.scroll, on_mouse=self._mouse_elsewhere), height=lambda: Dimension.exact(self._status_render()[1]))
-        self.sections = [Window(_Pane(lambda k=k: self._section(k), self.scroll, on_mouse=self._mouse_elsewhere), wrap_lines=False, style="bg:#151826", height=Dimension(weight=1)) for k in ("read", "write", "cmd")]
-        rule = lambda: Window(height=1, char="─", style="fg:#3a3f5c bg:#151826")
+        self.sections = [Window(_Pane(lambda k=k: self._section(k), self.scroll, on_mouse=self._mouse_elsewhere), wrap_lines=False, style=f"bg:{BG_PANEL}", height=Dimension(weight=1)) for k in ("read", "write", "cmd")]
+        rule = lambda: Window(height=1, char="─", style=f"fg:{RULE} bg:{BG_PANEL}")
         side = VSplit([
-            Window(width=1, char="│", style="fg:#3a3f5c"),
-            HSplit([self.sections[0], rule(), self.sections[1], rule(), self.sections[2]], width=SIDE_WIDTH, style="bg:#151826"),
+            Window(width=1, char="│", style=f"fg:{RULE}"),
+            HSplit([self.sections[0], rule(), self.sections[1], rule(), self.sections[2]], width=SIDE_WIDTH, style=f"bg:{BG_PANEL}"),
         ])
         wide = Condition(lambda: _size()[0] >= MIN_COLUMNS)
-        header = Window(_Pane(self._header, self.scroll), height=1, style="bg:#1d2033")
+        header = Window(_Pane(self._header, self.scroll), height=1, style=f"bg:{BG_BOX}")
         margin = Window(width=MARGIN)
         self.body = HSplit([
             header,
@@ -340,7 +341,7 @@ class Screen:
         pad = " " * max(1, cols - len(left) - len(right))
         busy = self.tui._turn_active
         return [(f"bold fg:{ACCENT}", f"  =^{self._face()}^="), (f"bold fg:{LAVENDER if busy else FG}", "  mew"),
-                (f"fg:{MUTED}", f"  ·  {self._title()}{pad}"), (f"bold fg:{MINT}" if time.monotonic() - self._copied_at < 2 else f"fg:{AMBER}" if self.anchor is not None else "fg:#4a4f73", right)]
+                (f"fg:{MUTED}", f"  ·  {self._title()}{pad}"), (f"bold fg:{MINT}" if time.monotonic() - self._copied_at < 2 else f"fg:{AMBER}" if self.anchor is not None else f"fg:{FAINT}", right)]
 
     # -- panes ---------------------------------------------------------
     def _transcript(self):
@@ -396,7 +397,7 @@ class Screen:
         cells = []
         for i in range(w):
             glow = max(0.0, 1 - abs(i - pos) / 7)
-            r, g, b = (int(_mix("#2a2e48", ACCENT, glow)[k:k + 2], 16) for k in (1, 3, 5))
+            r, g, b = (int(_mix(RULE, ACCENT, glow)[k:k + 2], 16) for k in (1, 3, 5))
             cells.append(f"\x1b[38;2;{r};{g};{b}m{'━' if glow > 0.05 else '─'}")
         return "".join(cells) + "\x1b[0m"
 
@@ -417,7 +418,7 @@ class Screen:
             "write": ("WRITTEN", AMBER, list(t.written.items())),
             "cmd": ("COMMANDS", LAVENDER, t.commands),
         }[kind]
-        out: list[tuple[str, str]] = [("", " "), (f"bold fg:#14161f bg:{color}", f" {title} "), (f"bold fg:{color}", f" {len(items)}"), *self._totals(kind, items), ("", "\n")]
+        out: list[tuple[str, str]] = [("", " "), (f"bold fg:{INK} bg:{color}", f" {title} "), (f"bold fg:{color}", f" {len(items)}"), *self._totals(kind, items), ("", "\n")]
         if not items:
             hint = {"read": "files the agent opens", "write": "edits show up with a +/− bar", "cmd": "builds, tests and scripts"}[kind]
             out.append((f"fg:{MUTED} italic", f"\n   {hint}"))
@@ -433,7 +434,7 @@ class Screen:
             nl = "\n" if i < len(shown) - 1 else ""
             key = {"read": "read:" + str(it[0]), "write": "write:" + str(it[0]), "cmd": f"cmd:{items.index(it)}"}[kind]
             fresh = time.monotonic() - t.touched.get(key, -99) < 2.0  # glows for a moment after the agent touches it
-            glow = f" bg:#2a2140" if fresh else ""
+            glow = f" bg:{BG_GLOW}" if fresh else ""
             if kind == "read":
                 path, n = it
                 tail = f" ×{n}" if n > 1 else ""
