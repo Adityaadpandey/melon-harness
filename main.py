@@ -190,10 +190,10 @@ class CLI:
             used = sess.context_manager._latest_usage.total_tokens
             window = sess.client.registry.get(self.config.model_name).context_length
             if used:
-                parts.append("ctx " + context_bar(100 * used / window))
+                parts.append(f"ctx {context_bar(100 * used / window, 12)}  {used / 1000:.0f}k/{window / 1000:.0f}k")
             u = summarize_usage(sess.tracer.events, self.config.pricing)
             if u["calls"]:
-                parts.append(f"{u['prompt_tokens'] / 1000:.0f}k in ({u['cache_hit_pct']:.0f}% cached)")
+                parts.append(f"↑{u['prompt_tokens'] / 1000:.0f}k ↓{u['completion_tokens'] / 1000:.1f}k  {u['cache_hit_pct']:.0f}% cached")
                 if u["est_cost_usd"] is not None:
                     parts.append(f"${u['est_cost_usd']}")
             if self.config.sandbox != "off":
