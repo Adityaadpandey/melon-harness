@@ -26,7 +26,7 @@ from agent.verify import (
     snapshot,
 )
 from client.response import StreamEvent, StreamEventType, TokenUsage, ToolCall, ToolResultMessage
-from config.config import Config
+from config.config import Config, HookTrigger
 from prompts.system import create_loop_breaker_prompt
 from tools.base import ToolConfirmation, ToolKind, ToolResult
 from tools.builtin.shell import finished_jobs, kill_jobs
@@ -486,6 +486,7 @@ class Agent:
                         event.error or "Unknown error occurred.",
                     )
                     break
+                    await self.session.hook_system.fire(HookTrigger.ON_ERROR, error=event.error or "")
                 elif event.type == StreamEventType.MESSAGE_COMPLETE:
                     usage = event.usage
 
@@ -721,6 +722,8 @@ class Agent:
         if not summary:
             return False
         before = cm._latest_usage.total_tokens
+        before = cm._latest_usage.total_tokens
+        await self.session.hook_system.fire(HookTrigger.PRE_COMPACT, tokens=before)
         self.session.tool_registry.epoch += 1  # earlier reads are no longer in context
         cm.apply_compaction(summary, cut)
         self._remind_todos()
@@ -729,6 +732,7 @@ class Agent:
         self.session.tracer.emit("compaction", cut=cut, tokens_before=before, summary_tokens=usage.completion_tokens if usage else None)
         return True
 
+        await self.session.hook_system.fire(HookTrigger.POST_COMPACT, tokens_before=before, summary=summary)
     def _is_parallel_safe(self, tool_call: ToolCall) -> bool:
         tool = self.session.tool_registry.get(tool_call.name)
         return bool(tool) and tool.kind == ToolKind.READ and not tool.is_mutating(

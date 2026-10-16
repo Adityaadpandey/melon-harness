@@ -156,9 +156,10 @@ class HookSystem:
                 feedback.append(f"[hook '{hook.name}']: {err}")
         return "\n".join(feedback) or None
 
-    async def trigger_on_error(self, error: Exception) -> None:
-        env = self._build_env(HookTrigger.ON_ERROR, error=error)
-
-        for hook in self.hooks:
-            if hook.trigger == HookTrigger.ON_ERROR:
-                await self._run_hook(hook, env)
+    async def fire(self, trigger: HookTrigger, **info: str) -> None:
+        """Events with no veto (compaction, errors): run every matching hook, ignore the exit code.
+        `info` becomes AI_AGENT_<KEY> env vars, e.g. fire(PRE_COMPACT, tokens="180000")."""
+        env = self._build_env(trigger)
+        env.update({f"AI_AGENT_{k.upper()}": str(v) for k, v in info.items()})
+        for hook in self._matching(trigger):
+            await self._run_hook(hook, env)

@@ -71,6 +71,8 @@ class HookTrigger(str, Enum):
     BEFORE_TOOL = "before_tool"
     AFTER_TOOL = "after_tool"
     ON_ERROR = "on_error"
+    PRE_COMPACT = "pre_compact"
+    POST_COMPACT = "post_compact"
 
 
 class HookConfig(BaseModel):
