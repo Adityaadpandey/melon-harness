@@ -565,3 +565,24 @@ async def test_a_sweep_with_open_steps_is_sent_back_instead_of_answered(cfg):
         assert len(sent) == 4
         assert "still open" in " ".join(str(m.get("content")) for m in sent[2] if m["role"] == "user") and "fix Footer" in str(sent[2])
         assert any(e.type == AgentEventType.TEXT_COMPLETE and e.data.get("content") == "really done" for e in events)
+
+
+def test_interim_text_shrinks_to_one_short_line():
+    from agent.brevity import interim_line
+
+    notes = "Working notes before editing:\n\n- `a.tsx`: verified the CTA is a plain Link\n- `b.tsx:3`: state-only guard"
+    assert interim_line(notes) == "Working notes before editing:"
+    assert interim_line("- " + "word " * 60).endswith("…") and len(interim_line("- " + "word " * 60)) <= 142
+    assert interim_line("") == ""
+
+
+async def test_text_before_a_tool_call_is_shown_as_one_line_but_a_final_answer_in_full(cfg):
+    (cfg.cwd / "a.txt").write_text("hi")
+    notes = "Working notes:\n- one\n- two\n- three"
+    async with Agent(cfg) as agent:
+        sc = ScriptedClient([[*text(notes)[:-1], *call("read_file", {"path": "a.txt"})], text("Fixed it.\n- a.txt:1  done")])
+        agent.session.client = sc
+        events = await run(agent)
+        shown = "".join(e.data.get("content", "") for e in events if e.type == AgentEventType.TEXT_DELTA)
+        assert shown == "Working notes:Fixed it.\n- a.txt:1  done"
+        assert any(m.get("content") == notes for m in sc.requests[1] if m["role"] == "assistant")  # history keeps the full notes

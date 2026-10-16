@@ -24,7 +24,7 @@ SWEEP = (
     "patterns, and list EVERY place that could have the problem (grep for the pattern, `graph importers` for who uses a shared "
     "component). (2) Write that list with the todos tool, one step per place or group of places. (3) Work through it: for each "
     "step either fix it or note in one line why it is fine. (4) Before you answer, search again and confirm nothing on the list "
-    "is left. Answer with the list: what you changed and what you ruled out. Do not stop after the first few files."
+    "is left. Answer in a few lines: what you changed, and what you ruled out as one short group. Do not stop after the first few files."
 )
 
 SWEEP_CHECKPOINT = (

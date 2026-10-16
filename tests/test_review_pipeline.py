@@ -64,7 +64,7 @@ async def test_pipeline_runs_reviewers_then_verifiers_and_hands_the_main_agent_o
         assert agent.session.client.requests == []  # a read-only review is not followed by a model call or a tool loop
         done = [e.data.get("content") for e in events if e.type == AgentEventType.TEXT_COMPLETE]
         assert len(done) == 1 and done[0].startswith("HIGH a.ts:1  write can throw and 500 the page -> catch\n\n1 more claim(s) were ruled out by the verifier.")
-        assert "Looked at: 1 file(s)" in done[0] and "Not run: typecheck" in done[0]
+        assert "Read 1 file(s)" in done[0] and "Not run: typecheck" in done[0]
         sent = " ".join(str(m.content) for m in agent.session.context_manager._messages if m.role == "user")
         assert "[confirmed] HIGH a.ts:1" in sent and "[rejected] a.ts:1" in sent
     assert [r for r, p in prompts if "claims these defects" in p] == ["default"]  # ONE verifier, on the fast model

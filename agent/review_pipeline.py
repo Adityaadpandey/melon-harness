@@ -144,15 +144,12 @@ def frame(answer: str, summary: str, reviewed: list[str], moves: list[tuple[str,
     Without it "No issues found." says nothing about how much was read."""
     lines = [f"What the change does: {summary}"] if summary else []
     lines.append(answer)
-    seen = [f"{len(reviewed)} file(s) read in the diff"]
+    seen = [f"{len(reviewed)} file(s)"]
     if moves:
         seen.append(f"{len(moves)} moved unchanged (" + ", ".join(f"{a} -> {b}" for a, b in moves[:3]) + (", ..." if len(moves) > 3 else "") + ")")
     if deleted:
         seen.append(f"{len(deleted)} deleted")
-    lines.append("Looked at: " + "; ".join(seen) + ".")
-    if moves:
-        lines.append("Next: stage the deletions and the new files together (git add -A on both paths) so git records a rename and keeps the history.")
-    lines.append("Not run: typecheck, lint and tests (the reviewers only read code); run them before merging.")
+    lines.append("Read " + ", ".join(seen) + ". Not run: typecheck, lint, tests." + (" Stage the move with git add -A on both paths so git keeps the rename." if moves else ""))
     return "\n\n".join(lines)
 
 

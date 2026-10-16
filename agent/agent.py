@@ -6,6 +6,7 @@ import time
 from pathlib import Path
 from typing import AsyncGenerator, Awaitable, Callable
 from agent.challenge import challenge_request, is_risky, render as render_objections
+from agent.brevity import HOLD_CHARS, interim_line
 from agent.events import AgentEvent, AgentEventType
 from agent.root import pick_root
 from agent.grounding import REWRITE_PROMPT, correction_prompt, has_file_code, shows_second_thoughts, verify_references, wants_change
@@ -414,7 +415,7 @@ class Agent:
                 self.session.context_manager.add_user_message(
                     SWEEP_CHECKPOINT if self._broad else
                     "Checkpoint: you have looked things up for several rounds without writing anything down. Before the next lookup, "
-                    "jot working notes (candidate, file:line, checked or not; no severity) and what you will check next. If you have verified a defect, fix it now."
+                    "jot working notes in at most 3 lines (candidate, file:line, checked or not; no severity) and what you will check next. If you have verified a defect, fix it now."
                 )
             elif self._wants_change and not self._broad and not self._edited and not self._fix_nudged and self._calls_used >= 15:
                 self._fix_nudged = True
@@ -466,6 +467,7 @@ class Agent:
             usage: TokenUsage | None = None
             failed = False
             overflowed = False
+            held, streaming = "", False  # text waits until we know whether tool calls follow (then it shows as one line)
 
             async for event in _within(task.remaining(), self.session.client.chat_completion(
                 self.session.context_manager.get_messages(),
@@ -476,7 +478,14 @@ class Agent:
                     if event.text_delta:
                         content = event.text_delta.content
                         response_text += content
-                        yield AgentEvent.text_delta(content)
+                        if streaming:
+                            yield AgentEvent.text_delta(content)
+                        else:
+                            held += content
+                            if len(held) > HOLD_CHARS:
+                                streaming = True
+                                yield AgentEvent.text_delta(held)
+                                held = ""
                 elif event.type == StreamEventType.NOTICE:
                     yield AgentEvent.notice(event.notice or "")
                 elif event.type == StreamEventType.TOOL_CALL_COMPLETE:
@@ -495,6 +504,9 @@ class Agent:
                     break
                 elif event.type == StreamEventType.MESSAGE_COMPLETE:
                     usage = event.usage
+
+            if held and not overflowed:
+                yield AgentEvent.text_delta(interim_line(held) if tool_calls else held)
 
             if overflowed:
                 self._overflow_retried = True
