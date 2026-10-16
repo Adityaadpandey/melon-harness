@@ -79,7 +79,10 @@ def build(cwd: Path, budget_chars: int = 4000) -> str:
             pass
     if not srcs:
         return ""
-    rank = pagerank({f: _imports(f, s, known) for f, s in srcs.items()})
+    from utils import importgraph
+
+    live = importgraph.load(cwd).out  # follows @/ aliases and relative python imports, which _imports misses
+    rank = pagerank({f: (live.get(f) or _imports(f, s, known)) & known for f, s in srcs.items()})
     lines, used = [], 0
     for f in sorted(srcs, key=lambda k: -rank[k]):
         names = [s.name for s in outline(Path(f).name, srcs[f]) if s.indent == 0 and not s.name.startswith("_")][:8]
