@@ -187,3 +187,13 @@ def test_everyday_searches_run_without_asking_and_tricks_still_ask():
         "grep '$(id)' f", 'grep "x', "tail -qf log", "ls |& sh", "git stash", "git stash pop", "git stash drop",
     ]:
         assert not is_safe_command(bad), bad
+
+
+async def test_plan_mode_refuses_every_write_and_every_unsafe_command_but_still_reads(tmp_path):
+    from safety.approval import ApprovalContext, ApprovalDecision, ApprovalManager
+
+    m = ApprovalManager(ApprovalPolicy.PLAN, tmp_path)
+    ctx = lambda **k: ApprovalContext(tool_name="t", params={}, is_mutating=True, **{"affected_paths": [], **k})
+    assert await m.check_approval(ctx(tool_kind="write", affected_paths=[tmp_path / "a.py"])) == ApprovalDecision.REJECTED
+    assert await m.check_approval(ctx(command="rm a.py")) == ApprovalDecision.REJECTED
+    assert await m.check_approval(ctx(command="git status")) == ApprovalDecision.APPROVED

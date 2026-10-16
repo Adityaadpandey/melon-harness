@@ -62,6 +62,7 @@ class ApprovalPolicy(str, Enum):
     AUTO_EDIT = "auto-edit"
     NEVER = "never"
     YOLO = "yolo"
+    PLAN = "plan"  # read-only, like Claude Code's plan mode: look around, write nothing, present a plan
 
 
 class HookTrigger(str, Enum):

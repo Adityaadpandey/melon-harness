@@ -283,8 +283,11 @@ class ToolRegistry:
 
                 decision = await approval_manager.check_approval(context)
                 if decision == ApprovalDecision.REJECTED:
+                    plan = approval_manager.approval_policy.value == "plan"
                     result = ToolResult.error_result(
-                        "Operation rejected by safety policy"
+                        "Plan mode is on: nothing may be changed. Finish investigating with read-only tools, then give the user a "
+                        "concrete plan (files, edits, how to verify) and ask them to leave plan mode (/plan) so you can carry it out."
+                        if plan else "Operation rejected by safety policy"
                     )
                     await hook_system.trigger_after_tool(name, params, result)
                     return result

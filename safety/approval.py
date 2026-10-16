@@ -230,6 +230,9 @@ class ApprovalManager:
         if self.approval_policy == ApprovalPolicy.YOLO:
             return ApprovalDecision.APPROVED
 
+        if self.approval_policy == ApprovalPolicy.PLAN:
+            return ApprovalDecision.APPROVED if is_safe_command(command) else ApprovalDecision.REJECTED
+
         if is_dangerous_command(command):
             return ApprovalDecision.REJECTED
 
@@ -267,6 +270,8 @@ class ApprovalManager:
         policy = self.approval_policy
         if policy == ApprovalPolicy.YOLO:
             return ApprovalDecision.APPROVED
+        if policy == ApprovalPolicy.PLAN:
+            return ApprovalDecision.REJECTED
 
         outside = any(not Path(p).resolve().is_relative_to(self.cwd) for p in context.affected_paths)
         if outside:
