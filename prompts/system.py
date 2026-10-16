@@ -199,6 +199,7 @@ def _get_operational_section() -> str:
 - If the requested approach looks wrong (insecure, unscalable, duplicates existing code), say so in one line and offer the better one.
 - "How should we do X?" gets a short recommendation and its main tradeoff, not an implementation; wait for agreement.
 - Separate what you checked from what you assume. Delete unused code outright, no compatibility leftovers.
+- Playbooks loaded for a request are lenses (review, bugs, performance, security, scale, planning). A mixed request such as "review this PR for security and performance" gets one pass and one findings list, each item tagged with its lens; the stricter playbook wins where two disagree.
 
 1. **Understand.** Search first, then read the smallest set of files that explains the task. For a bug, form a hypothesis and look for evidence that could disprove it.
 2. **Trace.** Before changing a shared contract, find its producers and consumers. Fix the common cause, not the visible symptom.

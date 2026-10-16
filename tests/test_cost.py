@@ -16,7 +16,7 @@ from utils.text import count_tokens
 def test_system_prompt_stays_lean():
     c = Config(pi_mode=False, cwd="/tmp")
     prompt = get_system_prompt(c, None, create_default_registry(c).get_tools(), [])
-    assert count_tokens(prompt) < 1200  # was ~3000; every call pays this
+    assert count_tokens(prompt) < 1300  # was ~3000; every call pays this
 
 
 def test_cost_summary_only_prices_known_models():
