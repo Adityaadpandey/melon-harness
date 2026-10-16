@@ -91,7 +91,7 @@ def _load(profile: str | None, cwd: str, skill_dirs: tuple[str, ...], home: str)
     if profile:
         dirs.append(PROFILES_DIR / profile / "skills")
     root = Path(cwd)
-    dirs += [root / ".claude" / "skills", root / ".ai-agent" / "skills",*(root / d for d in skill_dirs)]
+    dirs += [root / ".claude" / "skills", root / ".ai-agent" / "skills", *(root / d for d in skill_dirs)]
     found: dict[str, Skill] = {}
     for d in dirs:
         if d.is_dir():

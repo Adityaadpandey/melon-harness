@@ -223,3 +223,13 @@ async def test_pi_mode_playbook_message_does_not_offer_the_use_skill_tool(tmp_pa
         _ = [e async for e in a.run("review my changes")]
         first = [m.content for m in a.session.context_manager._messages if m.role == "user"][0]
         assert "Playbook: code-review" in first and "use_skill" not in first
+
+
+def test_a_repo_s_own_claude_skill_loads_and_a_quoted_phrase_in_its_description_triggers_it(tmp_path):
+    from agent.skills import load_skills, match_skills
+
+    d = tmp_path / ".claude" / "skills" / "motion-audit"
+    d.mkdir(parents=True)
+    (d / "SKILL.md").write_text('---\nname: motion-audit\ndescription: Use when asked to "improve the animations" of the app.\n---\nbody\n')
+    sk = load_skills(Config(cwd=tmp_path))
+    assert [s.name for s in match_skills(sk, "please improve the animations on discover")] == ["motion-audit"]
