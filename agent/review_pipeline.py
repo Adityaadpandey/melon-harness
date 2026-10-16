@@ -27,7 +27,7 @@ REVIEWER_PROMPT = """You are reviewing {scope}. You did not write it.
 The request: {request}
 
 FILES: {part}
-OTHER CHANGED FILES (read them only to follow a call chain): {others}
+{moved}OTHER CHANGED FILES (read them only to follow a call chain): {others}
 
 DIFF:
 {diff}
@@ -43,7 +43,8 @@ No style, redundancy or "could drift later" items; nothing you cleared in your o
 Reply with at most 5 lines, one finding per line, EXACTLY:
 SEVERITY | path:line | what is wrong, and who is affected (the call chain you read) | fix
 SEVERITY is HIGH only for a defect you proved by reading the code; a guess is MEDIUM and says "unverified".
-If you found nothing, reply: NONE"""
+If you found nothing, reply: NONE
+Put one line before the findings: SUMMARY: <one or two sentences saying what the change does, in plain words>"""
 
 VERIFIER_PROMPT = """Another agent claims these defects exist in the working tree. Your job is to refute each one if you can.
 
@@ -92,6 +93,52 @@ def changed_files(porcelain: str) -> list[str]:
         if path and not path.endswith(SKIP_SUFFIXES):
             files.append(path)
     return files
+
+
+def deleted_files(porcelain: str) -> list[str]:
+    """Paths `git status --porcelain` reports as deleted (a file moved away shows up here too)."""
+    out = []
+    for line in porcelain.splitlines():
+        if len(line) >= 4 and "D" in line[:2]:
+            out.append(line[3:].strip().strip('"'))
+    return out
+
+
+async def pair_moves(cwd: Path, deleted: list[str], added: list[str]) -> tuple[list[tuple[str, str]], list[str], list[str]]:
+    """A file deleted in one place and added somewhere else with identical bytes is a move, not a change.
+    Example: events/page.tsx -> events/(list)/page.tsx. Returns (moves, deleted left over, added left over), so the
+    reviewer reads the moves as one line instead of a deletion plus a whole new file."""
+    gone = {}
+    for d in deleted:
+        sha = (await _git(cwd, "rev-parse", f"HEAD:{d}")).strip()
+        if len(sha) == 40:
+            gone.setdefault(sha, []).append(d)
+    moves, used_old, moved_new = [], set(), set()
+    for a in added:
+        if not (cwd / a).is_file():
+            continue
+        sha = (await _git(cwd, "hash-object", "--", a)).strip()
+        if gone.get(sha):
+            old = gone[sha].pop(0)
+            moves.append((old, a))
+            used_old.add(old)
+            moved_new.add(a)
+    return moves, [d for d in deleted if d not in used_old], [a for a in added if a not in moved_new]
+
+
+def frame(answer: str, summary: str, reviewed: list[str], moves: list[tuple[str, str]], deleted: list[str]) -> str:
+    """What a human reviewer writes around the findings: what the change does, what was and was not looked at.
+    Without it "No issues found." says nothing about how much was read."""
+    lines = [f"What the change does: {summary}"] if summary else []
+    lines.append(answer)
+    seen = [f"{len(reviewed)} file(s) read in the diff"]
+    if moves:
+        seen.append(f"{len(moves)} moved unchanged (" + ", ".join(f"{a} -> {b}" for a, b in moves[:3]) + (", ..." if len(moves) > 3 else "") + ")")
+    if deleted:
+        seen.append(f"{len(deleted)} deleted")
+    lines.append("Looked at: " + "; ".join(seen) + ".")
+    lines.append("Not run: typecheck, lint and tests (the reviewers only read code); run them before merging.")
+    return "\n\n".join(lines)
 
 
 def group_files(files: list[str], limit: int = MAX_GROUPS) -> list[tuple[str, list[str]]]:
@@ -254,12 +301,15 @@ async def run_review_pipeline(config, request: str) -> AsyncGenerator[tuple[str,
     """Yields ("notice", text) as it goes and finally ("result", block), or nothing when there is nothing to review.
     One reviewer reads the whole change (two when the diff is too big for one reading), then ONE verifier checks every claim."""
     cwd = Path(config.cwd)
-    files = changed_files(await _git(cwd, "status", "--porcelain"))
-    if not files:
+    porcelain = await _git(cwd, "status", "--porcelain", "-uall")  # -uall: a new folder is listed file by file, not as one "dir/" entry
+    files = changed_files(porcelain)
+    moves, deleted, files = await pair_moves(cwd, deleted_files(porcelain), files)
+    files = files + deleted  # build_diff shows a deletion as what was removed
+    if not files and not moves:
         return
     whole = await build_diff(cwd, files)
     groups = [("the whole change", files)] if "[diff clipped]" not in whole else group_files(files, 2)
-    yield "notice", f"Reviewing {len(files)} changed file(s)" + (f" with {len(groups)} reviewers in parallel" if len(groups) > 1 else "")
+    yield "notice", f"Reviewing {len(files)} changed file(s)" + (f" and {len(moves)} moved unchanged" if moves else "") + (f" with {len(groups)} reviewers in parallel" if len(groups) > 1 else "")
     role = config.review_pipeline_role
     _spent_log.clear()
 
@@ -267,10 +317,14 @@ async def run_review_pipeline(config, request: str) -> AsyncGenerator[tuple[str,
         diff = whole if len(groups) == 1 else await build_diff(cwd, fs)
         others = ", ".join(f for f in files if f not in fs)[:600] or "(none)"
         scope = "the whole uncommitted change" if len(groups) == 1 else f"one part ({name}) of an uncommitted change that {len(groups)} reviewers split"
-        prompt = REVIEWER_PROMPT.format(scope=scope, request=request[:1500], part=", ".join(fs[:25]), others=others, diff=diff)
+        moved = ("MOVED WITHOUT ANY CHANGE (identical bytes, so there is nothing in them to review; check that imports and paths still resolve): "
+                 + "; ".join(f"{a} -> {b}" for a, b in moves) + "\n") if moves else ""
+        prompt = REVIEWER_PROMPT.format(scope=scope, request=request[:1500], part=", ".join(fs[:25]), moved=moved, others=others, diff=diff)
         reply = await ask(config, prompt, role, max_turns=8, max_tokens=config.review_pipeline_tokens)
+        summaries.extend(re.findall(r"(?im)^\W*SUMMARY:\s*(.+)$", reply))
         return parse_findings(reply) if reply.strip() else None
 
+    summaries: list[str] = []
     replies = await asyncio.gather(*(review(n, fs) for n, fs in groups))
     review_tokens = sum(_spent_log)
     if all(r is None for r in replies):
@@ -294,5 +348,5 @@ async def run_review_pipeline(config, request: str) -> AsyncGenerator[tuple[str,
     verify_tokens = sum(_spent_log) - review_tokens
     yield "notice", f"Verified: {confirmed} confirmed, {rejected} rejected, {len(found) - confirmed - rejected} unverified"
     yield "notice", f"Tokens: reviewer {review_tokens:,} + verifier {verify_tokens:,} = {review_tokens + verify_tokens:,}"
-    yield "answer", format_answer(found)
+    yield "answer", frame(format_answer(found), summaries[0].strip() if summaries else "", files, moves, deleted)
     yield "result", compose(found, len(groups))

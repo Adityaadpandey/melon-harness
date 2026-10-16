@@ -63,7 +63,8 @@ async def test_pipeline_runs_reviewers_then_verifiers_and_hands_the_main_agent_o
         assert any("Reviewing 1 changed file" in n for n in notices) and any("1 confirmed, 1 rejected" in n for n in notices)
         assert agent.session.client.requests == []  # a read-only review is not followed by a model call or a tool loop
         done = [e.data.get("content") for e in events if e.type == AgentEventType.TEXT_COMPLETE]
-        assert done == ["HIGH a.ts:1  write can throw and 500 the page -> catch\n\n1 more claim(s) were ruled out by the verifier."]
+        assert len(done) == 1 and done[0].startswith("HIGH a.ts:1  write can throw and 500 the page -> catch\n\n1 more claim(s) were ruled out by the verifier.")
+        assert "Looked at: 1 file(s)" in done[0] and "Not run: typecheck" in done[0]
         sent = " ".join(str(m.content) for m in agent.session.context_manager._messages if m.role == "user")
         assert "[confirmed] HIGH a.ts:1" in sent and "[rejected] a.ts:1" in sent
     assert [r for r, p in prompts if "claims these defects" in p] == ["default"]  # ONE verifier, on the fast model
@@ -178,3 +179,28 @@ async def test_a_near_miss_path_is_mended_and_an_unknown_one_is_marked(tmp_path)
     f = [rp.Finding("HIGH", "svc/disc.ts:9", "w", "f"), rp.Finding("HIGH", "svc/nope.ts:1", "w", "f"), rp.Finding("HIGH", "svc/event/disc.ts:2", "w", "f")]
     await rp.fix_paths(f, tmp_path)
     assert [x.where for x in f] == ["svc/event/disc.ts:9", "svc/nope.ts:1 (file not found)", "svc/event/disc.ts:2"]
+
+
+async def test_a_file_moved_into_a_new_folder_is_one_move_line_not_a_deletion_plus_a_new_file(tmp_path):
+    import subprocess
+
+    def git(*a):
+        subprocess.run(["git", "-C", str(tmp_path), *a], check=True, capture_output=True)
+
+    git("init", "-q")
+    git("config", "user.email", "t@t")
+    git("config", "user.name", "t")
+    (tmp_path / "events").mkdir()
+    (tmp_path / "events/page.tsx").write_text("export default function P() {}\n")
+    (tmp_path / "events/other.tsx").write_text("old\n")
+    git("add", ".")
+    git("commit", "-qm", "base")
+    (tmp_path / "events/(list)").mkdir()
+    (tmp_path / "events/page.tsx").rename(tmp_path / "events/(list)/page.tsx")
+    (tmp_path / "events/other.tsx").write_text("new\n")
+
+    porcelain = await rp._git(tmp_path, "status", "--porcelain", "-uall")
+    moves, deleted, added = await rp.pair_moves(tmp_path, rp.deleted_files(porcelain), rp.changed_files(porcelain))
+    assert moves == [("events/page.tsx", "events/(list)/page.tsx")] and deleted == [] and added == ["events/other.tsx"]
+    out = rp.frame("No issues found.", "Moves the list page into a route group.", added, moves, deleted)
+    assert "events/page.tsx -> events/(list)/page.tsx" in out and "Not run: typecheck" in out and out.startswith("What the change does")

@@ -62,8 +62,9 @@ async def build_diff(cwd: Path, files: list[str]) -> str:
     """Tracked files via git diff; untracked (new) files shown whole, since git diff omits them."""
     tracked = set((await _git(cwd, "ls-files", "--", *files)).split("\n")) if files else set()
     parts = []
-    if tracked & set(files):
-        parts.append(await _git(cwd, "diff", "HEAD", "--", *sorted(tracked & set(files))))
+    gone = {f for f in files if not (cwd / f).exists()}  # deleted or moved away: git diff shows what was removed
+    if (tracked & set(files)) | gone:
+        parts.append(await _git(cwd, "diff", "HEAD", "--", *sorted((tracked & set(files)) | gone)))
     for f in files:
         if f not in tracked and (cwd / f).is_file():
             body = (cwd / f).read_text(encoding="utf-8", errors="replace")
