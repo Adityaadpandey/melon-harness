@@ -221,6 +221,7 @@ class Agent:
         reviews = 0
         grounded_once = False
         rewrote = False
+        stop_blocks = 0  # times a stop hook sent the work back; capped so a hook cannot loop forever
 
         while True:
             self._failed = False
@@ -291,6 +292,11 @@ class Agent:
                         "say so in one sentence."
                     )
                     continue
+                if stop_blocks < 2 and (held := await self.session.hook_system.trigger_stop(message, final_response or "")):
+                    stop_blocks += 1
+                    yield AgentEvent.notice("A stop hook says the work is not finished; sending it back")
+                    self.session.context_manager.add_user_message(held)
+                    continue
                 task.transition(TaskStatus.DONE_NO_CHANGES)
                 break
             failures: list = []
@@ -334,6 +340,12 @@ class Agent:
                         "sentence and leave the code alone. Keep changes minimal, then stop."
                     )
                     continue
+
+            if stop_blocks < 2 and not task.expired() and (held := await self.session.hook_system.trigger_stop(message, final_response or "")):
+                stop_blocks += 1
+                yield AgentEvent.notice("A stop hook says the work is not finished; sending it back")
+                self.session.context_manager.add_user_message(held)
+                continue
 
             if checks:
                 task.transition(TaskStatus.VERIFIED)

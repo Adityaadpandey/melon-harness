@@ -163,3 +163,15 @@ class HookSystem:
         env.update({f"AI_AGENT_{k.upper()}": str(v) for k, v in info.items()})
         for hook in self._matching(trigger):
             await self._run_hook(hook, env)
+
+    async def trigger_stop(self, user_message: str, agent_response: str) -> str | None:
+        """Exit code 2 from a stop hook means "not done yet": its stderr goes back to the model as the next
+        instruction. Example: a hook that runs the tests and exits 2 with "3 tests still fail" keeps the agent
+        going until they pass. The caller caps how many times this can happen."""
+        env = self._build_env(HookTrigger.STOP, user_message=user_message)
+        env["AI_AGENT_RESPONSE"] = agent_response or ""
+        for hook in self._matching(HookTrigger.STOP):
+            code, err = await self._run_hook(hook, env)
+            if code == 2:
+                return f"[stop hook '{hook.name}']: {err or 'not finished yet'}"
+        return None

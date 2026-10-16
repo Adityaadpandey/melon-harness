@@ -73,6 +73,9 @@ class HookTrigger(str, Enum):
     ON_ERROR = "on_error"
     PRE_COMPACT = "pre_compact"
     POST_COMPACT = "post_compact"
+    SESSION_START = "session_start"  # once, when a session opens; no veto
+    STOP = "stop"  # the agent is about to hand back its answer; exit 2 sends stderr back and keeps it working
+    SUBAGENT_STOP = "subagent_stop"  # a sub-agent finished; no veto
 
 
 class HookConfig(BaseModel):

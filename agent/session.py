@@ -4,7 +4,7 @@ from typing import Any
 import uuid
 from agent.skills import load_skills
 from client.llm_client import LLMClient
-from config.config import Config
+from config.config import Config, HookTrigger
 from config.loader import get_data_dir
 from context.compaction import ChatCompactor
 from context.loop_detector import LoopDetector
@@ -66,6 +66,7 @@ class Session:
             skills=self.skills,
         )
         self.context_manager.archive = self.tool_registry.archive
+        await self.hook_system.fire(HookTrigger.SESSION_START, session_id=self.session_id)
         self.tool_registry.is_live = self.context_manager.has_live_result
 
     def _load_memory(self) -> str | None:

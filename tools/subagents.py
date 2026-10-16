@@ -138,6 +138,13 @@ class SubagentTool(Tool):
             final_response = f"Sub-agent failed: {error}"
 
         report({"kind": "done", "ok": not error, "tokens": tokens})
+        try:
+            from config.config import HookTrigger
+            from hooks.hook_system import HookSystem
+
+            await HookSystem(self.config).fire(HookTrigger.SUBAGENT_STOP, agent=self.definition.name, ok=str(not error).lower())
+        except Exception:
+            pass  # a broken hook must not lose the sub-agent's answer
         if final_response and len(final_response) > MAX_REPORT_CHARS:
             final_response = final_response[:MAX_REPORT_CHARS] + "\n... [report cut; ask for a narrower answer]"
         result = f"""Sub-agent '{self.definition.name}' completed. 
