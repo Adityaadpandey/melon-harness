@@ -79,6 +79,10 @@ class WriteFileTool(Tool):
             except:
                 pass
 
+        # formatters (biome, prettier, black) fail a file that ends without "\n"; models often forget it
+        if params.content and not params.content.endswith("\n") and (is_new_file or old_content.endswith("\n")):
+            params.content += "\n"
+
         try:
             if params.create_directories:
                 ensure_parent_directory(path)

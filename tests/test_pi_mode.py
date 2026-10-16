@@ -75,3 +75,18 @@ def test_a_sub_agent_never_gets_the_searcher_and_a_profile_investigator_replaces
     assert Config(cwd=tmp_path, subagents=[spec]).allowed_tools[-1] == "subagent_investigator"
     writer = SubagentSpec(name="investigator", description="d", goal_prompt="g", allowed_tools=["read_file", "shell"])
     assert not any(t.startswith("subagent_") for t in Config(cwd=tmp_path, subagents=[writer]).allowed_tools)  # a searcher that can run commands is not read-only
+
+
+def test_write_file_ends_a_new_file_with_a_newline_but_leaves_a_no_newline_file_alone(tmp_path):
+    import asyncio
+
+    from tools.base import ToolInvocation
+    from tools.builtin.write_file import WriteFileTool
+
+    tool = WriteFileTool(Config(cwd=tmp_path))
+    run = lambda name, text: asyncio.run(tool.execute(ToolInvocation(params={"path": name, "content": text}, cwd=tmp_path)))
+    run("a.tsx", "export {}")
+    assert (tmp_path / "a.tsx").read_text() == "export {}\n"  # biome/prettier fail a file without it
+    (tmp_path / "b.txt").write_text("old")  # this file never had one: keep it that way
+    run("b.txt", "new")
+    assert (tmp_path / "b.txt").read_text() == "new"
