@@ -17,7 +17,7 @@ TEMP_DIRS = ("/tmp", "/private/tmp", "/var/folders", "/private/var/folders", "/v
 
 _PATH_RE = re.compile(
     r"""(?x)
-    (?P<home>(?<![\w$])~(?:/[^\s"';|&<>()`]*)?)
+    (?P<home>(?<![\w$])~(?![\w-])(?:/[^\s"';|&<>()`]*)?)  # "~line 97" in prose is not home
   | (?P<envhome>\$\{?HOME\}?(?:/[^\s"';|&<>()`]*)?)
   | (?P<abs>(?<![\w.:$/\-])/[^\s"';|&<>()`=,]+)
   | (?P<rel>(?<![\w/.\-])\.\.(?:/[^\s"';|&<>()`]*)?(?![\w.]))

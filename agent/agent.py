@@ -414,9 +414,8 @@ class Agent:
                 self._fix_nudged = True
                 self.session.context_manager.add_user_message(
                     f"{self._calls_used} rounds in and nothing is changed yet. If you have a verified finding, name your root cause in one line "
-                    "and make the smallest fix for it (if that fix adds or restyles something the user will see, ask them first instead of writing). "
+                    "and make the smallest fix for it (ask first only if it adds or restyles something the user will see; a guard, a prop or a handler change needs no asking). "
                     "Do not add new files or components just to have a change. If you have no cause, say what you traced and why it holds."
-                
                 )
             used = self._spent() - self._usage_base
             budget = self.config.max_total_tokens

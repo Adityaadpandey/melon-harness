@@ -175,3 +175,10 @@ def test_shell_block_on_a_skill_folder_points_to_the_read_tools(ws, tmp_path):
     why = violation("shell", {"command": f"ls {skills}"}, c)
     assert why and "read_file" in why
     assert "read_file" not in violation("shell", {"command": f"ls {ws.parent / 'elsewhere'}"}, c)  # unrelated folders get no hint
+
+
+def test_a_tilde_inside_prose_is_not_the_home_folder(ws):
+    w = Workspace(ws)
+    assert w.shell_violation("audit the button (~line 97) and ~12 others") is None
+    assert w.shell_violation("cat ~/secret") is not None
+    assert w.shell_violation("ls ~") is not None
