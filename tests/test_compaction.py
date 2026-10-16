@@ -156,7 +156,7 @@ async def test_pruning_forgets_only_the_files_it_cleared(tmp_path):
 
         await read("a.txt", "c1")
         await read("b.txt", "c2")
-        agent._prune()  # a.txt's text is cleared, b.txt's is still in context
+        agent._prune(force=True)  # a.txt's text is cleared, b.txt's is still in context
         assert cm.last_prune.get("read_paths") == ["a.txt"]
         again_b = await reg.invoke("read_file", {"path": "b.txt"}, tmp_path, agent.session.hook_system, None, "c3")
         again_a = await reg.invoke("read_file", {"path": "a.txt"}, tmp_path, agent.session.hook_system, None, "c4")
@@ -174,3 +174,21 @@ def test_cleared_result_names_the_call_that_made_it(tmp_path):
     assert cm.prune_tool_outputs() > 0
     first = [m for m in cm._messages if m.role == "tool"][0].content
     assert "read_file" in first and "src/a0.py" in first  # the model knows what to re-run
+
+
+def test_pruning_waits_until_the_context_is_half_full(tmp_path):
+    from client.response import TokenUsage
+
+    agent = Agent.__new__(Agent)
+    cfg = Config(cwd=tmp_path)
+    cm = ContextManager(cfg, None, [])
+    for i in range(8):
+        cm.add_assistant_message("", [{"id": f"c{i}", "type": "function", "function": {"name": "grep", "arguments": "{}"}}])
+        cm.add_tool_result(f"c{i}", "word " * 20_000)
+    agent.session = type("S", (), {"context_manager": cm, "tool_registry": type("R", (), {"get": lambda self, n: type("Rd", (), {"forget": lambda self, p: None})()})(), "tracer": type("T", (), {"emit": lambda *a, **k: None})()})()
+    cm.set_latest_usage(TokenUsage(50_000, 10, 50_010))  # the 53k-token prune from the saved session
+    agent._prune()
+    assert not any(m.pruned_at for m in cm._messages)
+    cm.set_latest_usage(TokenUsage(150_000, 10, 150_010))
+    agent._prune()
+    assert any(m.pruned_at for m in cm._messages)

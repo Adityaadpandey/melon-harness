@@ -507,3 +507,14 @@ async def test_before_tool_hook_exit_2_blocks_the_call_and_after_tool_stderr_rea
     assert await hs.trigger_before_tool("read_file", {}) is None  # matcher skips other tools
     ok = ToolResult.success_result("x")
     assert "2 lint errors" in await hs.trigger_after_tool("read_file", {}, ok)
+
+
+async def test_todos_complete_by_the_id_the_model_gave_in_set_or_by_a_unique_phrase(tmp_path):
+    from tools.builtin.todo import TodosTool
+
+    t = TodosTool(Config(cwd=tmp_path))
+    inv = lambda **p: ToolInvocation(params=p, cwd=tmp_path)
+    await t.execute(inv(action="set", items=[{"id": "inspect", "content": "Map the nav links"}, {"content": "Run lint"}]))
+    assert (await t.execute(inv(action="complete", id="inspect"))).success
+    assert (await t.execute(inv(action="complete", id="lint"))).success  # unique phrase of the step
+    assert not (await t.execute(inv(action="complete", id="nope"))).success

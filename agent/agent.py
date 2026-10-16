@@ -684,7 +684,7 @@ class Agent:
             return
         self._last_model_call = 0.0
         before = cm._latest_usage.total_tokens
-        self._prune(remind=True)
+        self._prune(remind=True, force=True)
         if before > self.config.idle_compact_at_tokens and await self._compact():
             yield AgentEvent.notice(f"Cache had expired: compacted {before // 1000}k of context before the first call")
 
@@ -697,12 +697,18 @@ class Agent:
             self._todos_reminded = text
             self.session.context_manager.add_user_message(f"Task list (still current; old tool results were cleared):\n{text}")
 
-    def _prune(self, remind: bool = False) -> None:
+    def _prune(self, remind: bool = False, force: bool = False) -> None:
         cm = self.session.context_manager
         if cm.prune_tool_outputs():
             if remind:
                 self._remind_todos()
             # only the files whose text was cleared are forgotten; files still in context are not sent again
+        # Clearing results early only hurts: the model re-reads what it just lost (and any subagent report
+        # or AGENTS.md read goes with them), and the rewrite throws away the provider's cache. Claude Code
+        # waits until the context is genuinely filling up; so do we (half of the compaction limit), unless
+        # the cache has gone cold anyway and the rewrite is free.
+        if not force and cm._latest_usage.total_tokens < 0.5 * cm._limit():
+            return
             reg = self.session.tool_registry
             reader = reg.get("read_file")
             for rel in cm.last_prune["read_paths"]:

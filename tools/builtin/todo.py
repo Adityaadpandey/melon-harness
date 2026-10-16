@@ -5,6 +5,7 @@ from pydantic import BaseModel, Field
 
 
 class TodoItem(BaseModel):
+    id: str | None = None  # optional: models often name their steps ("inspect") and later complete them by that name
     content: str
     done: bool = False
 
@@ -34,13 +35,20 @@ class TodosTool(Tool):
         """The list as plain text, so it can be put back into the conversation after old results are cleared."""
         return "\n".join(f"[{'x' if t['done'] else ' '}] {t['content']}" for t in self._todos.values())
 
+    def _find(self, ref: str) -> str | None:
+        """An id, or failing that the step's text: complete "inspect" works when the step reads "Inspect the nav links"."""
+        if ref in self._todos:
+            return ref
+        hits = [k for k, t in self._todos.items() if ref.lower() in t["content"].lower()]
+        return hits[0] if len(hits) == 1 else None
+
     async def execute(self, invocation: ToolInvocation) -> ToolResult:
         params = TodosParams(**invocation.params)
 
         if params.action.lower() == "set":
             if not params.items:
                 return ToolResult.error_result("`items` required for 'set' action")
-            self._todos = {str(i + 1): {"content": it.content, "done": it.done} for i, it in enumerate(params.items)}
+            self._todos = {(it.id or str(i + 1)): {"content": it.content, "done": it.done} for i, it in enumerate(params.items)}
             done = sum(it.done for it in params.items)
             return ToolResult.success_result(f"Todo list set: {len(params.items)} steps, {done} done")
         elif params.action.lower() == "add":
@@ -54,11 +62,12 @@ class TodosTool(Tool):
         elif params.action.lower() == "complete":
             if not params.id:
                 return ToolResult.error_result("`id` required for 'complete' action")
-            if params.id not in self._todos:
-                return ToolResult.error_result(f"Todo not found: {params.id}")
+            key = self._find(params.id)
+            if key is None:
+                return ToolResult.error_result(f"Todo not found: {params.id}. Current ids: {', '.join(self._todos) or 'none'}")
 
-            self._todos[params.id]["done"] = True  # kept, so the checklist shows what is finished
-            return ToolResult.success_result(f"Completed todo [{params.id}]: {self._todos[params.id]['content']}")
+            self._todos[key]["done"] = True  # kept, so the checklist shows what is finished
+            return ToolResult.success_result(f"Completed todo [{key}]: {self._todos[key]['content']}")
         elif params.action == "list":
             if not self._todos:
                 return ToolResult.success_result("No todos")
