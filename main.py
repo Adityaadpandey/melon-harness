@@ -20,7 +20,7 @@ from config.loader import get_data_dir, load_last_model, save_last_model
 from ui.prompt import COMMANDS, InputSession, expand_mentions
 from ui.tui import TUI, context_bar, get_console
 from utils.cost import summarize_usage
-from utils.templates import expand, load_templates, split_args
+from utils.templates import expand, load_templates, prompt_dirs, split_args
 
 console = get_console()
 
@@ -825,7 +825,7 @@ class CLI:
                         f"[success]Restored checkpoint {cmd_args} into session {session.session_id}[/success]"
                     )
         else:
-            templates = load_templates()
+            templates = load_templates(prompt_dirs(self.config.cwd))
             if cmd_name[1:] in templates:
                 await self._run_turn(expand(templates[cmd_name[1:]], split_args(cmd_args)))
             else:

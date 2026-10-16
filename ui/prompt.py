@@ -104,12 +104,23 @@ class MewCompleter(Completer):
             self._files_at = time.monotonic()
         return self._files
 
+    def _custom_commands(self) -> dict[str, str]:
+        if time.monotonic() - getattr(self, "_cmds_at", -99) > 20:
+            from utils.templates import load_commands, prompt_dirs
+
+            self._cmds = {n: d for n, (_, d) in load_commands(prompt_dirs(self.cwd)).items()}
+            self._cmds_at = time.monotonic()
+        return self._cmds
+
     def get_completions(self, document, complete_event):
         text = document.text_before_cursor
         if text.startswith("/") and " " not in text:
             for cmd, desc in COMMANDS.items():
                 if cmd.startswith(text):
                     yield Completion(cmd, start_position=-len(text), display_meta=desc)
+            for name, desc in self._custom_commands().items():  # the user's own markdown commands
+                if f"/{name}".startswith(text) and f"/{name}" not in COMMANDS:
+                    yield Completion(f"/{name}", start_position=-len(text), display_meta=desc)
             return
         if text.startswith("/model "):
             arg = text[len("/model "):]

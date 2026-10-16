@@ -15,15 +15,37 @@ from pathlib import Path
 PROMPT_DIRS = (Path.home() / ".pi" / "agent" / "prompts", Path.home() / ".mew" / "prompts")
 
 
-def load_templates(dirs=PROMPT_DIRS) -> dict[str, str]:
-    found: dict[str, str] = {}
+def prompt_dirs(cwd: Path | None = None) -> tuple[Path, ...]:
+    """Pi's and Mew's prompt folders, then Claude Code's command folders, then the repo's own (later ones win)."""
+    home = Path.home()
+    dirs = [*PROMPT_DIRS, home / ".claude" / "commands", home / ".ai-agent" / "commands"]
+    if cwd:
+        dirs += [Path(cwd) / ".claude" / "commands", Path(cwd) / ".ai-agent" / "commands"]
+    return tuple(dirs)
+
+
+def load_commands(dirs=PROMPT_DIRS) -> dict[str, tuple[str, str]]:
+    """name -> (body, description). `review/security.md` is named `review:security`, as in Claude Code.
+    The description is the front-matter line, or the first line of the body."""
+    found: dict[str, tuple[str, str]] = {}
     for d in dirs:
-        if d.is_dir():
-            for f in sorted(d.glob("*.md")):
-                body = f.read_text(encoding="utf-8")
-                m = re.match(r"---\n.*?\n---\n(.*)", body, re.S)
-                found[f.stem] = (m.group(1) if m else body).strip()
+        if not d.is_dir():
+            continue
+        for f in sorted(d.rglob("*.md")):
+            try:
+                text = f.read_text(encoding="utf-8")
+            except OSError:
+                continue
+            m = re.match(r"---\n(.*?)\n---\n(.*)", text, re.S)
+            body = (m.group(2) if m else text).strip()
+            meta = dict(ln.split(":", 1) for ln in (m.group(1).splitlines() if m else []) if ":" in ln and not ln[:1].isspace())
+            desc = meta.get("description", "").strip().strip("'\"") or next((ln.strip(" #") for ln in body.splitlines() if ln.strip()), "")
+            found[":".join(f.relative_to(d).with_suffix("").parts)] = (body, desc[:100])
     return found
+
+
+def load_templates(dirs=PROMPT_DIRS) -> dict[str, str]:
+    return {name: body for name, (body, _) in load_commands(dirs).items()}
 
 
 def split_args(text: str) -> list[str]:
