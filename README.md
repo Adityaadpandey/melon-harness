@@ -229,7 +229,7 @@ A full-screen terminal UI with its own look, not a clone.
   an agents panel, and a live status line with phase, elapsed time and tokens.
 - Streamed markdown, syntax-highlighted tinted diffs, in-app approvals that disappear once answered.
 - The input box grows with wrapped text (up to 40% of the screen), then scrolls. History (Up / Ctrl+R), `/` completion, `@path`
-  attachment, `!cmd` shows output to the model (`!!cmd` keeps it private), Alt+Enter for a newline, **Ctrl+C interrupts the
+  attachment, `!cmd` shows output to the model (`!!cmd` keeps it private), Shift+Enter (or Ctrl+J) for a newline, **Ctrl+C interrupts the
   agent, not the app**.
 - Mouse selection (drag, double-click word, triple-click line) copies to the system clipboard and via OSC 52, with `/copy` and
   F2 native-select fallbacks.

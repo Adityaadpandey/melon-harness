@@ -703,5 +703,5 @@ class TUI:
             "## Commands\n" + rows
             + "\n\n## Input\n- `@path` attaches a file (Tab completes)\n"
             "- `!cmd` runs a shell command and shows the output to the model; `!!cmd` runs it privately\n"
-            "- `Alt+Enter` inserts a newline · `Ctrl+C` interrupts the agent\n"
+            "- `Shift+Enter` or `Ctrl+J` inserts a newline · `Ctrl+C` interrupts the agent\n"
         ))

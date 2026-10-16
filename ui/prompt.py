@@ -100,7 +100,7 @@ class MewCompleter(Completer):
 
 class InputSession:
     """A framed input box: grows with the text, completes / commands and @files,
-    walks history with Up/Down, Alt+Enter for a newline, with a status footer."""
+    walks history with Up/Down, Shift+Enter or Ctrl+J for a newline, with a status footer."""
 
     def __init__(self, cwd: Path, forbidden: list[str], models: Callable[[], list[str]],
                  toolbar: Callable[[], str], history_file: Path | None = None, input=None, output=None,

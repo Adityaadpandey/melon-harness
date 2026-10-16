@@ -217,7 +217,7 @@ class CLI:
             lines=[
                 f"model: {self.config.model_name}   approval: {self.config.approval.value}",
                 f"cwd: {str(self.config.cwd).replace(str(Path.home()), '~')}" + (f"   profile: {self.config.profile}" if self.config.profile else ""),
-                "/help for commands · @file to attach · !cmd to run a command · Alt+Enter for a newline",
+                "/help for commands · @file to attach · !cmd to run a command · Shift+Enter (or Ctrl+J) for a newline",
             ],
         )
 
