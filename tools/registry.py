@@ -268,6 +268,14 @@ class ToolRegistry:
             await hook_system.trigger_after_tool(name, params, result)
             return result
         invocation = ToolInvocation(params=params, cwd=cwd, epoch=self.epoch, call_id=call_id, progress=self.progress)
+        rule = approval_manager.rules.decide(name, params) if approval_manager else None
+        if rule and rule.kind == "deny":
+            result = ToolResult.error_result(
+                f"Denied by the permission rule {rule.text}. Do not retry it or look for a way around it; tell the user what you needed.",
+                metadata={"tool_name": name, "blocked": True},
+            )
+            await hook_system.trigger_after_tool(name, params, result)
+            return result
         if approval_manager:
             confirmation = await tool.get_confirmation(invocation)
             if confirmation:
@@ -282,6 +290,10 @@ class ToolRegistry:
                 )
 
                 decision = await approval_manager.check_approval(context)
+                if rule and rule.kind == "allow" and decision == ApprovalDecision.NEEDS_CONFIRMATION:
+                    decision = ApprovalDecision.APPROVED  # rejections (plan mode, dangerous commands) are never lifted by a rule
+                elif rule and rule.kind == "ask" and decision == ApprovalDecision.APPROVED:
+                    decision = ApprovalDecision.NEEDS_CONFIRMATION
                 if decision == ApprovalDecision.REJECTED:
                     plan = approval_manager.approval_policy.value == "plan"
                     result = ToolResult.error_result(

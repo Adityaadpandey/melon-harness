@@ -601,6 +601,27 @@ class CLI:
                     )
             else:
                 console.print(f"Current approval policy: {self.config.approval.value}")
+        elif cmd_name == "/permissions":
+            from safety.rules import KINDS, drop_rule, load_rules, save_rule
+
+            word, _, rule_text = cmd_args.strip().partition(" ")
+            mgr = self.agent.session.approval_manager
+            if word in KINDS and rule_text.strip():
+                where = save_rule(self.config.cwd, word, rule_text.strip())
+                mgr.rules = load_rules(self.config.cwd)
+                console.print(f"[success]{word}: {rule_text.strip()}  (saved in {where})[/success]", highlight=False)
+            elif word == "remove" and rule_text.strip():
+                ok = drop_rule(self.config.cwd, rule_text.strip())
+                mgr.rules = load_rules(self.config.cwd)
+                console.print("[success]Removed[/success]" if ok else "[dim]No such rule in .ai-agent/permissions.json[/dim]")
+            else:
+                if not mgr.rules.rules:
+                    console.print("[dim]No rules. Add one: /permissions allow Bash(git diff:*) | deny Read(.env*) | ask Bash(git push:*)[/dim]", highlight=False)
+                for kind in KINDS:
+                    for r in mgr.rules.rules:
+                        if r.kind == kind:
+                            console.print(f"  {kind:<6} {r.text}  [dim]{r.source.replace(str(Path.home()), '~')}[/dim]", highlight=False)
+                console.print(f"[dim]approval mode: {mgr.approval_policy.value}. Deny wins over ask, ask over allow; /permissions remove <rule>[/dim]")
         elif cmd_name == "/plan":
             mgr = self.agent.session.approval_manager
             if mgr.approval_policy == ApprovalPolicy.PLAN:

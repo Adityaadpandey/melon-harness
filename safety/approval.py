@@ -208,6 +208,9 @@ class ApprovalManager:
         self.confirmation_callback = confirmation_callback
         self.always_commands: set[str] = set()  # "don't ask again" choices made this session
         self.verify_commands = {c.strip() for c in verify_commands or [] if c.strip()}
+        from safety.rules import load_rules
+
+        self.rules = load_rules(self.cwd)  # allow / deny / ask lists from .ai-agent/permissions.json and .claude/settings*.json
         self.waited = 0.0  # total seconds spent waiting for the user's answer; the agent's clock stops meanwhile
 
     def _is_verify_command(self, command: str) -> bool:
