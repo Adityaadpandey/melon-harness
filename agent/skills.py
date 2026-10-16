@@ -91,7 +91,7 @@ def _load(profile: str | None, cwd: str, skill_dirs: tuple[str, ...], home: str)
     if profile:
         dirs.append(PROFILES_DIR / profile / "skills")
     root = Path(cwd)
-    dirs += [root / ".ai-agent" / "skills", *(root / d for d in skill_dirs)]
+    dirs += [root / ".claude" / "skills", root / ".ai-agent" / "skills",*(root / d for d in skill_dirs)]
     found: dict[str, Skill] = {}
     for d in dirs:
         if d.is_dir():
@@ -105,7 +105,8 @@ def _load(profile: str | None, cwd: str, skill_dirs: tuple[str, ...], home: str)
                     # pi skills carry no trigger words, so their name is the hint. Claude Code ones are only
                     # listed: names like "review" or "ship" would fire on half of all requests.
                     if not sk.triggers and f.name == "SKILL.md" and not sk.always and d not in shared:
-                        sk.triggers = [sk.name, sk.name.replace("-", " ")]
+                        # a description often quotes what users say: Use when asked to "improve the animations" -> a trigger
+                        sk.triggers = [sk.name, sk.name.replace("-", " "), *re.findall(r'"([^"]{4,40})"', sk.description)]
                     found[sk.name] = sk  # later dirs (repo-local) override profile ones
     if profile:
         # a profile's own playbook (e.g. tunyt-debugging) replaces the generic one it specialises
