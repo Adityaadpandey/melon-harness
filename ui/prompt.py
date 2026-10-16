@@ -12,7 +12,9 @@ from prompt_toolkit.application import get_app
 from prompt_toolkit.layout.dimension import Dimension
 from prompt_toolkit.completion import Completer, Completion, ThreadedCompleter
 from prompt_toolkit.history import FileHistory, InMemoryHistory
+from prompt_toolkit.input.ansi_escape_sequences import ANSI_SEQUENCES
 from prompt_toolkit.key_binding import KeyBindings
+from prompt_toolkit.keys import Keys
 from prompt_toolkit.styles import Style
 
 from utils.search import list_files
@@ -20,6 +22,12 @@ from utils.search import list_files
 from ui.palette import ACCENT, AMBER, BG_BOX, BG_PANEL, BG_RAISED, CORAL, FG, INK, LAVENDER, MINT, MUTED, RULE
 
 MAX_ATTACH_BYTES = 60_000
+
+# Shift+Enter as kitty/WezTerm/Ghostty (CSI u) and xterm (modifyOtherKeys) report it. Terminals that
+# send a plain Enter for it (Terminal.app, a default iTerm2) need Shift+Return mapped to "Send Hex
+# Code 0a" in their key settings, which lands on the ctrl+j binding below.
+for _seq in ("\x1b[13;2u", "\x1b[27;2;13~"):
+    ANSI_SEQUENCES[_seq] = Keys.ControlJ
 
 COMMANDS = {
     "/help": "show commands and shortcuts",
@@ -168,7 +176,7 @@ class InputSession:
             event.app.exit(result=buf.text)
 
         @kb.add("escape", "enter")  # Alt+Enter
-        @kb.add("c-j")
+        @kb.add("c-j")  # also what a terminal sends for Shift+Enter once it is mapped to hex 0a (see _SHIFT_ENTER)
         def _newline(event):
             buf.insert_text("\n")
 
@@ -255,7 +263,7 @@ class InputSession:
             kb.add(key, filter=asking)(lambda e: self._pick(self.choice[0] - 1))
         kb.add("<any>", filter=asking)(lambda e: None)  # swallow stray typing while a question is open
 
-        hints = [("class:tb.key", " enter "), ("class:toolbar", " send  "), ("class:tb.key", " alt+enter "), ("class:toolbar", " newline  "),
+        hints = [("class:tb.key", " enter "), ("class:toolbar", " send  "), ("class:tb.key", " shift+enter "), ("class:toolbar", " newline  "),
                  ("class:tb.key", " / "), ("class:toolbar", " commands  "), ("class:tb.key", " @ "), ("class:toolbar", " files ")]
 
         def footer_all():

@@ -368,7 +368,7 @@ TIPS = [
     "!git status runs a command and shows it to the model",
     "/compact frees context when a long session slows down",
     "/cost shows tokens, cache hits and why a cache missed",
-    "Alt+Enter inserts a newline",
+    "Shift+Enter (or Ctrl+J) inserts a newline",
     "Several read-only sub-agents in one turn run in parallel",
 ]
 
