@@ -269,15 +269,18 @@ _PI_SNIPPETS = {
 }
 
 
-def _skill_rows(skills: list) -> str:
+def _skill_rows(skills: list, local: tuple[Path, ...] = ()) -> str:
     """Skills grouped by folder, so a long plugin path is written once instead of once per skill.
     Example:  ~/.claude/plugins/.../superpowers/6.1.1/skills/
-                - brainstorming/SKILL.md: Use before any creative work"""
+                - brainstorming/SKILL.md: Use before any creative work
+    Skills of this project (under `local`) keep their description; the machine-wide ones (plugins, ~/.claude,
+    ~/.pi: often 100 of them, 12k chars on every call) are listed by name, the model reads the file for more."""
     home, groups = str(Path.home()), {}
     for k in skills:
         base = k.path.parent.parent if k.path.name == "SKILL.md" else k.path.parent
         desc = k.description if len(k.description) <= 90 else k.description[:87].rsplit(" ", 1)[0] + "..."
-        groups.setdefault(str(base).replace(home, "~", 1), []).append(f"- {k.path.relative_to(base)}: {desc}")
+        row = f"- {k.path.relative_to(base)}" + (f": {desc}" if any(k.path.is_relative_to(r) for r in local) else "")
+        groups.setdefault(str(base).replace(home, "~", 1), []).append(row)
     return "\n".join(f"{base}/\n" + "\n".join(rows) for base, rows in groups.items())
 
 
@@ -324,6 +327,6 @@ def _pi_prompt(config: Config, tools: list[Tool] | None, skills: list | None) ->
         prompt += (
             "\n\nThe following skills provide specialized instructions for specific tasks.\n"
             "Use the read_file tool to load a skill's file when the task matches its description.\n\n"
-            f"<available_skills>\n{_skill_rows(listed)}\n</available_skills>"
+            f"<available_skills>\n{_skill_rows(listed, (Path(config.cwd).resolve(), Path(__file__).resolve().parent.parent))}\n</available_skills>"
         )
     return prompt + f"\nCurrent working directory: {config.cwd}"

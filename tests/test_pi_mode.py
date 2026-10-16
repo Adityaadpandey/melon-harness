@@ -90,3 +90,12 @@ def test_write_file_ends_a_new_file_with_a_newline_but_leaves_a_no_newline_file_
     (tmp_path / "b.txt").write_text("old")  # this file never had one: keep it that way
     run("b.txt", "new")
     assert (tmp_path / "b.txt").read_text() == "new"
+
+
+def test_machine_wide_skills_are_listed_by_name_and_the_project_s_own_keep_their_description(tmp_path):
+    from agent.skills import Skill
+    from prompts.system import _skill_rows
+
+    mine, theirs = tmp_path / "skills" / "motion" / "SKILL.md", tmp_path.parent / "elsewhere" / "figma" / "SKILL.md"
+    rows = _skill_rows([Skill("motion", "Audit the animations", "", path=mine), Skill("figma", "Work in Figma files", "", path=theirs)], (tmp_path,))
+    assert "motion/SKILL.md: Audit the animations" in rows and "figma/SKILL.md" in rows and "Work in Figma" not in rows
