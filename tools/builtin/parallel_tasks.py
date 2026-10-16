@@ -48,7 +48,7 @@ class ParallelTasksTool(Tool):
         })
         request = "; ".join(t.goal for t in p.tasks)
         try:
-            res = await Orchestrator(cfg, max_workers=self.config.max_parallel_agents).run(request, nodes, apply=p.apply)
+            res = await Orchestrator(cfg, max_workers=self.config.max_parallel_agents, progress=invocation.progress).run(request, nodes, apply=p.apply)
         except GraphError as e:
             return ToolResult.error_result(str(e))
         lines = [f"Parallel run: {res['status']} in {res['wall_sec']}s (sum of worker time {res['sum_worker_sec']}s)"]

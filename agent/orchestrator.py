@@ -85,7 +85,7 @@ async def git(cwd: Path, *args: str) -> tuple[int, str]:
 
 class Orchestrator:
     def __init__(self, config: Config, confirmation_callback=None, max_workers: int = 4,
-                 resolve_conflicts: bool = True, tracer=None):
+                 resolve_conflicts: bool = True, tracer=None, progress=None):
         self.config = config
         self.cb = confirmation_callback
         self.sem = asyncio.Semaphore(max_workers)
@@ -98,6 +98,7 @@ class Orchestrator:
         self.int_dir = self.tmp / "integration"
         self._worktrees: list[Path] = []
         self.tracer = tracer
+        self.progress = progress  # (call_id, info) -> None, so the UI can show each worker live
         self.overlaps: dict[str, list[str]] = {}
         self.combined_checks: list[dict] = []
 
@@ -129,11 +130,15 @@ class Orchestrator:
                 "Other workers handle the rest in separate checkouts; do only your task, keep the change small."
             )
             last_text = ""
+            say = (lambda **info: self.progress(f"{self.run_id}:{node.id}", {"agent": node.id, **info})) if self.progress else (lambda **_: None)
+            say(kind="start", goal=node.goal)
             try:
                 async def work() -> None:
                     nonlocal last_text
                     async with Agent(cfg, self.cb) as agent:
                         async for ev in agent.run(prompt):
+                            if ev.type == AgentEventType.TOOL_CALL_START:
+                                say(kind="tool", name=ev.data.get("name"), args=ev.data.get("arguments", {}), tokens=agent._spent())
                             if ev.type == AgentEventType.TEXT_COMPLETE:
                                 last_text = ev.data.get("content") or ""
                             if ev.type == AgentEventType.AGENT_END:
@@ -158,6 +163,7 @@ class Orchestrator:
                 node.status = "failed"
                 node.note = f"worker made no changes; it said: {last_text[:200]!r}"
             node.seconds = round(time.perf_counter() - started, 2)
+            say(kind="done", ok=node.status == "done")
             self._emit("worker_done", node=node.id, status=node.status, changed=node.changed, sec=node.seconds)
 
     async def _merge(self, node: Node) -> bool:

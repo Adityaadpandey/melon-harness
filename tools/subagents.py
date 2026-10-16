@@ -98,6 +98,7 @@ class SubagentTool(Tool):
         final_response = None
         error = None
         terminate_response = "goal"
+        tokens = 0
 
         def report(info: dict) -> None:
             if invocation.progress:
@@ -108,11 +109,12 @@ class SubagentTool(Tool):
                 report({"kind": "start", "goal": params.goal})
 
                 async def drive() -> None:
-                    nonlocal final_response, error, terminate_response
+                    nonlocal final_response, error, terminate_response, tokens
                     async for event in agent.run(prompt):
+                        tokens = agent._spent()
                         if event.type == AgentEventType.TOOL_CALL_START:
                             tool_calls.append(event.data.get("name"))
-                            report({"kind": "tool", "name": event.data.get("name"), "args": event.data.get("arguments", {})})
+                            report({"kind": "tool", "name": event.data.get("name"), "args": event.data.get("arguments", {}), "tokens": tokens})
                         elif event.type == AgentEventType.TEXT_COMPLETE:
                             final_response = event.data.get("content")
                         elif event.type == AgentEventType.AGENT_END:
@@ -135,7 +137,7 @@ class SubagentTool(Tool):
             error = f"{type(e).__name__}: {e}"  # some exceptions (timeouts) have an empty message
             final_response = f"Sub-agent failed: {error}"
 
-        report({"kind": "done", "ok": not error})
+        report({"kind": "done", "ok": not error, "tokens": tokens})
         if final_response and len(final_response) > MAX_REPORT_CHARS:
             final_response = final_response[:MAX_REPORT_CHARS] + "\n... [report cut; ask for a narrower answer]"
         result = f"""Sub-agent '{self.definition.name}' completed. 
