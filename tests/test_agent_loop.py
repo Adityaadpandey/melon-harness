@@ -518,3 +518,24 @@ async def test_todos_complete_by_the_id_the_model_gave_in_set_or_by_a_unique_phr
     assert (await t.execute(inv(action="complete", id="inspect"))).success
     assert (await t.execute(inv(action="complete", id="lint"))).success  # unique phrase of the step
     assert not (await t.execute(inv(action="complete", id="nope"))).success
+
+
+async def test_graph_tool_answers_importers_and_blast_from_the_working_tree_through_ts_aliases(tmp_path):
+    import subprocess
+
+    from tools.builtin.graph import GraphTool
+
+    (tmp_path / "src/components").mkdir(parents=True)
+    (tmp_path / "src/app").mkdir()
+    (tmp_path / "tsconfig.json").write_text('{ // c\n "compilerOptions": {"baseUrl": ".", "paths": {"@/*": ["src/*"],},},}')
+    (tmp_path / "src/components/Nav.tsx").write_text("export const Nav = 1\n")
+    (tmp_path / "src/app/page.tsx").write_text('import { Nav } from "@/components/Nav"\n')
+    (tmp_path / "src/app/page.test.tsx").write_text('import P from "./page"\n')
+    subprocess.run(["git", "init", "-q"], cwd=tmp_path, check=True)
+    subprocess.run(["git", "add", "-A"], cwd=tmp_path, check=True)
+    tool = GraphTool(Config(cwd=tmp_path))
+    run = lambda **p: tool.execute(ToolInvocation(params=p, cwd=tmp_path))
+    assert "src/app/page.tsx" in (await run(action="importers", name="Nav.tsx")).output
+    out = (await run(action="blast", name="src/components/Nav.tsx")).output
+    assert "page.tsx" in out and "page.test.tsx" in out
+    assert "page.test.tsx" in (await run(action="tests", name="Nav.tsx")).output

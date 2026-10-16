@@ -1,7 +1,7 @@
 from pydantic import BaseModel, Field
 
 from tools.base import Tool, ToolInvocation, ToolKind, ToolResult
-from utils import codegraph
+from utils import codegraph, importgraph
 from utils.codegraph import kind_of
 
 LIMIT = 25
@@ -11,23 +11,50 @@ class GraphParams(BaseModel):
     action: str = Field(
         ...,
         description="find (locate symbols/files by name) | callers (who calls NAME; direction checked in source) | callees (what NAME calls) | "
+        "importers (files that import FILE, live from the working tree; follows @/ aliases) | imports (what FILE imports) | blast (everything that depends on FILE, nearest first) | tests (tests that cover FILE) | "
         "neighbors (all relations of NAME) | impact (files that depend on file/symbol NAME: what a change could break) | path (shortest connection NAME -> TO) | community (the module NAME belongs to) | stats",
     )
-    name: str | None = Field(None, description="Symbol, class or file name (e.g. delTicketTypeCache, ticket.service.ts)")
+    name: str | None = Field(None, description="Symbol, class or file name (e.g. delTicketTypeCache, ticket.service.ts, apps/web/src/components/ui/DesktopNav.tsx)")
     to: str | None = Field(None, description="Second name, for action=path")
 
 
 class GraphTool(Tool):
     name = "graph"
     description = (
-        "Query the prebuilt code graph: where something is defined, who calls it, what it calls, how two things connect. "
-        "One call replaces several grep/read rounds for structure questions. It is a snapshot: confirm with read_file before relying on a line."
+        "Understand how the code connects. importers/imports/blast/tests are computed live from the working tree (always current): "
+        "who imports a file, what breaks if it changes, which tests cover it. find/callers/callees/path need a prebuilt graph snapshot "
+        "(graphify-out/graph.json) and are pointers to verify with read_file. One call replaces several grep/read rounds."
     )
     kind = ToolKind.READ
     schema = GraphParams
 
+    def _live(self, act: str, name: str | None, cwd) -> ToolResult:
+        if not name:
+            return ToolResult.error_result("`name` (a file path or file name) is required for this action")
+        ig = importgraph.load(cwd)
+        rel, maybe = ig.find_file(name)
+        if rel is None:
+            return ToolResult.success_result(f"No single file matches '{name}'." + (f" Did you mean: {', '.join(maybe)}" if maybe else " Use glob to find the path."))
+        if act == "imports":
+            rows = sorted(ig.out[rel])
+            return ToolResult.success_result(f"{rel} imports {len(rows)} project file(s):\n" + "\n".join(f"  {r}" for r in rows[:LIMIT * 2]))
+        if act == "importers":
+            rows = sorted(ig.inc.get(rel, ()))
+            return ToolResult.success_result(f"{len(rows)} file(s) import {rel}:\n" + "\n".join(f"  {r}" for r in rows[:LIMIT * 2]) if rows else f"No file imports {rel} (an entry point, a route file the framework loads by name, or dead code).")
+        if act == "tests":
+            rows = ig.tests_for(rel)
+            return ToolResult.success_result(f"tests that cover {rel}:\n" + "\n".join(f"  {r}" for r in rows) if rows else f"No test file imports or is named after {rel}.")
+        radius = ig.blast_radius(rel)  # act is blast, or impact without a graph snapshot
+        if not radius:
+            return ToolResult.success_result(f"Nothing imports {rel}, directly or through other files. Framework entry files (page.tsx, route.ts, layout.tsx) are loaded by name, not imported.")
+        body = "\n".join(f"  {'·' * h} {f}" for f, h in radius)
+        return ToolResult.success_result(f"depends on {rel} (indented by import hops: · direct, ·· via one file, ...):\n{body}\nRead the call sites of the direct ones before changing behaviour.")
+
     async def execute(self, invocation: ToolInvocation) -> ToolResult:
         p = GraphParams(**invocation.params)
+        act = p.action.lower()
+        if act in {"importers", "imports", "blast", "tests"} or (act == "impact" and codegraph.load(invocation.cwd) is None):
+            return self._live(act, p.name, invocation.cwd)
         g = codegraph.load(invocation.cwd)
         if g is None:
             return ToolResult.error_result("No code graph found (graphify-out/graph.json). Use grep and read_file instead.")

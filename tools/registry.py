@@ -336,13 +336,20 @@ def create_default_registry(config: Config) -> ToolRegistry:
     if config.enable_parallel_tasks and any((d / ".git").exists() for d in [config.cwd.resolve(), *config.cwd.resolve().parents][:6]):
         registry.register(ParallelTasksTool(config))
 
-    if locate(config.cwd):  # only advertise the tool when there is a graph to query
+    # the tool needs either a graphify snapshot or a repo big enough for the live import graph to be worth a schema
+    if locate(config.cwd) or _has_sources(config.cwd, 15):
         registry.register(GraphTool(config))
 
     for subagent_def in get_default_subagent_definitions(config):
         registry.register(SubagentTool(config, subagent_def))
 
     return registry
+
+
+def _has_sources(cwd, at_least: int) -> bool:
+    from utils.importgraph import _tracked
+
+    return len(_tracked(cwd)) >= at_least
 
 
 def _target_label(name: str, params: dict) -> str:

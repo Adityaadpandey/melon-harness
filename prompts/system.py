@@ -168,8 +168,9 @@ def _get_tool_guidelines_section(tools: list[Tool]) -> str:
     if "graph" in available_names:
         sections.append(
             "# Code Graph\n\n"
-            "For structural questions (definitions, callers, callees, module links) try `graph` "
-            "before broad text search. It is a snapshot: confirm key findings in the source."
+            "Before changing a file, ask `graph` who depends on it: action=importers or blast for what a change can break, "
+            "tests for what covers it (live from the working tree, follows @/ aliases). find/callers/callees come from a "
+            "snapshot: confirm those in the source."
         )
 
     if subagent_tools:
@@ -265,7 +266,7 @@ _PI_SNIPPETS = {
     "glob": "Find files by glob pattern (respects .gitignore)",
     "list_dir": "List directory contents",
     "todos": "Step list for 3+ step work: `set` all steps with done flags in one call",
-    "graph": "Who calls a symbol, what a change breaks, how two parts connect (prebuilt code graph; one call replaces several greps)",
+    "graph": "Who imports a file, what a change breaks, which tests cover it (live import graph); callers/paths when a graph snapshot exists",
 }
 
 
