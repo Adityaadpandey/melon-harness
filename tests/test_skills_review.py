@@ -133,8 +133,8 @@ def test_profile_subagents_replace_builtins_and_router_puts_non_author_reviewer_
     spec = SubagentSpec(name="debugger", description="d", goal_prompt="g", role="debug")
     cfg = Config(pi_mode=False, cwd=tmp_path, subagents=[spec], routing={"review": ["author", "other"]})
     cfg.model_name = "author"
-    assert [d.name for d in get_default_subagent_definitions(cfg)] == ["debugger"]
-    assert [d.name for d in get_default_subagent_definitions(Config(pi_mode=False, cwd=tmp_path))] == ["codebase_investigator", "code_reviewer"]
+    assert [d.name for d in get_default_subagent_definitions(cfg)][0] == "debugger"  # the profile's own come first, built-ins fill in after
+    assert [d.name for d in get_default_subagent_definitions(Config(pi_mode=False, cwd=tmp_path))] == ["codebase_investigator", "planner", "code_reviewer", "general"]
     assert Router(cfg, ModelRegistry(cfg, tmp_path)).chain("review") == ["other", "author"]
 
 

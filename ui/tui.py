@@ -122,7 +122,7 @@ def kind_color(name: str) -> str:
     return KIND_COLOR.get(name, "#a39c8c")
 
 
-AGENT_NAMES = {"investigator": "Scout", "codebase_investigator": "Scout", "code_reviewer": "Reviewer"}
+AGENT_NAMES = {"investigator": "Scout", "codebase_investigator": "Scout", "code_reviewer": "Reviewer", "planner": "Planner"}
 
 
 def agent_title(agent: str) -> str:

@@ -1,5 +1,7 @@
 import asyncio
+import re
 import weakref
+from pathlib import Path
 from typing import Any
 from config.config import Config
 from tools.base import Tool, ToolInvocation, ToolKind, ToolResult
@@ -164,12 +166,23 @@ class SubagentTool(Tool):
 
 CODEBASE_INVESTIGATOR = SubagentDefinition(
     name="codebase_investigator",
-    description="Investigates the codebase to answer questions about code structure, patterns, and implementations",
-    goal_prompt="""You are a codebase investigation specialist.
-Your job is to explore and understand code to answer questions.
-Use read_file, grep, glob, and list_dir to investigate.
-Do NOT modify any files.""",
-    allowed_tools=["read_file", "grep", "glob", "list_dir"],
+    description="Read-only search agent for questions that need many files: where something lives, who calls it, how a flow works. Returns the answer with file:line evidence, not file dumps. Launch several in one turn for independent questions",
+    goal_prompt="""You are a codebase search specialist. Answer the question with evidence and keep it short.
+Start broad (graph, grep, glob, outline), then read only the lines that settle it.
+Report file:line for every claim, and say what you could not find. Do NOT modify any files.""",
+    allowed_tools=["read_file", "grep", "glob", "list_dir", "search", "outline", "graph", "git"],
+    max_turns=15,
+    role="explore",
+)
+
+PLANNER = SubagentDefinition(
+    name="planner",
+    description="Read-only planning agent: given a feature or change, studies the code and returns an implementation plan (files, steps, risks, how to verify). It never edits",
+    goal_prompt="""You are a software architect. Study how the repo already does the nearest thing, then return a plan:
+1) the goal in one line, 2) the files to change and what changes in each, in order, 3) risks and what could break (callers, migrations, permissions),
+4) how to verify. Prefer the smallest plan that works. Do NOT modify any files.""",
+    allowed_tools=["read_file", "grep", "glob", "list_dir", "search", "outline", "graph", "git"],
+    max_turns=15,
 )
 
 CODE_REVIEWER = SubagentDefinition(
@@ -185,10 +198,83 @@ Do NOT modify any files.""",
     timeout_seconds=300,
 )
 
+GENERAL = SubagentDefinition(
+    name="general",
+    description="General-purpose agent for a self-contained job in its own context: an independent second opinion on a commit or diff, multi-step research, a bounded fix in one area. Give it the full goal and what done looks like; it cannot ask you questions",
+    goal_prompt="""You are a capable engineer handed one self-contained job. Do it end to end with the tools you have,
+check your work, and report what you found or changed with file:line evidence. If the job is a review, report only
+problems you verified. If you cannot finish, say what blocked you.""",
+    max_turns=25,
+)
+
+# Claude Code's tool names, so an agent file written for it works here unchanged
+TOOL_NAMES = {
+    "read": "read_file", "grep": "grep", "glob": "glob", "ls": "list_dir", "bash": "shell", "edit": "edit",
+    "multiedit": "edit", "write": "write_file", "webfetch": "web_fetch", "websearch": "web_search",
+}
+
+
+def agent_dirs(cwd) -> list[Path]:
+    home = Path.home()
+    return [home / ".claude" / "agents", home / ".ai-agent" / "agents", Path(cwd) / ".claude" / "agents", Path(cwd) / ".ai-agent" / "agents"]
+
+
+def parse_agent_file(text: str) -> SubagentDefinition | None:
+    """A markdown file like Claude Code's `.claude/agents/reviewer.md`:
+
+        ---
+        name: db-reviewer
+        description: Reviews SQL and migrations. Use after schema changes.
+        tools: Read, Grep, Bash       # left out = every tool
+        model: haiku                  # haiku -> the fast model, anything else -> the default
+        ---
+        You review migrations for locks and data loss...
+    """
+    m = re.match(r"---\n(.*?)\n---\n?(.*)", text, re.S)
+    if not m:
+        return None
+    meta = {}
+    for line in m.group(1).splitlines():
+        if ":" in line and not line[:1].isspace():
+            k, v = line.split(":", 1)
+            meta[k.strip().lower()] = v.split("  #")[0].strip().strip("'\"")
+    name = re.sub(r"[^a-z0-9_]+", "_", meta.get("name", "").lower()).strip("_")
+    if not name or not m.group(2).strip():
+        return None
+    tools = [TOOL_NAMES.get(t.strip().lower(), t.strip()) for t in meta.get("tools", "").split(",") if t.strip()]
+    turns = meta.get("maxturns") or meta.get("max_turns") or ""
+    return SubagentDefinition(
+        name=name,
+        description=meta.get("description") or f"Custom agent {name}",
+        goal_prompt=m.group(2).strip(),
+        allowed_tools=list(dict.fromkeys(tools)) or None,
+        max_turns=int(turns) if turns.isdigit() else 20,
+        role="fast" if meta.get("model", "").lower() == "haiku" else "default",
+    )
+
+
+def load_agent_files(cwd) -> dict[str, tuple[SubagentDefinition, Path]]:
+    found: dict[str, tuple[SubagentDefinition, Path]] = {}
+    for d in agent_dirs(cwd):  # later folders (the repo's own) override earlier ones
+        for f in sorted(d.glob("*.md")) if d.is_dir() else []:
+            try:
+                definition = parse_agent_file(f.read_text(encoding="utf-8", errors="replace"))
+            except OSError:
+                continue
+            if definition:
+                found[definition.name] = (definition, f)
+    return found
+
 
 def get_default_subagent_definitions(config: Config | None = None) -> list[SubagentDefinition]:
-    """Built-ins, overridden/extended by subagents declared in config/profile."""
-    if config and config.subagents:
-        return [SubagentDefinition(**spec.model_dump()) for spec in config.subagents]
-    defs = {d.name: d for d in (CODEBASE_INVESTIGATOR, CODE_REVIEWER)}
+    """The agents a repo's profile or config declares first, then the built-ins it did not already cover, then the user's
+    agent files. A profile that brings its own investigator replaces the built-in one rather than doubling it."""
+    declared = [SubagentDefinition(**spec.model_dump()) for spec in config.subagents] if config and config.subagents else []
+    covers_search = any(re.search(r"investigat|explor", d.name) for d in declared)
+    defs = {d.name: d for d in declared}
+    for d in (CODEBASE_INVESTIGATOR, PLANNER, CODE_REVIEWER, GENERAL):
+        if d.name not in defs and not (d is CODEBASE_INVESTIGATOR and covers_search):
+            defs[d.name] = d
+    if config:
+        defs.update({n: d for n, (d, _) in load_agent_files(config.cwd).items()})
     return list(defs.values())

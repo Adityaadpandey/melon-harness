@@ -61,6 +61,7 @@ COMMANDS = {
     "/cost": "tokens, cache hit rate, cache misses, estimated cost",
     "/model": "show or switch model (Tab completes ids)",
     "/approval": "set approval mode: on-request, auto-edit, auto, never, yolo, plan",
+    "/agents": "list sub-agents (built-in and .claude/agents/*.md or .ai-agent/agents/*.md)",
     "/permissions": "list or edit allow / deny / ask rules, e.g. /permissions deny Read(.env*)",
     "/plan": "toggle plan mode: read-only, mew investigates and presents a plan before touching anything",
     "/diff": "what changed in the working tree (git diff --stat, /diff full for the patch)",

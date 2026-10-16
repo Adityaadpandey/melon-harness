@@ -176,7 +176,7 @@ def _get_tool_guidelines_section(tools: list[Tool]) -> str:
 
     if subagent_tools:
         rows = "\n".join(
-            f"- **{tool.name}**: {getattr(tool, 'description', '')[:220]}"
+            f"- **{tool.name}**: {getattr(tool, 'description', '').split('. ')[0][:140]}"
             for tool in subagent_tools
         )
         sections.append(

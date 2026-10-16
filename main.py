@@ -601,6 +601,15 @@ class CLI:
                     )
             else:
                 console.print(f"Current approval policy: {self.config.approval.value}")
+        elif cmd_name == "/agents":
+            from tools.subagents import READONLY_TOOLS, agent_dirs, get_default_subagent_definitions, load_agent_files
+
+            files = load_agent_files(self.config.cwd)
+            for d in get_default_subagent_definitions(self.config):
+                where = files[d.name][1] if d.name in files else None
+                mode = "read-only" if d.allowed_tools and set(d.allowed_tools) <= READONLY_TOOLS else "can edit/run"
+                console.print(f"  [bold]{d.name}[/bold]  [dim]{mode}, {d.max_turns} turns, {d.role} model{', ' + str(where).replace(str(Path.home()), '~') if where else ''}[/dim]\n      {d.description[:150]}", highlight=False)
+            console.print("[dim]Add your own: a markdown file with name/description/tools in " + " or ".join(str(p).replace(str(Path.home()), "~") for p in agent_dirs(self.config.cwd)[2:]) + "[/dim]", highlight=False)
         elif cmd_name == "/permissions":
             from safety.rules import KINDS, drop_rule, load_rules, save_rule
 
