@@ -202,5 +202,10 @@ async def test_a_file_moved_into_a_new_folder_is_one_move_line_not_a_deletion_pl
     porcelain = await rp._git(tmp_path, "status", "--porcelain", "-uall")
     moves, deleted, added = await rp.pair_moves(tmp_path, rp.deleted_files(porcelain), rp.changed_files(porcelain))
     assert moves == [("events/page.tsx", "events/(list)/page.tsx")] and deleted == [] and added == ["events/other.tsx"]
+    (tmp_path / "events/[id]").mkdir()
+    (tmp_path / "events/[id]/page.tsx").write_text("x\n")
+    git("add", "events/[id]")
+    stayed = await rp.left_behind(tmp_path, moves)
+    assert "events/other.tsx" in stayed and "events/[id]/page.tsx" in stayed and "events/page.tsx" not in stayed
     out = rp.frame("No issues found.", "Moves the list page into a route group.", added, moves, deleted)
-    assert "events/page.tsx -> events/(list)/page.tsx" in out and "Not run: typecheck" in out and out.startswith("What the change does")
+    assert "events/page.tsx -> events/(list)/page.tsx" in out and "Not run: typecheck" in out and "git add -A" in out and out.startswith("What the change does")

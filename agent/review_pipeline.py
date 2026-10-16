@@ -126,6 +126,19 @@ async def pair_moves(cwd: Path, deleted: list[str], added: list[str]) -> tuple[l
     return moves, [d for d in deleted if d not in used_old], [a for a in added if a not in moved_new]
 
 
+async def left_behind(cwd: Path, moves: list[tuple[str, str]]) -> list[str]:
+    """Files still sitting where the moved ones used to be. They may have been leaning on what moved: a route that
+    inherited its sibling's loading.tsx or layout, a module imported through an index file. Example: moving
+    events/loading.tsx leaves events/[id]/page.tsx without a loading state."""
+    out: list[str] = []
+    for old, _ in moves:
+        folder = old.rsplit("/", 1)[0] if "/" in old else "."
+        for f in (await _git(cwd, "ls-files", "--", folder)).split("\n"):
+            if f and f not in out and f not in {o for o, _ in moves} and (cwd / f).exists():
+                out.append(f)
+    return out[:15]
+
+
 def frame(answer: str, summary: str, reviewed: list[str], moves: list[tuple[str, str]], deleted: list[str]) -> str:
     """What a human reviewer writes around the findings: what the change does, what was and was not looked at.
     Without it "No issues found." says nothing about how much was read."""
@@ -137,6 +150,8 @@ def frame(answer: str, summary: str, reviewed: list[str], moves: list[tuple[str,
     if deleted:
         seen.append(f"{len(deleted)} deleted")
     lines.append("Looked at: " + "; ".join(seen) + ".")
+    if moves:
+        lines.append("Next: stage the deletions and the new files together (git add -A on both paths) so git records a rename and keeps the history.")
     lines.append("Not run: typecheck, lint and tests (the reviewers only read code); run them before merging.")
     return "\n\n".join(lines)
 
@@ -311,6 +326,7 @@ async def run_review_pipeline(config, request: str) -> AsyncGenerator[tuple[str,
     groups = [("the whole change", files)] if "[diff clipped]" not in whole else group_files(files, 2)
     yield "notice", f"Reviewing {len(files)} changed file(s)" + (f" and {len(moves)} moved unchanged" if moves else "") + (f" with {len(groups)} reviewers in parallel" if len(groups) > 1 else "")
     role = config.review_pipeline_role
+    stayed = await left_behind(cwd, moves)
     _spent_log.clear()
 
     async def review(name: str, fs: list[str]) -> list[Finding] | None:
@@ -318,7 +334,9 @@ async def run_review_pipeline(config, request: str) -> AsyncGenerator[tuple[str,
         others = ", ".join(f for f in files if f not in fs)[:600] or "(none)"
         scope = "the whole uncommitted change" if len(groups) == 1 else f"one part ({name}) of an uncommitted change that {len(groups)} reviewers split"
         moved = ("MOVED WITHOUT ANY CHANGE (identical bytes, so there is nothing in them to review; check that imports and paths still resolve): "
-                 + "; ".join(f"{a} -> {b}" for a, b in moves) + "\n") if moves else ""
+                 + "; ".join(f"{a} -> {b}" for a, b in moves)
+                 + "\nSTILL IN THE OLD FOLDER (did any of these rely on what moved, e.g. inherit its loading.tsx, layout or index export? say what they lose, or that they are fine): "
+                 + (", ".join(stayed) or "(nothing)") + "\n") if moves else ""
         prompt = REVIEWER_PROMPT.format(scope=scope, request=request[:1500], part=", ".join(fs[:25]), moved=moved, others=others, diff=diff)
         reply = await ask(config, prompt, role, max_turns=8, max_tokens=config.review_pipeline_tokens)
         summaries.extend(re.findall(r"(?im)^\W*SUMMARY:\s*(.+)$", reply))
