@@ -13,6 +13,7 @@ from agent.learn import Learned
 from agent.review_pipeline import NAMED_SCOPE, run_review_pipeline
 from agent.review import review_changes
 from agent.routing_policy import EFFORT, REVIEWY, classify, length_hint
+from agent.scope import SWEEP, SWEEP_CHECKPOINT, is_broad, unfinished
 from agent.session import Session
 from agent.skills import match_skills
 from utils.cost import summarize_usage
@@ -170,6 +171,10 @@ class Agent:
         self.session.client.auto_effort = EFFORT[difficulty]
         if hint := length_hint(message, difficulty, wants_change(message)):
             message_for_model += f"\n\n[{hint}]"
+        self._broad = wants_change(message) and is_broad(message)
+        if self._broad:
+            message_for_model += f"\n\n[{SWEEP}]"
+        self._sweep_pushed = 0
         self.session.context_manager.add_user_message(message_for_model)
 
         self._escalated = False
@@ -410,7 +415,8 @@ class Agent:
                     "Checkpoint: you have looked things up for several rounds without writing anything down. Before the next lookup, "
                     "jot working notes (candidate, file:line, checked or not; no severity) and what you will check next. If you have verified a defect, fix it now."
                 )
-            elif self._wants_change and not self._edited and not self._fix_nudged and self._calls_used >= 15:
+            elif self._wants_change and not self._broad and not self._edited and not self._fix_nudged and self._calls_used >= 15:
+                    SWEEP_CHECKPOINT if self._broad else
                 self._fix_nudged = True
                 self.session.context_manager.add_user_message(
                     f"{self._calls_used} rounds in and nothing is changed yet. If you have a verified finding, name your root cause in one line "
@@ -542,6 +548,15 @@ class Agent:
                 return
 
             tool_call_results: list[ToolResultMessage] = []
+                left = unfinished(self.session.tool_registry.get("todos")) if self._broad else []
+                if left and self._sweep_pushed < 2:
+                    # a sweep that ends with open steps stops after the first few files, which is what this guards against
+                    self._sweep_pushed += 1
+                    self.session.context_manager.add_user_message(
+                        f"{len(left)} step(s) on your list are still open: " + "; ".join(left[:6])
+                        + ". Finish them (fix, or mark done with a one-line reason it is fine) before you answer."
+                    )
+                    continue
 
             async for item in self._run_tool_calls(tool_calls):
                 if isinstance(item, AgentEvent):

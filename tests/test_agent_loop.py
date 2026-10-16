@@ -539,3 +539,29 @@ async def test_graph_tool_answers_importers_and_blast_from_the_working_tree_thro
     out = (await run(action="blast", name="src/components/Nav.tsx")).output
     assert "page.tsx" in out and "page.test.tsx" in out
     assert "page.test.tsx" in (await run(action="tests", name="Nav.tsx")).output
+
+
+def test_broad_requests_are_recognised():
+    from agent.scope import is_broad
+
+    for yes in ["fix all such issues in the whole app", "update every button", "rename it everywhere", "check each component for this"]:
+        assert is_broad(yes), yes
+    for no in ["fix the login bug in auth.ts", "add a button to the nav", "explain how the cache works"]:
+        assert not is_broad(no), no
+
+
+async def test_a_sweep_with_open_steps_is_sent_back_instead_of_answered(cfg):
+    items = [{"id": "a", "content": "fix Nav", "done": True}, {"id": "b", "content": "fix Footer", "done": False}]
+    done = [{"id": "a", "content": "fix Nav", "done": True}, {"id": "b", "content": "fix Footer", "done": True}]
+    async with Agent(cfg) as agent:
+        agent.session.client = ScriptedClient([
+            call("todos", {"action": "set", "items": items}, "c1"),
+            text("all fixed"),  # premature: Footer is still open
+            call("todos", {"action": "set", "items": done}, "c2"),
+            text("really done"),
+        ])
+        events = await run(agent, "fix the disabled state on all buttons in the whole app")
+        sent = agent.session.client.requests
+        assert len(sent) == 4
+        assert "still open" in " ".join(str(m.get("content")) for m in sent[2] if m["role"] == "user") and "fix Footer" in str(sent[2])
+        assert any(e.type == AgentEventType.TEXT_COMPLETE and e.data.get("content") == "really done" for e in events)
