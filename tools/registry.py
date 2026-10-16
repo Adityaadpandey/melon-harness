@@ -262,7 +262,11 @@ class ToolRegistry:
             await hook_system.trigger_after_tool(name, params, result)
             return result
 
-        await hook_system.trigger_before_tool(name, params)
+        veto = await hook_system.trigger_before_tool(name, params)
+        if veto:
+            result = ToolResult.error_result(veto, metadata={"tool_name": name, "blocked": True})
+            await hook_system.trigger_after_tool(name, params, result)
+            return result
         invocation = ToolInvocation(params=params, cwd=cwd, epoch=self.epoch, call_id=call_id, progress=self.progress)
         if approval_manager:
             confirmation = await tool.get_confirmation(invocation)
@@ -309,7 +313,9 @@ class ToolRegistry:
                 metadata={"tool_name": name},
             )
 
-        await hook_system.trigger_after_tool(name, params, result)
+        note = await hook_system.trigger_after_tool(name, params, result)
+        if note:
+            result.output = f"{result.output}\n\n{note}"
         return result
 
 

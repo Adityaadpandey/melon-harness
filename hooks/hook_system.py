@@ -1,5 +1,6 @@
 import asyncio
 import json
+import re
 import os
 import signal
 import sys
@@ -16,10 +17,12 @@ class HookSystem:
         if self.config.hooks_enabled:
             self.hooks = [hook for hook in self.config.hooks if hook.enabled]
 
-    async def _run_hook(self, hook: HookConfig, env: dict[str, str]) -> None:
+    async def _run_hook(self, hook: HookConfig, env: dict[str, str]) -> tuple[int, str]:
+        """Run one hook and return (exit_code, stderr). A hook that cannot run or
+        times out counts as exit 1: reported nowhere loud, and it never blocks."""
         try:
             if hook.command:
-                await self._run_command(hook.command, hook.timeout_sec, env)
+                return await self._run_command(hook.command, hook.timeout_sec, env)
             else:
                 with tempfile.NamedTemporaryFile(
                     mode="w", suffix=".sh", delete=False
@@ -29,18 +32,27 @@ class HookSystem:
                     script_path = f.name
                 try:
                     os.chmod(script_path, 0o755)
-                    await self._run_command(script_path, hook.timeout_sec, env)
+                    return await self._run_command(script_path, hook.timeout_sec, env)
                 finally:
                     os.unlink(script_path)
-        except Exception as e:
-            print(e)
+        except Exception:
+            return 1, ""
+
+    def _matching(self, trigger: HookTrigger, tool_name: str | None = None):
+        for hook in self.hooks:
+            if hook.trigger != trigger:
+                continue
+            # matcher is a regex on the tool name, like Claude Code's: "edit|write_file"
+            if hook.matcher and tool_name is not None and not re.fullmatch(hook.matcher, tool_name):
+                continue
+            yield hook
 
     async def _run_command(
         self,
         command: str,
         timeout: float,
         env: dict[str, str],
-    ) -> None:
+    ) -> tuple[int, str]:
         process = await asyncio.create_subprocess_shell(
             command,
             stdout=asyncio.subprocess.PIPE,
@@ -51,13 +63,15 @@ class HookSystem:
         )
 
         try:
-            await asyncio.wait_for(process.communicate(), timeout=timeout)
+            _, err = await asyncio.wait_for(process.communicate(), timeout=timeout)
         except asyncio.TimeoutError:
             if sys.platform != "win32":
                 os.killpg(os.getpgid(process.pid), signal.SIGKILL)
             else:
                 process.kill()
             await process.wait()
+            return 1, ""
+        return process.returncode or 0, err.decode(errors="replace").strip()
 
     def _build_env(
         self,
@@ -110,27 +124,37 @@ class HookSystem:
         self,
         tool_name: str,
         tool_params: dict[str, Any],
-    ) -> None:
+    ) -> str | None:
+        """Exit code 2 from a before_tool hook blocks the call; its stderr is the
+        reason the model sees (e.g. "run the formatter first"). Any other exit code
+        lets the call go ahead."""
         env = self._build_env(HookTrigger.BEFORE_TOOL, tool_name=tool_name)
         env["AI_AGENT_TOOL_PARAMS"] = json.dumps(tool_params)
 
-        for hook in self.hooks:
-            if hook.trigger == HookTrigger.BEFORE_TOOL:
-                await self._run_hook(hook, env)
+        for hook in self._matching(HookTrigger.BEFORE_TOOL, tool_name):
+            code, err = await self._run_hook(hook, env)
+            if code == 2:
+                return f"Blocked by hook '{hook.name}': {err or 'no reason given'}"
+        return None
 
     async def trigger_after_tool(
         self,
         tool_name: str,
         tool_params: dict[str, Any],
         tool_result: ToolResult,
-    ) -> None:
+    ) -> str | None:
+        """Exit code 2 from an after_tool hook (a linter that found problems) hands
+        its stderr back to the model next to the tool's own output."""
         env = self._build_env(HookTrigger.AFTER_TOOL, tool_name=tool_name)
         env["AI_AGENT_TOOL_PARAMS"] = json.dumps(tool_params)
         env["AI_AGENT_TOOL_RESULT"] = tool_result.to_model_output()
 
-        for hook in self.hooks:
-            if hook.trigger == HookTrigger.AFTER_TOOL:
-                await self._run_hook(hook, env)
+        feedback = []
+        for hook in self._matching(HookTrigger.AFTER_TOOL, tool_name):
+            code, err = await self._run_hook(hook, env)
+            if code == 2 and err:
+                feedback.append(f"[hook '{hook.name}']: {err}")
+        return "\n".join(feedback) or None
 
     async def trigger_on_error(self, error: Exception) -> None:
         env = self._build_env(HookTrigger.ON_ERROR, error=error)

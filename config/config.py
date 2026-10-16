@@ -77,6 +77,7 @@ class HookConfig(BaseModel):
     trigger: HookTrigger
     command: str | None = None  # python3 tests.py
     script: str | None = None  # *.sh
+    matcher: str | None = None  # regex on the tool name for before_tool/after_tool, e.g. "edit|write_file"; empty = every tool
     timeout_sec: float = 30
     enabled: bool = True
 

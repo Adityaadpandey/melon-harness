@@ -492,3 +492,18 @@ async def test_todo_set_replaces_the_list_in_one_call_and_survives_a_clear(cfg):
         assert any("[x] read diff" in c and "[ ] fix bug" in c for c in said)
         agent._remind_todos()  # unchanged list: not repeated
         assert sum("Task list (still current" in (m.content or "") for m in agent.session.context_manager._messages) == 1
+
+
+async def test_before_tool_hook_exit_2_blocks_the_call_and_after_tool_stderr_reaches_the_model(tmp_path):
+    from config.config import HookConfig, HookTrigger
+    from hooks.hook_system import HookSystem
+
+    cfg = Config(cwd=tmp_path, hooks_enabled=True, hooks=[
+        HookConfig(name="nope", trigger=HookTrigger.BEFORE_TOOL, matcher="write_file", command="echo no secrets >&2; exit 2"),
+        HookConfig(name="lint", trigger=HookTrigger.AFTER_TOOL, matcher="read_file", command="echo 2 lint errors >&2; exit 2"),
+    ])
+    hs = HookSystem(cfg)
+    assert "no secrets" in await hs.trigger_before_tool("write_file", {})
+    assert await hs.trigger_before_tool("read_file", {}) is None  # matcher skips other tools
+    ok = ToolResult.success_result("x")
+    assert "2 lint errors" in await hs.trigger_after_tool("read_file", {}, ok)

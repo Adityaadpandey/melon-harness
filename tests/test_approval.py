@@ -88,7 +88,7 @@ async def test_yes_applies_the_edit_and_async_callbacks_work(tmp_path):
         return Decision(True)
 
     await run_agent(tmp_path, yes, [write("a.py"), text("done")])
-    assert (tmp_path / "a.py").read_text() == "1"
+    assert (tmp_path / "a.py").read_text() == "1\n"  # write_file ends a new file with a newline
 
 
 async def test_no_with_feedback_reaches_the_model_and_nothing_is_written(tmp_path):
