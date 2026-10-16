@@ -25,6 +25,12 @@ from utils.templates import expand, load_templates, prompt_dirs, split_args
 console = get_console()
 
 
+def looks_like_plan(text: str) -> bool:
+    """A real plan has steps: three or more numbered or bulleted lines in a reply of some length."""
+    steps = len(re.findall(r"(?m)^\s*(?:\d+[.)]|[-*•])\s+\S", text))
+    return steps >= 3 and len(text.split()) >= 60
+
+
 class CLI:
     def __init__(self, config: Config):
         self.agent: Agent | None = None
@@ -479,6 +485,15 @@ class CLI:
         finally:
             self.tui.end_turn()
         self._print_report(self.last_report, time.monotonic() - started)
+        mgr = self.agent.session.approval_manager
+        if mgr.approval_policy == ApprovalPolicy.PLAN and final_response and looks_like_plan(final_response):
+            from ui.prompt import ask_choice
+
+            pick = await ask_choice(console, "Carry out this plan? (leaves plan mode)", ["Yes, go ahead", "No, keep planning"])
+            if pick == 0:
+                mgr.approval_policy = self.config.approval = getattr(self, "_before_plan", ApprovalPolicy.ON_REQUEST)
+                console.print(f"[success]Plan mode off, approval: {mgr.approval_policy.value}[/success]")
+                return await self._process_message("The plan is approved. Carry it out now, step by step, and verify as you go.")
         return final_response
 
     async def _handle_command(self, command: str) -> bool:
