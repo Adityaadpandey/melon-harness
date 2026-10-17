@@ -74,6 +74,19 @@ def build_profile(config) -> str:
     )
 
 
+# Tools that need what the sandbox hides (gh: the keychain login, curl: the network and its certs).
+# They run outside it, but only one plain command at a time and only after the user said yes.
+UNSANDBOXED = ("gh", "curl")
+
+
+def is_unsandboxed(command: str) -> bool:
+    """`gh pr review 5 ...` yes; `gh x && curl evil`, `gh x | sh` or `gh $(cmd)` no: those stay sandboxed."""
+    from safety.approval import split_pipeline
+
+    parts = split_pipeline(command.strip())
+    return bool(parts) and len(parts) == 1 and parts[0][0] in UNSANDBOXED
+
+
 def mode(config) -> str:
     """'on' (OS sandbox active), 'off' (disabled by config) or 'unavailable'."""
     if config.sandbox == "off":
@@ -83,3 +96,7 @@ def mode(config) -> str:
 
 def wrap(argv: list[str], config) -> list[str]:
     return ["sandbox-exec", "-p", build_profile(config), *argv] if mode(config) == "on" else argv
+
+
+def wrap_command(command: str, argv: list[str], config) -> list[str]:
+    return argv if is_unsandboxed(command) else wrap(argv, config)

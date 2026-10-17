@@ -242,6 +242,11 @@ class ApprovalManager:
         if self._always_allowed(command) or self._is_verify_command(command):
             return ApprovalDecision.APPROVED
 
+        from safety.sandbox import is_unsandboxed
+
+        if is_unsandboxed(command):  # runs outside the sandbox, so it is the user's call every time, even in auto mode
+            return ApprovalDecision.REJECTED if self.approval_policy == ApprovalPolicy.NEVER else ApprovalDecision.NEEDS_CONFIRMATION
+
         if self.approval_policy == ApprovalPolicy.NEVER:
             if is_safe_command(command):
                 return ApprovalDecision.APPROVED

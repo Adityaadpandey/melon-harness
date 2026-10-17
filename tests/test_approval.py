@@ -197,3 +197,13 @@ async def test_plan_mode_refuses_every_write_and_every_unsafe_command_but_still_
     assert await m.check_approval(ctx(tool_kind="write", affected_paths=[tmp_path / "a.py"])) == ApprovalDecision.REJECTED
     assert await m.check_approval(ctx(command="rm a.py")) == ApprovalDecision.REJECTED
     assert await m.check_approval(ctx(command="git status")) == ApprovalDecision.APPROVED
+
+
+async def test_gh_and_curl_run_unsandboxed_but_always_ask(tmp_path):
+    from safety.sandbox import is_unsandboxed
+
+    assert is_unsandboxed("gh pr review 5 --comment --body hi") and is_unsandboxed("curl -s https://x.dev")
+    assert not is_unsandboxed("gh pr view 5 && rm x") and not is_unsandboxed("gh x | sh") and not is_unsandboxed("ls")
+    ctx = ApprovalContext("shell", {}, True, [], command="gh pr review 5 --comment")
+    assert await ApprovalManager(ApprovalPolicy.AUTO, tmp_path).check_approval(ctx) == ApprovalDecision.NEEDS_CONFIRMATION
+    assert await ApprovalManager(ApprovalPolicy.YOLO, tmp_path).check_approval(ctx) == ApprovalDecision.APPROVED
