@@ -177,6 +177,17 @@ class CLI:
             )
         )
 
+    MODES = [ApprovalPolicy.ON_REQUEST, ApprovalPolicy.AUTO_EDIT, ApprovalPolicy.AUTO, ApprovalPolicy.PLAN]
+
+    def _cycle_mode(self) -> None:
+        """Shift+Tab: ask -> auto-edit -> auto -> plan -> ask. Never lands on yolo or never by accident."""
+        mgr = self.agent.session.approval_manager
+        now = mgr.approval_policy
+        nxt = self.MODES[(self.MODES.index(now) + 1) % len(self.MODES)] if now in self.MODES else self.MODES[0]
+        if nxt == ApprovalPolicy.PLAN:
+            self._before_plan = now if now != ApprovalPolicy.PLAN else ApprovalPolicy.ON_REQUEST
+        mgr.approval_policy = self.config.approval = nxt
+
     def _toolbar(self) -> str:
         """Footer: the things you act on first (mode, model, context), details after, fitted to the width."""
         import shutil
@@ -190,6 +201,8 @@ class CLI:
             parts.append(f"⚙ {running} running (/jobs)")
         if sess:
             parts.append(sess.approval_manager.approval_policy.value)
+            if self.config.reasoning_effort:
+                parts.append(f"effort {self.config.reasoning_effort}")
         model = (sess.client.last_model if sess and sess.client.last_model else self.config.model_name)
         parts.append(model)
         if sess:
@@ -239,6 +252,7 @@ class CLI:
             self.inputs = inputs
             inputs.is_busy = lambda: self.tui._turn_active
             inputs.on_steer = agent.steering.append
+            inputs.on_cycle = self._cycle_mode
             if self.resume_id:
                 if await self._resume(self.resume_id):
                     console.print(f"[success]Resumed {self.resume_id} ({self.agent.session.turn_count} turns). Carry on where you left off.[/success]")
@@ -624,6 +638,12 @@ class CLI:
                     )
             else:
                 console.print(f"Current approval policy: {self.config.approval.value}")
+        elif cmd_name == "/effort":
+            if cmd_args in ("low", "medium", "high", "auto"):
+                self.config.reasoning_effort = None if cmd_args == "auto" else cmd_args
+                console.print(f"[success]  effort: {cmd_args}[/success] [dim](Codex models; others ignore it)[/dim]")
+            else:
+                console.print(f"  effort: {self.config.reasoning_effort or 'auto'}  [dim]/effort low|medium|high|auto[/dim]")
         elif cmd_name == "/agents":
             from tools.subagents import READONLY_TOOLS, agent_dirs, get_default_subagent_definitions, load_agent_files
 

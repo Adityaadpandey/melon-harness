@@ -36,3 +36,12 @@ def test_plain_chat_loads_nothing():
 def test_repairing_can_repeat():
     from agent.task import _ALLOWED, TaskStatus
     assert TaskStatus.REPAIRING in _ALLOWED[TaskStatus.REPAIRING]
+
+
+def test_shift_tab_cycles_modes_and_skips_yolo():
+    from config.config import ApprovalPolicy as A
+    from main import CLI
+
+    order = CLI.MODES
+    assert A.YOLO not in order and A.NEVER not in order
+    assert order[0] == A.ON_REQUEST and A.PLAN in order

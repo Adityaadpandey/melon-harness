@@ -63,6 +63,7 @@ COMMANDS = {
     "/approval": "set approval mode: on-request, auto-edit, auto, never, yolo, plan",
     "/agents": "list sub-agents (built-in and .claude/agents/*.md or .ai-agent/agents/*.md)",
     "/permissions": "list or edit allow / deny / ask rules, e.g. /permissions deny Read(.env*)",
+    "/effort": "how hard the model thinks: low, medium, high or auto (Codex models)",
     "/plan": "toggle plan mode: read-only, mew investigates and presents a plan before touching anything",
     "/diff": "what changed in the working tree (git diff --stat, /diff full for the patch)",
     "/context": "how full the context window is and what is in it",
@@ -166,6 +167,7 @@ class InputSession:
             history = InMemoryHistory()
 
         self._toolbar = toolbar
+        self.on_cycle: Callable[[], None] | None = None
         self.fullscreen = body is not None
         self.queue: asyncio.Queue = asyncio.Queue()  # full-screen mode: submitted lines wait here
         self.choice: tuple[int, asyncio.Future] | None = None
@@ -230,6 +232,9 @@ class InputSession:
         def _stab(event):
             if buf.complete_state:
                 buf.complete_previous()
+            elif self.on_cycle:  # Shift+Tab flips the permission mode, like Claude Code
+                self.on_cycle()
+                event.app.invalidate()
 
         @kb.add("up")
         def _up(event):
@@ -303,7 +308,7 @@ class InputSession:
         kb.add("<any>", filter=asking)(lambda e: None)  # swallow stray typing while a question is open
 
         hints = [("class:tb.key", " enter "), ("class:toolbar", " send  "), ("class:tb.key", " shift+enter "), ("class:toolbar", " newline  "),
-                 ("class:tb.key", " / "), ("class:toolbar", " commands  "), ("class:tb.key", " @ "), ("class:toolbar", " files ")]
+                 ("class:tb.key", " shift+tab "), ("class:toolbar", " mode  "), ("class:tb.key", " / "), ("class:toolbar", " commands  "), ("class:tb.key", " @ "), ("class:toolbar", " files ")]
 
         def footer_all():
             left = footer_text()
