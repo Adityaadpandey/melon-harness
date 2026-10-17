@@ -214,10 +214,11 @@ class CLI:
 
     async def run_interactive(self) -> str | None:
         screen = None
-        if sys.stdout.isatty() and sys.stdin.isatty() and not os.environ.get("MEW_PLAIN"):
+        # the alt screen can't be scrolled or copied past what is visible, so it is opt-in: MEW_FULLSCREEN=1
+        if sys.stdout.isatty() and sys.stdin.isatty() and os.environ.get("MEW_FULLSCREEN") and not os.environ.get("MEW_PLAIN"):
             from ui.screen import Screen
 
-            screen = Screen(self.tui, console, lambda: f"{self.config.model_name}  ·  {str(self.config.cwd).replace(str(Path.home()), '~')}")  # MEW_PLAIN=1 keeps the old scrolling layout
+            screen = Screen(self.tui, console, lambda: f"{self.config.model_name}  ·  {str(self.config.cwd).replace(str(Path.home()), '~')}")
         self.tui.print_welcome(
             "mew",
             lines=[
