@@ -68,6 +68,8 @@ def build_profile(config) -> str:
         f"(allow file-write* {allow} (literal \"/dev/null\") (literal \"/dev/tty\") "
         '(regex #"^/dev/(fd/[0-9]+|std(out|err|in)|ttys?[0-9]*)$"))'
         f"(deny file-read* {deny})"
+        # only the gh program itself may read its own login, so `gh pr review` works but `cat ~/.config/gh/hosts.yml` still fails
+        + (f'(allow file-read* (require-all (subpath "{_sb("~/.config/gh")}") (process-path "{_sb(gh)}")))' if (gh := shutil.which("gh")) else "")
         + (f"(deny file-read* {names})(allow file-read* {templates})" if names else "")
     )
 
