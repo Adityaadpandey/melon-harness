@@ -214,11 +214,11 @@ class CLI:
 
     async def run_interactive(self) -> str | None:
         screen = None
-        # the alt screen can't be scrolled or copied past what is visible, so it is opt-in: MEW_FULLSCREEN=1
-        if sys.stdout.isatty() and sys.stdin.isatty() and os.environ.get("MEW_FULLSCREEN") and not os.environ.get("MEW_PLAIN"):
+        if sys.stdout.isatty() and sys.stdin.isatty() and not os.environ.get("MEW_PLAIN"):  # MEW_PLAIN=1: plain scrolling terminal
             from ui.screen import Screen
 
             screen = Screen(self.tui, console, lambda: f"{self.config.model_name}  ·  {str(self.config.cwd).replace(str(Path.home()), '~')}")
+        self.screen = screen
         self.tui.print_welcome(
             "mew",
             lines=[
@@ -554,9 +554,11 @@ class CLI:
         elif cmd_name == "/copy":
             from ui.screen import copy_to_clipboard
 
-            if self.tui.last_reply:
-                copy_to_clipboard(self.tui.last_reply)
-                console.print(f"[success]  copied {len(self.tui.last_reply)} characters[/success]")
+            # `/copy all` takes the whole conversation, not just the lines that fit on screen
+            text = self.screen.all_text() if cmd_args.strip() == "all" and getattr(self, "screen", None) else self.tui.last_reply
+            if text:
+                copy_to_clipboard(text)
+                console.print(f"[success]  copied {len(text)} characters[/success]")
             else:
                 console.print("[dim]  nothing to copy yet[/dim]")
         elif cmd_name == "/jobs":

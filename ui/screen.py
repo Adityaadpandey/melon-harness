@@ -252,6 +252,10 @@ class Screen:
         n = len(self._plain(i))
         return (a[1] if i == a[0] else 0), (min(n, b[1] + 1) if i == b[0] else n)
 
+    def all_text(self) -> str:
+        """The whole transcript as plain text, for /copy all."""
+        return "\n".join(self._plain(i).rstrip() for i in range(len(self._formatted()[3]))).strip()
+
     def _selected_text(self) -> str:
         if not self.sel:
             return ""
@@ -333,7 +337,7 @@ class Screen:
     def _header(self):
         cols = _size()[0]
         left = f"  =^{self._face()}^=  mew  ·  {self._title()}"
-        right = "scrolled back · PageDown / ctrl+end to return  " if self.anchor is not None else "drag to copy · F2 native select  "
+        right = "scrolled back · PageDown / ctrl+end to return  " if self.anchor is not None else "drag to copy · /copy all · F2 native select  "
         if not self.mouse_on:
             right = "native select on (wheel off) · F2 to go back  "
         if time.monotonic() - self._copied_at < 2:
