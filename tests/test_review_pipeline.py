@@ -121,7 +121,7 @@ def test_format_answer_is_one_line_per_finding_caps_unproven_ones_and_says_when_
         rp.Finding("MEDIUM", "c.ts:1", "redundant chain", "collapse", "REJECTED"),
     ]
     assert rp.format_answer(f).split("\n\n") == ["Verdict: changes requested (1 blocker(s), 1 to fix)", "Blocking", "1. HIGH a.ts:4  insert 500s the list\n   Fix: catch",
-                                                 "Should fix", "2. MEDIUM (unverified) b.ts:9  guessed race\n   Fix: lock", "Checked and ruled out: 1 claim(s), e.g. c.ts:1 (the code contradicts it)"]
+                                                 "Should fix", "2. MEDIUM (unverified) b.ts:9  guessed race\n   Fix: lock", "Checked and ruled out: 1 claim(s), e.g. c.ts:1 (the code contradicts it)", "Ready to merge? No: fix the blocker(s) first."]
     assert rp.format_answer([]) == "Verdict: approve. No issues found."
     assert rp.format_answer([rp.Finding("LOW", "c.ts:1", "x", "", "REJECTED")]).startswith("Verdict: approve. No issues found. The verifier ruled out 1")
 
@@ -356,3 +356,8 @@ async def test_a_pr_is_diffed_against_the_branch_it_merges_into_not_main(tmp_pat
     got = await rt.resolve(tmp_path, "review PR #7", ())
     assert got.files == ["f.txt"] and "develop" in got.label  # dev.txt belongs to develop, not to this PR
     assert (await rt.resolve(tmp_path, "review this branch", ())).files == ["f.txt"]
+
+
+def test_frame_shows_what_was_done_well_and_what_was_set_aside():
+    out = rp.frame("Verdict: approve. No issues found.", "adds paging", ["a.ts"], [], [], None, ["a.ts:4 the cursor is opaque"], ["the retry loop looks odd but is the intent"])
+    assert "Done well: a.ts:4 the cursor is opaque" in out and "Looked at and set aside: the retry loop" in out

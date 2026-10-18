@@ -30,14 +30,17 @@ LENSES = [
     ("behaviour", """LENS: behaviour. For every changed function, write down the claim it now makes ("returns null only when X"), then read its
 callers and callees and try to break the claim. For every new or changed condition, flag or gate, find everything that flips it at
 runtime and say what the user sees then (a button disabled while isFetching, and every mutation refetches it: it dims on every tap).
-Check wrong operands, inverted conditions, stale state, async ordering, races, leaks, off-by-one, null paths. Read what the diff deleted
+Compare the new version of each component, page or function with the old one (`git show HEAD:<file>` or the base revision): list what the
+old one offered (actions, states, copy, guards, escape hatches) and say what the user can no longer do. A one-time secret or irreversible
+result that a stray click, Escape or backdrop tap can dismiss is a defect. Check wrong operands, inverted conditions, stale state, async ordering, races, leaks, off-by-one, null paths. Read what the diff deleted
 before saying a replacement is missing: the new code often leans on a library doing that work."""),
     ("approach", """LENS: approach. Judge the change the way the owner of this system would, not line by line. Is this the right fix at the right layer,
 or a patch on the symptom while the cause stays (a guard in one caller when every caller shares the broken function)? Is there a simpler
 change that does the same job (delete the branch, reuse the helper that already exists a few files over, change the data instead of the code)?
 What is the blast radius: who else calls or deploys this, does old data, an old client or a half-finished rollout still work, can it be
 rolled back? Does it follow how the neighbouring code solves the same problem, and if it does not, is the new way better? A real concern
-about the design is a finding even when every line is correct: name the better shape and what it saves."""),
+about the design is a finding even when every line is correct: name the better shape and what it saves. Production readiness: a schema or
+data-shape change needs a migration or a backfill; a changed API, event or config key must keep old callers and stored data working."""),
     ("failures", """LENS: failures and contracts. For every new awaited call or write on a request path (DB insert, cache write, outbound fetch), ask
 what the user gets when it throws; optional data that now fails the whole response is a finding. Look for swallowed errors, empty
 catches and fallbacks that hide a real failure. For every changed signature, return shape, event, route, schema, env var, cache key or
@@ -45,7 +48,8 @@ migration, grep every caller and consumer and open the line that reads it: the t
 Missing tests count only where the project rules ask for them or a risky branch has none."""),
     ("rules", """LENS: rules and intent. Check the diff against the PROJECT RULES and PLAYBOOKS above: every finding quotes the rule in a few
 words and the line that breaks it; a rule that is about how the author works (never commit, ask first) is not a review finding. Then
-check the request: is something it asked for missing from the diff, and is something it did not ask for in it (scope creep, a new
+check the request. A request is a vision, not a full spec: for behaviour it is silent on, a reasonable user's expectation is a requirement
+(a delete button that works on every row but the last is a defect even though nobody wrote "the last row"). Is something it asked for missing from the diff, and is something it did not ask for in it (scope creep, a new
 dependency, a rewrite of working code)? Also read the comments in the touched files: does the change break guidance written there?"""),
     ("history", """LENS: history. Use git: `git log -5 --oneline -- <file>`, `git blame` or `git log -L` on the changed region, `git show HEAD:<file>`.
 Look for a change that undoes an earlier fix (read that commit's message), an invariant a previous commit set up that the diff
@@ -86,14 +90,21 @@ How to work: first list, for yourself, every behaviour the diff changes and what
 with your tools (callers, callees, config, tests, `git show HEAD:<file>`). Read before you claim; a claim about how a library behaves counts only
 if you read the library or its docs. Say what the fix should be in the smallest form: deleting code, bumping a cache key or version, or
 removing a branch beats adding a try/catch or a fallback. One line per defect: the same cause hit in two places is one finding naming both.
-Never report: style, redundancy, "could drift later", anything a linter or typechecker catches, defects on lines the diff did not touch,
-defects the old code already had, behaviour that is clearly the intent of the change, or anything you cleared in your own thinking.
+Do report what the change itself introduces even when it compiles: a feature, action or state the old code offered that the new one silently
+lost (a back button, an empty state, a way to recover a one-time value); a branch or route that nothing reaches; the same logic
+now written twice; one thing named two ways across the surfaces that show it; a visible restyle the project rules say to confirm first.
+Never report: style, redundancy that was already there, anything a linter or typechecker catches, defects on lines the diff did not touch,
+defects the old code already had, behaviour that is clearly the intent of the change, pedantic nitpicks a senior engineer would not raise,
+missing tests or docs unless the project rules ask for them, a rule the code explicitly silences (a lint-ignore comment), or anything you cleared in your own thinking.
 
 Reply with at most 5 lines, one finding per line, EXACTLY:
 SEVERITY | path:line | what is wrong, and who is affected (the call chain you read) | fix
 SEVERITY is HIGH only for a defect you proved by reading the code; a guess is MEDIUM and says "unverified".
 If you found nothing, reply: NONE
-Put one line before the findings: SUMMARY: <one or two sentences saying what the change does, in plain words>"""
+Before the findings put these lines (each on its own line):
+SUMMARY: <one or two sentences saying what the change does, in plain words>
+STRENGTH: <one specific thing the change does well, with file:line; leave the line out if nothing stands out, never flatter>
+ASIDE: <a behaviour you looked at and set aside as out of scope or intended, and why; at most 2 such lines, none if none>"""
 
 VERIFIER_PROMPT = """Another agent claims these defects exist in the working tree. Your job is to refute each one if you can.
 
@@ -111,7 +122,8 @@ a window after deploy)? Did the code at HEAD (`git show HEAD:<file>`) already fa
 Say ALREADY_AT_HEAD too when the request already depends on the same thing and fails without the change whenever this fails
 (a new write to the same Postgres the request already reads: if Postgres is down it 500s anyway; only "reads work, the write fails" is new).
 A claim that cites a project rule counts only if that rule exists in the instruction file and the cited line really breaks it
-(open the file: a rule paraphrased from memory is REJECTED). A claim about code the diff did not touch is REJECTED.
+(open the file: a rule paraphrased from memory is REJECTED). A claim about code the diff did not touch is REJECTED. So is a pedantic nitpick a senior engineer would not raise, a
+general quality complaint (missing tests, docs, "poor design") the project rules do not ask for, and a rule the code explicitly silences.
 If two claims are the same cause (one missing guard hit from several callers), write SAME_AS <the lower number> on the later one.
 
 Think each claim through before you answer: what input or state triggers it, who gets there, and what they see. Reply with one line per claim, EXACTLY:
@@ -121,6 +133,12 @@ CONF is how sure you are the defect is real AND will be hit in practice: 0 a fal
 has no other caller: callers are outside the diff, and the next one gets the wrong answer. Judge it as a senior engineer would.
 CONFIRMED means you read the code that proves it. REJECTED means the code contradicts it or already handles it (say where).
 UNCLEAR means you could not decide with the files available. Nothing else."""
+
+
+def split_lenses(context: str) -> list[tuple[str, str]]:
+    """A big change is cut into areas and every area gets behaviour + approach, plus the rules audit when the repo has rules
+    (the UI guard, "ask before restyling" and friends only get checked if some reviewer is told to check them)."""
+    return [*LENSES[:2], *([LENSES[3]] if "PROJECT RULES" in context else [])]
 
 
 def pick_lenses(config, diff: str, files: list[str], context: str) -> list[tuple[str, str]]:
@@ -211,11 +229,15 @@ async def left_behind(cwd: Path, moves: list[tuple[str, str]]) -> list[str]:
     return out[:15]
 
 
-def frame(answer: str, summary: str, reviewed: list[str], moves: list[tuple[str, str]], deleted: list[str], checks: list | None = None) -> str:
+def frame(answer: str, summary: str, reviewed: list[str], moves: list[tuple[str, str]], deleted: list[str], checks: list | None = None, strengths: list[str] | None = None, aside: list[str] | None = None) -> str:
     """What a human reviewer writes around the findings: what the change does, what was and was not looked at.
     Without it "No issues found." says nothing about how much was read."""
     lines = [f"What the change does: {summary}"] if summary else []
+    if strengths:
+        lines.append("Done well: " + " ".join(dict.fromkeys(x.strip() for x in strengths))[:400])
     lines.append(answer)
+    if aside:
+        lines.append("Looked at and set aside: " + "; ".join(dict.fromkeys(x.strip() for x in aside))[:400])
     seen = [f"{len(reviewed)} file(s)"]
     if moves:
         seen.append(f"{len(moves)} moved unchanged (" + ", ".join(f"{a} -> {b}" for a, b in moves[:3]) + (", ..." if len(moves) > 3 else "") + ")")
@@ -344,12 +366,13 @@ def format_answer(findings: list[Finding]) -> str:
     if not live:
         return "Verdict: approve. No issues found." + (f" The verifier ruled out {len(ruled)} claim(s)." if ruled else "")
     blocking = [f for f in live if shown_severity(f) in ("CRITICAL", "HIGH")]
-    rest = [f for f in live if f not in blocking]
+    rest = [f for f in live if shown_severity(f) == "MEDIUM"]
+    minor = [f for f in live if f not in blocking and f not in rest]
     head = "Verdict: changes requested" if blocking else "Verdict: approve with comments"
-    counts = ", ".join(x for x in (f"{len(blocking)} blocker(s)" if blocking else "", f"{len(rest)} to fix" if rest else "") if x)
+    counts = ", ".join(x for x in (f"{len(blocking)} blocker(s)" if blocking else "", f"{len(rest)} to fix" if rest else "", f"{len(minor)} minor" if minor else "") if x)
     out = [f"{head} ({counts})"]
     n = 0
-    for title, group in (("Blocking", blocking), ("Should fix", rest)):
+    for title, group in (("Blocking", blocking), ("Should fix", rest), ("Minor", minor)):
         if not group:
             continue
         out.append(title)
@@ -367,6 +390,7 @@ def format_answer(findings: list[Finding]) -> str:
     if ruled:
         shown = "; ".join(f"{f.where} ({(f.evidence or 'the code contradicts it')[:70]})" for f in ruled[:3])
         out.append(f"Checked and ruled out: {len(ruled)} claim(s)" + (f", e.g. {shown}" if shown else ""))
+    out.append("Ready to merge? " + ("No: fix the blocker(s) first." if blocking else "With fixes." if rest else "Yes, the minor notes can follow."))
     return "\n\n".join(out)
 
 
@@ -472,7 +496,7 @@ async def run_review_pipeline(config, request: str) -> AsyncGenerator[tuple[str,
     if not files and not moves:
         return
     whole = await build_diff(cwd, files, rev)
-    groups = [("the whole change", files)] if "[diff clipped]" not in whole else group_files(files, 2)
+    groups = [("the whole change", files)] if "[diff clipped]" not in whole else group_files(files)
     yield "notice", f"Reviewing {len(files)} changed file(s)" + (f" in {label}" if target else "") + (f" and {len(moves)} moved unchanged" if moves else "") + (f" with {len(groups)} reviewers in parallel" if len(groups) > 1 else "")
     role = config.review_pipeline_role
     stayed = await left_behind(cwd, moves)
@@ -491,7 +515,7 @@ async def run_review_pipeline(config, request: str) -> AsyncGenerator[tuple[str,
                + "; ".join(f"{c.command}={'ok' if c.ok else 'FAILED'}" for c in checks) + "\n\n") if checks else ""
     context = checked + review_memory.render(cwd) + review_context(config, request, files)
     context = context + "\n\n" if context else ""
-    lenses = pick_lenses(config, whole, files, context) if len(groups) == 1 else LENSES[:2]  # a split diff already multiplies the reviewers
+    lenses = pick_lenses(config, whole, files, context) if len(groups) == 1 else split_lenses(context)  # a split diff already multiplies the reviewers
     if len(lenses) > 1:
         yield "notice", f"Each reviewer takes one angle: {', '.join(n for n, _ in lenses)}" + (" (rules and playbooks loaded)" if "PROJECT RULES" in context or "PLAYBOOKS" in context else "")
     backend = " through Claude Code" if config.review_backend == "claude-code" else ""
@@ -511,9 +535,13 @@ async def run_review_pipeline(config, request: str) -> AsyncGenerator[tuple[str,
         prompt = REVIEWER_PROMPT.format(scope=scope, request=request[:1500], part=", ".join(fs[:25]), moved=moved, others=others, context=context, diff=diff, lens=lens)
         reply = await ask(config, prompt, role, max_turns=12, max_tokens=config.review_pipeline_tokens)
         summaries.extend(re.findall(r"(?im)^\W*SUMMARY:\s*(.+)$", reply))
+        strengths.extend(re.findall(r"(?im)^\W*STRENGTH:\s*(.+)$", reply))
+        aside.extend(re.findall(r"(?im)^\W*ASIDE:\s*(.+)$", reply))
         return parse_findings(reply) if reply.strip() else None
 
     summaries: list[str] = []
+    strengths: list[str] = []
+    aside: list[str] = []
     replies = await asyncio.gather(*(review(n, fs, lens) for n, fs in groups for _, lens in lenses))
     review_tokens = sum(_spent_log)
     if all(r is None for r in replies):
@@ -552,5 +580,5 @@ async def run_review_pipeline(config, request: str) -> AsyncGenerator[tuple[str,
     verify_tokens = sum(_spent_log) - review_tokens
     yield "notice", f"Verified: {confirmed} confirmed, {rejected} rejected, {len(found) - confirmed - rejected} unverified"
     yield "notice", f"Tokens: reviewers {review_tokens:,} + verifier {verify_tokens:,} = {review_tokens + verify_tokens:,}"
-    yield "answer", frame(format_answer(found), summaries[0].strip() if summaries else "", files, moves, deleted, late)
+    yield "answer", frame(format_answer(found), " ".join(dict.fromkeys(x.strip() for x in summaries[:6]))[:700], files, moves, deleted, late, strengths[:2], aside[:3])
     yield "result", compose(found, len(groups) * len(lenses))
