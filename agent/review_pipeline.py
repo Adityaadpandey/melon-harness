@@ -141,19 +141,21 @@ def split_lenses(context: str) -> list[tuple[str, str]]:
     return [*LENSES[:2], *([LENSES[3]] if "PROJECT RULES" in context else [])]
 
 
+def one_reviewer(context: str, security: bool) -> tuple[str, str]:
+    """All the angles as one checklist for ONE reviewer. Claude Code's own /code-review gets nine findings out of a 22-file PR from a
+    single agent in under a minute; what matters is the method and the budget, not how many agents there are."""
+    parts = [LENSES[0], LENSES[1], LENSES[2], LENSES[3] if "PROJECT RULES" in context else LENSES[4], *([SECURITY_LENS] if security else [])]
+    return ("review", "Work through every angle below in turn, spending most of your effort where the diff is riskiest:\n\n" + "\n\n".join(t for _, t in parts))
+
+
 def pick_lenses(config, diff: str, files: list[str], context: str) -> list[tuple[str, str]]:
-    """How many angles a change deserves. A 10-line fix gets two; a big one gets five; auth, queries and money add a fifth.
-    `review_lenses` > 0 pins the count instead (1 = a single generalist)."""
-    lines = diff.count("\n")
-    if config.review_lenses > 0:
-        picked = LENSES[: config.review_lenses]
-    elif lines < 40 and len(files) <= 2:
-        picked = LENSES[:2]  # behaviour + approach
-    elif lines < BIG_DIFF_LINES:
-        picked = [*LENSES[:3], LENSES[3] if context else LENSES[4]]
-    else:
-        picked = list(LENSES)
-    if config.review_lenses != 1 and SECURITY_HINT.search(" ".join(files) + "\n" + diff):
+    """Auto (review_lenses = 0) is ONE reviewer carrying every angle. review_lenses = N >= 2 fans out to N separate angle reviewers
+    (security is appended when auth, queries or money are touched); 1 pins the behaviour angle alone."""
+    secure = bool(SECURITY_HINT.search(" ".join(files) + "\n" + diff))
+    if config.review_lenses == 0:
+        return [one_reviewer(context, secure)]
+    picked = LENSES[: config.review_lenses]
+    if config.review_lenses != 1 and secure:
         picked = [*picked, SECURITY_LENS]
     return picked
 
@@ -499,7 +501,7 @@ async def run_review_pipeline(config, request: str) -> AsyncGenerator[tuple[str,
     if not files and not moves:
         return
     whole = await build_diff(cwd, files, rev)
-    groups = [("the whole change", files)] if "[diff clipped]" not in whole else group_files(files)
+    groups = [("the whole change", files)] if "[diff clipped]" not in whole or config.review_lenses < 2 else group_files(files)
     yield "notice", f"Reviewing {len(files)} changed file(s)" + (f" in {label}" if target else "") + (f" and {len(moves)} moved unchanged" if moves else "") + (f" with {len(groups)} reviewers in parallel" if len(groups) > 1 else "")
     role = config.review_pipeline_role
     stayed = await left_behind(cwd, moves)
@@ -518,7 +520,8 @@ async def run_review_pipeline(config, request: str) -> AsyncGenerator[tuple[str,
                + "; ".join(f"{c.command}={'ok' if c.ok else 'FAILED'}" for c in checks) + "\n\n") if checks else ""
     context = checked + review_memory.render(cwd) + review_context(config, request, files)
     context = context + "\n\n" if context else ""
-    lenses = pick_lenses(config, whole, files, context) if len(groups) == 1 else split_lenses(context)  # a split diff already multiplies the reviewers
+    lenses = pick_lenses(config, whole, files, context) if len(groups) == 1 else split_lenses(context)
+    clipped = "[diff clipped]" in whole  # a split diff already multiplies the reviewers
     if len(lenses) > 1:
         yield "notice", f"Each reviewer takes one angle: {', '.join(n for n, _ in lenses)}" + (" (rules and playbooks loaded)" if "PROJECT RULES" in context or "PLAYBOOKS" in context else "")
     backend = " through Claude Code" if config.review_backend == "claude-code" else ""
@@ -529,6 +532,8 @@ async def run_review_pipeline(config, request: str) -> AsyncGenerator[tuple[str,
         diff = whole if len(groups) == 1 else await build_diff(cwd, fs, rev)
         others = ", ".join(f for f in files if f not in fs)[:600] or "(none)"
         scope = label if len(groups) == 1 else f"one part ({name}) of {label} that {len(groups)} reviewers split"
+        if clipped and len(groups) == 1:
+            scope += f" (the diff below is cut short: for the files it does not reach, run `git diff {rev[0]} -- <file>` and read each one before you finish)"
         if target and not target.includes_worktree:
             scope += f" (a committed range: read old code with `git show {rev[0]}:<file>` and new code with `git show {rev[1]}:<file>`)"
         moved = ("MOVED WITHOUT ANY CHANGE (identical bytes, so there is nothing in them to review; check that imports and paths still resolve): "
@@ -536,7 +541,7 @@ async def run_review_pipeline(config, request: str) -> AsyncGenerator[tuple[str,
                  + "\nSTILL IN THE OLD FOLDER (did any of these rely on what moved, e.g. inherit its loading.tsx, layout or index export? say what they lose, or that they are fine): "
                  + (", ".join(stayed) or "(nothing)") + "\n") if moves else ""
         prompt = REVIEWER_PROMPT.format(scope=scope, request=request[:1500], part=", ".join(fs[:25]), moved=moved, others=others, context=context, diff=diff, lens=lens)
-        reply = await ask(config, prompt, role, max_turns=12, max_tokens=config.review_pipeline_tokens)
+        reply = await ask(config, prompt, role, max_turns=20 if len(lenses) == 1 and lenses[0][0] == "review" else 12, max_tokens=config.review_pipeline_tokens)
         summaries.extend(re.findall(r"(?im)^\W*SUMMARY:\s*(.+)$", reply))
         strengths.extend(re.findall(r"(?im)^\W*STRENGTH:\s*(.+)$", reply))
         aside.extend(re.findall(r"(?im)^\W*ASIDE:\s*(.+)$", reply))

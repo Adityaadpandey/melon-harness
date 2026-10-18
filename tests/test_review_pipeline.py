@@ -232,16 +232,15 @@ def test_duplicate_findings_from_several_angles_name_the_place_once():
     assert len(merged) == 1 and merged[0].where == "a.ts:1"
 
 
-def test_a_small_diff_gets_two_angles_a_big_one_four_and_auth_code_adds_a_security_one():
+def test_by_default_one_reviewer_carries_every_angle_and_a_pinned_count_fans_out():
     cfg = Config()
-    small, big = "+x\n" * 10, "+x\n" * 300
-    assert [n for n, _ in rp.pick_lenses(cfg, small, ["a.ts"], "")] == ["behaviour", "approach"]
-    assert [n for n, _ in rp.pick_lenses(cfg, big, ["a.ts", "b.ts", "c.ts"], "")] == ["behaviour", "approach", "failures", "rules", "history"]
-    mid = "+x\n" * 100
-    assert [n for n, _ in rp.pick_lenses(cfg, mid, ["a.ts", "b.ts", "c.ts"], "RULES")][3] == "rules"  # rules exist: audit against them
-    assert [n for n, _ in rp.pick_lenses(cfg, mid, ["a.ts", "b.ts", "c.ts"], "")][3] == "history"  # none: read the history instead
-    assert rp.pick_lenses(cfg, "+check the jwt token\n", ["auth.ts"], "")[-1][0] == "security"
-    assert [n for n, _ in rp.pick_lenses(Config(review_lenses=1), "+jwt\n", ["auth.ts"], "")] == ["behaviour"]  # 1 pins a single generalist
+    names, text = rp.pick_lenses(cfg, "+x\n" * 300, ["a.ts", "b.ts", "c.ts"], "PROJECT RULES")[0]
+    assert names == "review" and len(rp.pick_lenses(cfg, "+x\n" * 300, ["a.ts"], "")) == 1
+    assert all(w in text for w in ("LENS: behaviour", "LENS: approach", "LENS: failures", "LENS: rules")) and "LENS: history" not in text
+    assert "LENS: history" in rp.pick_lenses(cfg, "+x\n", ["a.ts"], "")[0][1]  # no rules to audit: read the history instead
+    assert "LENS: security" in rp.pick_lenses(cfg, "+check the jwt token\n", ["auth.ts"], "")[0][1]
+    assert [n for n, _ in rp.pick_lenses(Config(review_lenses=3), "+x\n", ["a.ts"], "")] == ["behaviour", "approach", "failures"]
+    assert [n for n, _ in rp.pick_lenses(Config(review_lenses=1), "+jwt\n", ["auth.ts"], "")] == ["behaviour"]
 
 
 def test_verdicts_carry_a_confidence_and_a_low_one_is_dropped_from_the_answer():
