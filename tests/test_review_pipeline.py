@@ -152,7 +152,7 @@ def test_a_self_healing_or_already_present_failure_is_capped_at_medium_and_says_
          rp.Finding("HIGH", "b.ts:2", "write throws", "catch", "CONFIRMED", at_head=True),
          rp.Finding("HIGH", "c.ts:1", "proven and lasting", "fix", "CONFIRMED")]
     text = rp.format_answer(f)
-    assert text.index("c.ts:1`  proven") < text.index("a.ts:4`  backfill") and "goes away by itself (15 min)" in text and "already did this" in text
+    assert text.index("c.ts:1`  proven") < text.index("a.ts:4`  backfill") and "goes away by itself (15 min)" in text
 
 
 def test_the_same_cause_in_one_file_is_one_finding_naming_every_line():
@@ -381,3 +381,23 @@ def test_the_reviewer_is_offered_every_skill_it_can_open(tmp_path, monkeypatch):
     monkeypatch.setattr("agent.skills.load_skills", lambda config: skills)
     ctx = review.review_context(Config(cwd=tmp_path), "review the ui", ["a.tsx"])
     assert "MORE SKILLS" in ctx and "tunyt-web-design: Tunyt UI rules" in ctx and "code-review:" not in ctx
+
+
+async def test_a_defect_the_old_code_already_had_is_not_reported(tmp_path, monkeypatch):
+    subprocess.run("git init -q && git config user.email a@b.c && git config user.name t", shell=True, cwd=tmp_path)
+    (tmp_path / "a.ts").write_text("x\n")
+    subprocess.run("git add . && git commit -qm init", shell=True, cwd=tmp_path)
+    (tmp_path / "a.ts").write_text("y\n")
+    import agent.review_memory as rm
+    monkeypatch.setattr(rm, "path_for", lambda cwd, base=None: tmp_path / "mem.json")
+
+    async def fake_ask(config, prompt, role, max_turns, max_tokens, disabled_skills=None):
+        if "claims these defects" in prompt:
+            return "1 | CONFIRMED | a.ts:1 maybe | few | ONGOING | ALREADY_AT_HEAD | NONE | CONF 90"
+        return "MEDIUM | a.ts:1 | a rare race | lock"
+
+    monkeypatch.setattr(rp, "ask", fake_ask)
+    cfg = Config(pi_mode=True, cwd=tmp_path, approval=ApprovalPolicy.AUTO, auto_verify=False, review_lenses=1)
+    out = [x async for x in rp.run_review_pipeline(cfg, "review the changes")]
+    answer = next(v for k, v in out if k == "answer")
+    assert answer.startswith("## Code review\n\nNo issues found.")

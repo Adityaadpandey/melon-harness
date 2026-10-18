@@ -104,11 +104,26 @@ async def resolve(cwd: Path, message: str, skip: tuple[str, ...]) -> Target | No
     return None
 
 
+async def _refresh(cwd: Path, ref: str) -> None:
+    """Bring origin/<base> up to date first. A stale local copy puts the merge base far back, and then the review
+    reads every commit that landed on the base since (a homepage change that is nobody's PR). Offline: carry on with what is there."""
+    if not ref.startswith("origin/"):
+        return
+    try:
+        proc = await asyncio.create_subprocess_exec("git", "fetch", "-q", "origin", ref.split("/", 1)[1], cwd=cwd,
+                                                    stdout=asyncio.subprocess.DEVNULL, stderr=asyncio.subprocess.DEVNULL, stdin=asyncio.subprocess.DEVNULL)
+        await asyncio.wait_for(proc.communicate(), 25)
+    except (OSError, asyncio.TimeoutError):
+        pass
+
+
 async def _branch(cwd: Path, name: str, skip: tuple[str, ...], pr_base: str = "") -> Target | None:
     """`pr_base` is the branch the PR merges into; without a PR it falls back to main/master."""
     base = (await _remote_ref(cwd, pr_base) if pr_base else "") or await _base_branch(cwd)
+    await _refresh(cwd, base)
     mb = await _ok(cwd, "merge-base", base, "HEAD") if base else ""
     if not mb or mb == await _ok(cwd, "rev-parse", "HEAD"):
         return None  # on the base branch itself: the working tree is the only change there is
     files = await _files(cwd, (mb,), skip)
-    return Target(f"{name} against {base} (its commits and any uncommitted work)", (mb,), files) if files else None
+    commits = await _ok(cwd, "rev-list", "--count", f"{mb}..HEAD")
+    return Target(f"{name} against {base} ({commits} commit(s) since {mb[:8]}, plus any uncommitted work)", (mb,), files) if files else None

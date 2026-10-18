@@ -369,15 +369,19 @@ def tidy(text: str, limit: int = 260) -> str:
 
 
 def headline(what: str) -> tuple[str, str]:
-    """(title, rest): the first sentence is the heading, the remainder is the explanation underneath."""
+    """(title, rest): the first sentence is the heading and the remainder the explanation. With no sentence break, the first clause
+    ("..., so ...", "...; ...", "... - ...") is, and a short finding is all heading."""
     text = tidy(what, 700)
-    m = re.match(r"(.{20,140}?[.!?])\s+(.*)", text, re.S)
+    m = re.match(r"(.{20,170}?[.!?])\s+(.*)", text, re.S)
     if m:
         return m.group(1).rstrip("."), m.group(2).strip()
-    if len(text) > 140:
-        cut = text[:140].rsplit(" ", 1)[0]
-        return cut + "...", text[len(cut):].strip()
-    return text, ""
+    if len(text) <= 190:
+        return text, ""
+    m = re.match(r"(.{40,170}?)(?:\s[-\u2014]+\s|;\s|:\s|,\s)(.*)", text, re.S)
+    if m:
+        return m.group(1), m.group(2).strip()
+    cut = text[:170].rsplit(" ", 1)[0]
+    return cut, text[len(cut):].strip()
 
 
 def format_answer(findings: list[Finding]) -> str:
@@ -419,8 +423,6 @@ def format_answer(findings: list[Finding]) -> str:
                 lines.append(f"- **Affects:** {tidy(f.reach, 160)}")
             if f.temporary:
                 lines.append(f"- **Temporary:** goes away by itself ({tidy(f.temporary, 80)})")
-            if f.at_head:
-                lines.append("- **Note:** the code before this change already did this")
             if f.fix:
                 lines.append(f"- **Fix:** {tidy(f.fix, 400).rstrip('.')}")
             lines.append("")
@@ -606,6 +608,8 @@ async def run_review_pipeline(config, request: str) -> AsyncGenerator[tuple[str,
         reply = await ask(config, VERIFIER_PROMPT.format(claims=claims), role, max_turns=min(24, 8 + 2 * len(to_check)), max_tokens=config.review_pipeline_tokens, disabled_skills=["code-review"])
         for n, (f, v) in enumerate(zip(to_check, parse_verdicts(reply, len(to_check)).values()), 1):
             f.verdict, f.evidence, f.reach, f.temporary, f.at_head, f.same_as, f.confidence = v
+            if f.verdict != "REJECTED" and f.at_head:  # the old code failed the same way: not this change's defect
+                f.verdict, f.evidence = "REJECTED", "already present before this change"
             if f.verdict != "REJECTED" and f.confidence < config.review_min_confidence:
                 f.verdict, f.evidence = "REJECTED", f"low confidence ({f.confidence}/100): {f.evidence}"
     for f in extra:
@@ -615,7 +619,7 @@ async def run_review_pipeline(config, request: str) -> AsyncGenerator[tuple[str,
     if check_task and not check_task.done():
         check_task.cancel()
     found = check_findings(late, files) + found  # a failing typecheck on a changed file needs no model to confirm
-    review_memory.remember(cwd, [(f.where, f.what, f.evidence) for f in found if f.verdict == "REJECTED" and not f.evidence.startswith("low confidence")])
+    review_memory.remember(cwd, [(f.where, f.what, f.evidence) for f in found if f.verdict == "REJECTED" and not f.evidence.startswith(("low confidence", "already present"))])
     confirmed = sum(f.verdict == "CONFIRMED" for f in found)
     rejected = sum(f.verdict == "REJECTED" for f in found)
     verify_tokens = sum(_spent_log) - review_tokens
