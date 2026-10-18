@@ -37,7 +37,10 @@ before saying a replacement is missing: the new code often leans on a library do
     ("approach", """LENS: approach. Judge the change the way the owner of this system would, not line by line. Is this the right fix at the right layer,
 or a patch on the symptom while the cause stays (a guard in one caller when every caller shares the broken function)? Is there a simpler
 change that does the same job (delete the branch, reuse the helper that already exists a few files over, change the data instead of the code)?
-What is the blast radius: who else calls or deploys this, does old data, an old client or a half-finished rollout still work, can it be
+Layering: does it use the layer the repo's rules and neighbouring files use (service -> repository -> database), or reach past it?
+Duplication the diff creates: the same rule written in two or three places (cache hit, cache miss, public endpoint) belongs in one helper.
+Mirrors: when the change touches one of a pair (desktop and mobile layout, create and update, cached and uncached path, server and
+client), open the other half and say whether it needs the same change. What is the blast radius: who else calls or deploys this, does old data, an old client or a half-finished rollout still work, can it be
 rolled back? Does it follow how the neighbouring code solves the same problem, and if it does not, is the new way better? A real concern
 about the design is a finding even when every line is correct: name the better shape and what it saves. Production readiness: a schema or
 data-shape change needs a migration or a backfill; a changed API, event or config key must keep old callers and stored data working."""),
@@ -45,7 +48,11 @@ data-shape change needs a migration or a backfill; a changed API, event or confi
 what the user gets when it throws; optional data that now fails the whole response is a finding. Look for swallowed errors, empty
 catches and fallbacks that hide a real failure. For every changed signature, return shape, event, route, schema, env var, cache key or
 migration, grep every caller and consumer and open the line that reads it: the type may say one thing and the runtime data another.
-Missing tests count only where the project rules ask for them or a risky branch has none."""),
+Missing tests: code that guards privacy, auth, money or a permission needs a test, so none in the diff is a finding (the repo's
+rules or playbooks usually say so: quote them; check whether a spec file exists on the branch but is missing from the diff).
+Performance: a new query, await or loop on a per-request path is a finding when it repeats per item or per visit (an extra DB call
+on every cache hit, an N+1); say how often it runs. Accessibility: UI hidden, locked or disabled by CSS alone (pointer-events: none,
+opacity) stays focusable and is still read aloud; it needs the attribute or the element removed."""),
     ("rules", """LENS: rules and intent. Check the diff against the PROJECT RULES and PLAYBOOKS above: every finding quotes the rule in a few
 words and the line that breaks it; a rule that is about how the author works (never commit, ask first) is not a review finding. Then
 check the request. A request is a vision, not a full spec: for behaviour it is silent on, a reasonable user's expectation is a requirement
@@ -97,7 +104,7 @@ Never report: style, redundancy that was already there, anything a linter or typ
 defects the old code already had, behaviour that is clearly the intent of the change, pedantic nitpicks a senior engineer would not raise,
 missing tests or docs unless the project rules ask for them, a rule the code explicitly silences (a lint-ignore comment), or anything you cleared in your own thinking.
 
-Reply with at most 5 lines, one finding per line, EXACTLY:
+Reply with at most 8 lines, one finding per line, EXACTLY:
 SEVERITY | path:line | what is wrong, and who is affected (the call chain you read) | fix
 SEVERITY is HIGH only for a defect you proved by reading the code; a guess is MEDIUM and says "unverified".
 If you found nothing, reply: NONE
