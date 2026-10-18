@@ -426,3 +426,45 @@ async def test_verifier_reads_claims_in_batches_retries_the_unclear_ones_and_lea
     assert len(calls) == 3  # two batches (6 + 1), then one retry for the unclear ones
     assert [f.verdict for f in findings] == ["CONFIRMED"] + ["REJECTED"] * 5 + ["CONFIRMED"]
     assert findings[1].evidence == "could not be settled by reading the code"
+
+
+async def test_a_pr_that_is_not_checked_out_is_reviewed_from_a_throwaway_worktree_and_cleaned_up(tmp_path, monkeypatch):
+    import agent.review_target as rt
+    origin, work = tmp_path / "origin.git", tmp_path / "work"
+    sh = lambda c, d: subprocess.run(c, shell=True, cwd=d, capture_output=True, check=True)
+    tmp_path.joinpath("work").mkdir()
+    sh("git init -q --bare -b main origin.git", tmp_path)
+    sh(f"git init -q -b main && git config user.email a@b.c && git config user.name t && git remote add origin {origin}", work)
+    (work / "a.txt").write_text("1\n"); sh("git add . && git commit -qm base && git push -q origin main", work)
+    sh("git checkout -qb feat", work); (work / "f.txt").write_text("f\n"); sh("git add . && git commit -qm 'add f' && git push -q origin feat:refs/pull/7/head", work)
+    sh("git checkout -q main", work)  # standing on main: the PR is not the checked-out branch
+
+    async def info(cwd, number=""):
+        return "feat", "main"
+
+    monkeypatch.setattr(rt, "_pr_info", info)
+    got = await rt.resolve(work, "review PR #7", ())
+    assert got.files == ["f.txt"] and got.cwd and (got.cwd / "f.txt").read_text() == "f\n" and got.commits[0].endswith("add f")
+    assert not (work / "f.txt").exists()  # the user's checkout is untouched
+    await got.cleanup()
+    assert not got.cwd.exists()
+
+
+async def test_a_missing_pr_base_is_reported_instead_of_silently_falling_back_to_main(tmp_path, monkeypatch):
+    import agent.review_target as rt
+    run = lambda c: subprocess.run(c, shell=True, cwd=tmp_path, capture_output=True, check=True)
+    run("git init -q -b main && git config user.email a@b.c && git config user.name t")
+    (tmp_path / "a.txt").write_text("1\n"); run("git add . && git commit -qm base")
+    run("git checkout -qb feat"); (tmp_path / "f.txt").write_text("f\n"); run("git add . && git commit -qm feat")
+
+    async def info(cwd, number=""):
+        return "", ""
+
+    monkeypatch.setattr(rt, "_pr_info", info)
+    got = await rt.resolve(tmp_path, "review this pr", ())
+    assert got.files == ["f.txt"] and any("assumed" in n for n in got.notes)
+
+
+def test_a_diff_that_lives_in_one_area_is_split_into_parts_when_it_is_clipped():
+    parts = rp.split_clipped([f"apps/web/src/a{n}.ts" for n in range(7)])
+    assert [n for n, _ in parts] == ["part 1", "part 2", "part 3"] and sum(len(f) for _, f in parts) == 7

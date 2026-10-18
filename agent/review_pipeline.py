@@ -157,7 +157,7 @@ UNCLEAR means you could not decide with the files available. Nothing else."""
 def split_lenses(context: str) -> list[tuple[str, str]]:
     """A big change is cut into areas and every area gets behaviour + approach, plus the rules audit when the repo has rules
     (the UI guard, "ask before restyling" and friends only get checked if some reviewer is told to check them)."""
-    return [*LENSES[:2], *([LENSES[3]] if "PROJECT RULES" in context else [])]
+    return [*LENSES[:2], CONTRACT_LENS, *([LENSES[3]] if "PROJECT RULES" in context else [])]
 
 
 def one_reviewer(context: str, security: bool) -> tuple[str, str]:
@@ -250,7 +250,7 @@ async def left_behind(cwd: Path, moves: list[tuple[str, str]]) -> list[str]:
     return out[:15]
 
 
-def frame(answer: str, summary: str, reviewed: list[str], moves: list[tuple[str, str]], deleted: list[str], checks: list | None = None, strengths: list[str] | None = None, aside: list[str] | None = None) -> str:
+def frame(answer: str, summary: str, reviewed: list[str], moves: list[tuple[str, str]], deleted: list[str], checks: list | None = None, strengths: list[str] | None = None, aside: list[str] | None = None, scope: str = "") -> str:
     """What a human reviewer writes around the findings: what the change does, what was and was not looked at.
     Without it "No issues found." says nothing about how much was read."""
     lines = [f"**What the change does:** {tidy(summary, 320)}."] if summary else []
@@ -265,8 +265,17 @@ def frame(answer: str, summary: str, reviewed: list[str], moves: list[tuple[str,
         seen.append(f"{len(deleted)} deleted")
     bad = [c.command for c in checks or [] if not c.ok]
     ran = (f"Checks that FAILED: {', '.join(bad)}." if bad else f"{len(checks)} project check(s) passed (typecheck, lint, tests).") if checks else "I did not run typecheck, lint or tests."
-    lines.append("_I read " + ", ".join(seen) + ". " + ran + (" Stage the move with git add -A on both paths so git keeps the rename." if moves else "") + "_")
+    lines.append("_" + (f"Scope: {scope} " if scope else "") + "I read " + ", ".join(seen) + ". " + ran + (" Stage the move with git add -A on both paths so git keeps the rename." if moves else "") + "_")
     return "\n\n".join(lines)
+
+
+def split_clipped(files: list[str]) -> list[tuple[str, list[str]]]:
+    """A diff too big for one prompt is cut by area; a change that lives in one area is cut into thirds, so no reviewer is told to go and
+    read what the prompt had to drop."""
+    groups = group_files(files)
+    if len(groups) == 1 and len(files) > 1:
+        return [(f"part {i + 1}", files[i::MAX_GROUPS]) for i in range(min(MAX_GROUPS, len(files)))]
+    return groups
 
 
 def group_files(files: list[str], limit: int = MAX_GROUPS) -> list[tuple[str, list[str]]]:
@@ -571,13 +580,27 @@ def check_findings(results, files: list[str]) -> list[Finding]:
 
 
 async def run_review_pipeline(config, request: str) -> AsyncGenerator[tuple[str, str], None]:
+    """Resolve what to review, run it, and remove the throwaway worktree a PR from another branch was checked out in."""
+    from config.config import Config
+
+    target = await review_target.resolve(Path(config.cwd), request, SKIP_SUFFIXES)
+    if target is None and NAMED_SCOPE.search(request):
+        return  # it names a commit/PR/branch we cannot read from here: the normal review answers
+    try:
+        if target and target.cwd:
+            config = Config(**{**config.to_dict(), "cwd": target.cwd})  # reviewers, checks' rules and `git show` all read the PR's tree
+        async for item in _run_review(config, request, target):
+            yield item
+    finally:
+        if target:
+            await target.cleanup()
+
+
+async def _run_review(config, request: str, target) -> AsyncGenerator[tuple[str, str], None]:
     """Yields ("notice", text) as it goes and finally ("result", block), or nothing when there is nothing to review.
     Reviewers each take one angle on the change (more of them for a bigger or riskier diff), the project's checks run beside
     them, a last reviewer hunts for what they all missed, then ONE verifier tries to refute every claim and scores it."""
     cwd = Path(config.cwd)
-    target = await review_target.resolve(cwd, request, SKIP_SUFFIXES)
-    if target is None and NAMED_SCOPE.search(request):
-        return  # it names a commit/PR/branch we cannot read from here: the normal review answers
     moves: list[tuple[str, str]] = []
     deleted: list[str] = []
     if target:
@@ -591,13 +614,18 @@ async def run_review_pipeline(config, request: str) -> AsyncGenerator[tuple[str,
     if not files and not moves:
         return
     whole = await build_diff(cwd, files, rev)
-    groups = [("the whole change", files)] if "[diff clipped]" not in whole or config.review_lenses < 2 else group_files(files)
+    groups = [("the whole change", files)] if "[diff clipped]" not in whole else split_clipped(files)
+    if target:
+        for note in target.notes:
+            yield "notice", f"WARNING scope: {note}"
+        if target.commits:
+            yield "notice", "Commits covered: " + "; ".join(target.commits[:6]) + (f"; ... ({len(target.commits)} in all)" if len(target.commits) > 6 else "")
     yield "notice", f"Reviewing {len(files)} changed file(s)" + (f" in {label}" if target else "") + (f" and {len(moves)} moved unchanged" if moves else "") + (f" with {len(groups)} reviewers in parallel" if len(groups) > 1 else "")
     role = config.review_pipeline_role
     stayed = await left_behind(cwd, moves)
     _spent_log.clear()
 
-    check_task = asyncio.create_task(run_checks(config, files)) if config.review_run_checks and (target is None or target.includes_worktree) else None
+    check_task = asyncio.create_task(run_checks(config, files)) if config.review_run_checks and (target is None or (target.includes_worktree and not target.cwd)) else None  # a fresh PR worktree has no installed dependencies
     checks: list = []
     if check_task:
         try:
@@ -672,5 +700,6 @@ async def run_review_pipeline(config, request: str) -> AsyncGenerator[tuple[str,
     verify_tokens = sum(_spent_log) - review_tokens
     yield "notice", f"Verified: {confirmed} confirmed, {rejected} rejected, {len(found) - confirmed - rejected} unverified"
     yield "notice", f"Tokens: reviewers {review_tokens:,} + verifier {verify_tokens:,} = {review_tokens + verify_tokens:,}"
-    yield "answer", frame(format_answer(found), summaries[0].strip() if summaries else "", files, moves, deleted, late, strengths[:2], aside[:3])
+    scope = f"{label}" + (" (" + "; ".join(target.notes) + ")" if target and target.notes else "") + "." if target else ""
+    yield "answer", frame(format_answer(found), summaries[0].strip() if summaries else "", files, moves, deleted, late, strengths[:2], aside[:3], scope)
     yield "result", compose(found, len(groups) * len(lenses))
