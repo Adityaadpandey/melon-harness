@@ -53,23 +53,35 @@ async def _files(cwd: Path, rev: tuple[str, ...], skip: tuple[str, ...]) -> list
     return [n for n in dict.fromkeys(names) if n and not n.endswith(skip)]
 
 
-async def _pr_matches_branch(cwd: Path, number: str) -> bool:
+async def _pr_info(cwd: Path, number: str = "") -> tuple[str, str]:
+    """(head branch, base branch) of a PR from gh; the current branch's PR when no number is given. ("", "") when gh cannot say.
+    Example: a PR from feat/x into develop gives ("feat/x", "develop"), so the review diffs against develop, not main."""
     try:
         proc = await asyncio.create_subprocess_exec(
-            "gh", "pr", "view", number, "--json", "headRefName", "-q", ".headRefName", cwd=cwd,
+            "gh", "pr", "view", *([number] if number else []), "--json", "headRefName,baseRefName", "-q", ".headRefName + \" \" + .baseRefName", cwd=cwd,
             stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.DEVNULL, stdin=asyncio.subprocess.DEVNULL)
         out, _ = await asyncio.wait_for(proc.communicate(), 15)
     except (OSError, asyncio.TimeoutError):
-        return False
-    return out.decode().strip() != "" and out.decode().strip() == await _ok(cwd, "rev-parse", "--abbrev-ref", "HEAD")
+        return "", ""
+    head, _, base = out.decode().strip().partition(" ")
+    return head, base
+
+
+async def _remote_ref(cwd: Path, base: str) -> str:
+    for ref in (f"origin/{base}", base):
+        if await _ok(cwd, "rev-parse", "--verify", "-q", ref):
+            return ref
+    return ""
 
 
 async def resolve(cwd: Path, message: str, skip: tuple[str, ...]) -> Target | None:
     """None when the request names something we cannot read from here (a PR that is not checked out, a commit that does not exist)."""
     if m := PR_NUMBER.search(message):
-        if not await _pr_matches_branch(cwd, m.group(1) or m.group(2)):
-            return None
-        return await _branch(cwd, f"PR #{m.group(1) or m.group(2)}", skip)
+        number = m.group(1) or m.group(2)
+        head, base = await _pr_info(cwd, number)
+        if not head or head != await _ok(cwd, "rev-parse", "--abbrev-ref", "HEAD"):
+            return None  # the reviewers read the checked-out tree, so another branch's PR cannot be reviewed from here
+        return await _branch(cwd, f"PR #{number}", skip, base)
     for m in SHA.finditer(message):
         sha = m.group(0)
         if not await _ok(cwd, "rev-parse", "--verify", "-q", f"{sha}^{{commit}}"):
@@ -87,12 +99,14 @@ async def resolve(cwd: Path, message: str, skip: tuple[str, ...]) -> Target | No
         files = await _files(cwd, rev, skip)
         return Target(f"the last {n} commit(s)" if n > 1 else "the last commit", rev, files) if files else None
     if BRANCH.search(message):
-        return await _branch(cwd, "this branch", skip)
+        _, base = await _pr_info(cwd)  # this branch's open PR names its real target
+        return await _branch(cwd, "this branch", skip, base)
     return None
 
 
-async def _branch(cwd: Path, name: str, skip: tuple[str, ...]) -> Target | None:
-    base = await _base_branch(cwd)
+async def _branch(cwd: Path, name: str, skip: tuple[str, ...], pr_base: str = "") -> Target | None:
+    """`pr_base` is the branch the PR merges into; without a PR it falls back to main/master."""
+    base = (await _remote_ref(cwd, pr_base) if pr_base else "") or await _base_branch(cwd)
     mb = await _ok(cwd, "merge-base", base, "HEAD") if base else ""
     if not mb or mb == await _ok(cwd, "rev-parse", "HEAD"):
         return None  # on the base branch itself: the working tree is the only change there is

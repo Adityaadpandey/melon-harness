@@ -11,10 +11,18 @@ from __future__ import annotations
 
 import asyncio
 import json
+import os
 import shutil
 from pathlib import Path
 
 GIT_READS = ("log", "blame", "show", "diff", "status", "ls-files", "grep", "merge-base", "rev-parse", "branch")
+
+
+def clean_env() -> dict[str, str]:
+    """The environment for the child, minus anything that would point Claude Code at another endpoint or key
+    (ANTHROPIC_BASE_URL, ANTHROPIC_API_KEY, ANTHROPIC_AUTH_TOKEN). The review then runs on your own Claude login, never through
+    a gateway such as Command Code, even if a shell or .env happens to export them."""
+    return {k: v for k, v in os.environ.items() if k not in ("ANTHROPIC_BASE_URL", "ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN")}
 
 
 def available() -> bool:
@@ -50,7 +58,7 @@ async def ask_claude(config, prompt: str, timeout: int = 240) -> tuple[str, int]
     """One read-only Claude Code run in the repo. A missing CLI, a timeout or a bad reply is an empty answer, never an error."""
     try:
         proc = await asyncio.create_subprocess_exec(
-            *build_command(config, prompt, config.review_claude_model), cwd=Path(config.cwd),
+            *build_command(config, prompt, config.review_claude_model), cwd=Path(config.cwd), env=clean_env(),
             stdin=asyncio.subprocess.DEVNULL, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.DEVNULL,
         )
         out, _ = await asyncio.wait_for(proc.communicate(), timeout)
