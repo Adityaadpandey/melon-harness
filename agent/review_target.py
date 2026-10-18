@@ -4,14 +4,16 @@
     "review my last 3 commits"   -> HEAD~3..HEAD
     "review commit 9fceb02"      -> 9fceb02^..9fceb02
     "review this branch / PR"    -> the merge base with main, through the working tree
-    "review PR #42"              -> as the branch, but only when #42 is the branch checked out (the reviewers read the tree)
+    "review PR #42"              -> as the branch; when #42 is not checked out its head is fetched into a throwaway worktree
 
 Anything it cannot resolve returns None and the normal single-agent review answers instead."""
 from __future__ import annotations
 
 import asyncio
 import re
-from dataclasses import dataclass
+import shutil
+import tempfile
+from dataclasses import dataclass, field
 from pathlib import Path
 
 from agent.review import _git
@@ -29,10 +31,19 @@ class Target:
     label: str  # "the last 3 commits"
     rev: tuple[str, ...]  # arguments for `git diff`: ("HEAD",) is the working tree, ("a", "b") is a committed range
     files: list[str]
+    notes: list[str] = field(default_factory=list)  # where the scope is not what the user asked for ("gh could not name the PR's base, used origin/main")
+    commits: list[str] = field(default_factory=list)  # "abc1234 subject" of each commit in the range, so the reader sees what was covered
+    cwd: Path | None = None  # a throwaway worktree holding the PR head, when the PR is not the checked-out branch
+    repo: Path | None = None  # the repo that worktree belongs to
 
     @property
     def includes_worktree(self) -> bool:
         return len(self.rev) == 1
+
+    async def cleanup(self) -> None:
+        if self.cwd:
+            await _ok(self.repo or self.cwd, "worktree", "remove", "--force", str(self.cwd))
+            shutil.rmtree(self.cwd, ignore_errors=True)
 
 
 async def _ok(cwd: Path, *args: str) -> str:
@@ -79,8 +90,10 @@ async def resolve(cwd: Path, message: str, skip: tuple[str, ...]) -> Target | No
     if m := PR_NUMBER.search(message):
         number = m.group(1) or m.group(2)
         head, base = await _pr_info(cwd, number)
-        if not head or head != await _ok(cwd, "rev-parse", "--abbrev-ref", "HEAD"):
-            return None  # the reviewers read the checked-out tree, so another branch's PR cannot be reviewed from here
+        if not head:
+            return None  # gh cannot say what this PR is
+        if head != await _ok(cwd, "rev-parse", "--abbrev-ref", "HEAD"):
+            return await _remote_pr(cwd, number, skip, base)
         return await _branch(cwd, f"PR #{number}", skip, base)
     for m in SHA.finditer(message):
         sha = m.group(0)
@@ -100,30 +113,70 @@ async def resolve(cwd: Path, message: str, skip: tuple[str, ...]) -> Target | No
         return Target(f"the last {n} commit(s)" if n > 1 else "the last commit", rev, files) if files else None
     if BRANCH.search(message):
         _, base = await _pr_info(cwd)  # this branch's open PR names its real target
-        return await _branch(cwd, "this branch", skip, base)
+        return await _branch(cwd, "this branch", skip, base, ["gh could not name this branch's PR base, so main/master is assumed"] if not base else [])
     return None
 
 
-async def _refresh(cwd: Path, ref: str) -> None:
+async def _refresh(cwd: Path, ref: str) -> bool:
     """Bring origin/<base> up to date first. A stale local copy puts the merge base far back, and then the review
     reads every commit that landed on the base since (a homepage change that is nobody's PR). Offline: carry on with what is there."""
     if not ref.startswith("origin/"):
-        return
+        return True
+    return await _fetch(cwd, ref.split("/", 1)[1])
+
+
+async def _fetch(cwd: Path, *refspec: str) -> bool:
     try:
-        proc = await asyncio.create_subprocess_exec("git", "fetch", "-q", "origin", ref.split("/", 1)[1], cwd=cwd,
+        proc = await asyncio.create_subprocess_exec("git", "fetch", "-q", "origin", *refspec, cwd=cwd,
                                                     stdout=asyncio.subprocess.DEVNULL, stderr=asyncio.subprocess.DEVNULL, stdin=asyncio.subprocess.DEVNULL)
-        await asyncio.wait_for(proc.communicate(), 25)
+        await asyncio.wait_for(proc.communicate(), 40)
+        return proc.returncode == 0
     except (OSError, asyncio.TimeoutError):
-        pass
+        return False
 
 
-async def _branch(cwd: Path, name: str, skip: tuple[str, ...], pr_base: str = "") -> Target | None:
-    """`pr_base` is the branch the PR merges into; without a PR it falls back to main/master."""
-    base = (await _remote_ref(cwd, pr_base) if pr_base else "") or await _base_branch(cwd)
-    await _refresh(cwd, base)
+async def _commit_list(cwd: Path, mb: str, tip: str = "HEAD") -> list[str]:
+    return [ln for ln in (await _git(cwd, "log", "--format=%h %s", "--max-count=12", f"{mb}..{tip}")).split("\n") if ln]
+
+
+async def _branch(cwd: Path, name: str, skip: tuple[str, ...], pr_base: str = "", notes: list[str] | None = None) -> Target | None:
+    """`pr_base` is the branch the PR merges into; without a PR it falls back to main/master. Every fallback is written into
+    `Target.notes`: a review of the wrong range that does not say so is worse than no review."""
+    notes = list(notes or [])
+    base = (await _remote_ref(cwd, pr_base) if pr_base else "") or ""
+    if pr_base and not base:
+        notes.append(f"the PR's base branch {pr_base} is not here, so main/master is assumed")
+    base = base or await _base_branch(cwd)
+    if not await _refresh(cwd, base):
+        notes.append(f"could not fetch {base}; its local copy may be stale and the range may include other people's commits")
     mb = await _ok(cwd, "merge-base", base, "HEAD") if base else ""
     if not mb or mb == await _ok(cwd, "rev-parse", "HEAD"):
         return None  # on the base branch itself: the working tree is the only change there is
     files = await _files(cwd, (mb,), skip)
-    commits = await _ok(cwd, "rev-list", "--count", f"{mb}..HEAD")
-    return Target(f"{name} against {base} ({commits} commit(s) since {mb[:8]}, plus any uncommitted work)", (mb,), files) if files else None
+    commits = await _commit_list(cwd, mb)
+    return Target(f"{name} against {base} ({len(commits)} commit(s) since {mb[:8]}, plus any uncommitted work)", (mb,), files, notes, commits) if files else None
+
+
+async def _remote_pr(cwd: Path, number: str, skip: tuple[str, ...], pr_base: str) -> Target | None:
+    """A PR whose branch is not checked out: fetch its head (GitHub keeps it at pull/<n>/head), check it out in a throwaway worktree and
+    review that. Example: standing on main, "review PR #42" reads the PR's files, not main's."""
+    ref = f"refs/mew/pr-{number}"
+    if not await _fetch(cwd, f"+pull/{number}/head:{ref}"):
+        return None
+    base = (await _remote_ref(cwd, pr_base) if pr_base else "") or await _base_branch(cwd)
+    notes = [] if pr_base and base.endswith(pr_base) else [f"the PR's base {pr_base or '(unknown)'} is not here, so {base or 'nothing'} is assumed"]
+    if not await _refresh(cwd, base):
+        notes.append(f"could not fetch {base}; its local copy may be stale and the range may include other people's commits")
+    mb = await _ok(cwd, "merge-base", base, ref) if base else ""
+    if not mb:
+        return None
+    tree = Path(tempfile.mkdtemp(prefix=f"mew-pr-{number}-"))
+    if not await _ok(cwd, "worktree", "add", "--detach", str(tree), ref) and not (tree / ".git").exists():
+        shutil.rmtree(tree, ignore_errors=True)
+        return None
+    files = await _files(tree, (mb,), skip)
+    commits = await _commit_list(cwd, mb, ref)
+    if not files:
+        await Target("", (), [], cwd=tree, repo=cwd).cleanup()
+        return None
+    return Target(f"PR #{number} against {base} ({len(commits)} commit(s) since {mb[:8]})", (mb,), files, notes, commits, tree, cwd)
