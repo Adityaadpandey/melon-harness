@@ -16,7 +16,7 @@ class GlobParams(BaseModel):
 
 class GlobTool(Tool):
     name = "glob"
-    description = "Find files by glob pattern. Respects .gitignore and finds dotfiles; never lists secrets. Paths are relative to the search directory."
+    description = "Find files by name pattern (`*.py`, `src/**/*.ts`). Use it instead of find or ls in the shell. Respects .gitignore and finds dotfiles; never lists secrets. Paths are relative to the search directory."
     kind = ToolKind.READ
     schema = GlobParams
 

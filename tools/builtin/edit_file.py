@@ -36,7 +36,8 @@ class EditTool(Tool):
     description = (
         "Edit a file by exact text replacement. Use `edits` for several changes in one call. "
         "Trailing-whitespace and smart-quote differences are tolerated; anything else must match exactly. "
-        "To create or fully rewrite a file use write_file."
+        "The file must have been read first. `old_string` must be unique: add surrounding lines to make it so, or set replace_all to rename across the file. "
+        "Copy it without the line-number prefix that read_file shows. To create or fully rewrite a file use write_file."
     )
     kind = ToolKind.WRITE
     schema = EditParams

@@ -19,7 +19,11 @@ class TodosParams(BaseModel):
 
 class TodosTool(Tool):
     name = "todos"
-    description = "Manage a task list for the current session. Use this to track progress on multi-step tasks."
+    description = (
+        "Live checklist for work with 3+ steps or several requests. Skip it for a single trivial step. "
+        "Prefer `set` with the whole list. Mark a step done the moment it is finished "
+        "(never batch completions), and only mark it done when it really passed: if tests fail or the work is partial, keep it open."
+    )
     kind = ToolKind.MEMORY
     schema = TodosParams
 

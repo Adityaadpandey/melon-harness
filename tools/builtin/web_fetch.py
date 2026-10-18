@@ -18,7 +18,7 @@ class WebFetchParams(BaseModel):
 
 class WebFetchTool(Tool):
     name = "web_fetch"
-    description = "Fetch content from a URL. Returns the response body as text"
+    description = "Fetch a URL and return the body as text. Use it for URLs the user gave or that a search returned; do not guess URLs from memory. It cannot reach pages behind a login: use `gh` or an authenticated tool for those."
     kind = ToolKind.NETWORK
     schema = WebFetchParams
 

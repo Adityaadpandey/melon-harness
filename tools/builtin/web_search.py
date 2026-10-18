@@ -14,7 +14,7 @@ class WebSearchParams(BaseModel):
 
 class WebSearchTool(Tool):
     name = "web_search"
-    description = "Search the web for information. Returns search results with titles, URLs and snippets"
+    description = "Search the web; returns titles, URLs and snippets. Use it for recent or niche facts that the repo and your memory cannot settle, then fetch the best result instead of trusting a snippet. Include the current year in queries about latest versions."
     kind = ToolKind.NETWORK
     schema = WebSearchParams
 

@@ -28,7 +28,7 @@ class WriteFileTool(Tool):
         "Write content to a file. Creates the file if it doesn't exist, "
         "or overwrites if it does. Parent directories are created automatically. "
         "Use this for creating new files or completely replacing file contents. "
-        "For partial modifications, use the edit tool instead."
+        "For partial modifications, use the edit tool instead. An existing file must be read first. Do not create docs or README files unless asked."
     )
     kind = ToolKind.WRITE
     schema = WriteFileParams

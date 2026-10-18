@@ -94,7 +94,14 @@ class ShellParams(BaseModel):
 class ShellTool(Tool):
     name = "shell"
     kind = ToolKind.SHELL
-    description = "Execute a shell command. Use this for running system commands, scripts and CLI tools."
+    description = (
+        "Run a shell command (builds, tests, git, scripts). The working directory persists between calls; shell state "
+        "(variables, aliases) does not. Do not use it to read, search or edit files: read_file, grep, glob and edit "
+        "exist for that and are cheaper to review. Quote paths with spaces. Prefer absolute paths over cd. Chain "
+        "dependent steps with && and put independent ones in separate parallel calls. Do not poll with sleep; a slow "
+        "command moves to the background and you are told when it ends. Never skip git hooks or force-push unless asked, "
+        "and run `git status` before anything that discards changes."
+    )
 
     schema = ShellParams
 

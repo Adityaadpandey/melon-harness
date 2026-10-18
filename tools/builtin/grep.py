@@ -29,7 +29,9 @@ class GrepTool(Tool):
     name = "grep"
     description = (
         "Search file contents. Respects .gitignore, finds dotfiles, never reads secrets. "
-        "Output: path:line:text (context lines use '-'). Use files_only to locate, then read what matters."
+        "Output: path:line:text (context lines use '-'). Always use this instead of grep or rg in the shell. "
+        "Use files_only to locate, then read what matters. Literal braces and dots need escaping in a regex "
+        "(`interface\\{\\}`), or set literal=true. For open-ended hunts that need several rounds, ask a sub-agent."
     )
     kind = ToolKind.READ
     schema = GrepParams

@@ -103,7 +103,7 @@ class ReadFileTool(Tool):
     description = (
         "Read the contents of a text file. Returns the file content with line numbers. "
         "Files up to 400 lines come whole, so just call it with the path. For longer files pass `symbol` (see `outline`) or a wide offset/limit; many small slices cost more than one read. "
-        "Cannot read binary files (images, executables, etc.)."
+        "Cannot read binary files (images, executables, etc.). Read a file before you edit it. Do not re-read a file you just edited: the edit would have failed if it had not applied."
     )
     kind = ToolKind.READ
 
