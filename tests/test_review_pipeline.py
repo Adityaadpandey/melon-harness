@@ -63,7 +63,7 @@ async def test_pipeline_runs_reviewers_then_verifiers_and_hands_the_main_agent_o
         assert any("Reviewing 1 changed file" in n for n in notices) and any("1 confirmed, 1 rejected" in n for n in notices)
         assert agent.session.client.requests == []  # a read-only review is not followed by a model call or a tool loop
         done = [e.data.get("content") for e in events if e.type == AgentEventType.TEXT_COMPLETE]
-        assert len(done) == 1 and done[0].startswith("Found 1 issue.") and "1. a.ts:1  write can throw and 500 the page." in done[0] and "Fix: catch." in done[0]
+        assert len(done) == 1 and done[0].startswith("## Code review: 1 issue") and "**1. `a.ts:1`  write can throw and 500 the page**" in done[0] and "- **Fix:** catch" in done[0]
         assert "I read 1 file(s)" in done[0] and "did not run typecheck" in done[0]
         sent = " ".join(str(m.content) for m in agent.session.context_manager._messages if m.role == "user")
         assert "[confirmed] HIGH a.ts:1" in sent and "[rejected] a.ts:1" in sent
@@ -120,10 +120,11 @@ def test_format_answer_is_one_line_per_finding_caps_unproven_ones_and_says_when_
         rp.Finding("HIGH", "b.ts:9", "guessed race", "lock", "UNCLEAR"),
         rp.Finding("MEDIUM", "c.ts:1", "redundant chain", "collapse", "REJECTED"),
     ]
-    assert rp.format_answer(f).split("\n\n") == ["Found 2 issues.", "Likely bugs\n1. a.ts:4  insert 500s the list. Fix: catch.", "Not verified, worth a look\n2. b.ts:9  guessed race. Fix: lock.",
-                                                 "Item 1 is the one I'd fix before merging. Want me to fix it?"]
-    assert rp.format_answer([]) == "No issues found."
-    assert rp.format_answer([rp.Finding("LOW", "c.ts:1", "x", "", "REJECTED")]).startswith("No issues found. I checked 1")
+    got = rp.format_answer(f)
+    assert got.startswith("## Code review: 2 issues\n\n### Likely bugs\n**1. `a.ts:4`  insert 500s the list**\n- **Fix:** catch")
+    assert "### Not verified, worth a look\n**2. `b.ts:9`  guessed race**\n- **Fix:** lock" in got and got.endswith("Want me to fix it?")
+    assert rp.format_answer([]) == "## Code review\n\nNo issues found."
+    assert rp.format_answer([rp.Finding("LOW", "c.ts:1", "x", "", "REJECTED")]).startswith("## Code review\n\nNo issues found. I checked 1")
 
 
 async def test_a_reviewer_that_returns_nothing_is_a_failure_and_the_normal_review_loop_runs(tmp_path, monkeypatch):
@@ -151,7 +152,7 @@ def test_a_self_healing_or_already_present_failure_is_capped_at_medium_and_says_
          rp.Finding("HIGH", "b.ts:2", "write throws", "catch", "CONFIRMED", at_head=True),
          rp.Finding("HIGH", "c.ts:1", "proven and lasting", "fix", "CONFIRMED")]
     text = rp.format_answer(f)
-    assert text.index("c.ts:1  proven") < text.index("a.ts:4  backfill") and "goes away by itself: 15 min" in text and "already did this" in text
+    assert text.index("c.ts:1`  proven") < text.index("a.ts:4`  backfill") and "goes away by itself (15 min)" in text and "already did this" in text
 
 
 def test_the_same_cause_in_one_file_is_one_finding_naming_every_line():
@@ -211,7 +212,7 @@ async def test_a_file_moved_into_a_new_folder_is_one_move_line_not_a_deletion_pl
     stayed = await rp.left_behind(tmp_path, moves)
     assert "events/other.tsx" in stayed and "events/[id]/page.tsx" in stayed and "events/page.tsx" not in stayed
     out = rp.frame("No issues found.", "Moves the list page into a route group.", added, moves, deleted)
-    assert "events/page.tsx -> events/(list)/page.tsx" in out and "did not run typecheck" in out and "git add -A" in out and out.startswith("What the change does")
+    assert "events/page.tsx -> events/(list)/page.tsx" in out and "did not run typecheck" in out and "git add -A" in out and out.startswith("**What the change does")
 
 
 def test_review_context_brings_the_folders_rules_and_the_matching_playbook(tmp_path):
@@ -265,7 +266,7 @@ async def test_a_claim_the_verifier_scores_below_the_cutoff_is_ruled_out_and_rem
     cfg = Config(pi_mode=True, cwd=tmp_path, approval=ApprovalPolicy.AUTO, auto_verify=False, review_lenses=1)
     out = [x async for x in rp.run_review_pipeline(cfg, "review the changes")]
     answer = next(v for k, v in out if k == "answer")
-    assert answer.startswith("No issues found.") and "checked 1 suspected" in answer
+    assert answer.startswith("## Code review\n\nNo issues found.") and "checked 1 suspected" in answer
     assert rm.render(tmp_path) == ""  # a low score is "not worth reporting", not "proven wrong": it is not remembered
 
 
@@ -359,15 +360,17 @@ async def test_a_pr_is_diffed_against_the_branch_it_merges_into_not_main(tmp_pat
 
 def test_frame_shows_what_was_done_well_and_what_was_set_aside():
     out = rp.frame("Verdict: approve. No issues found.", "adds paging", ["a.ts"], [], [], None, ["a.ts:4 the cursor is opaque"], ["the retry loop looks odd but is the intent"])
-    assert "What is good: a.ts:4 the cursor is opaque." in out and "retry loop" not in out
+    assert "**What is good:** a.ts:4 the cursor is opaque." in out and "retry loop" not in out
 
 
-def test_a_long_noisy_review_is_cut_to_the_few_findings_worth_reading():
-    notes = [rp.Finding("MEDIUM", f"SKILL.md:{i}", "a width rule clashes with the design doc", "reconcile", "CONFIRMED") for i in range(5)]
+def test_every_surviving_finding_is_shown_with_a_heading_and_the_rest_in_bullets():
+    notes = [rp.Finding("MEDIUM", f"SKILL.md:{i}", "A width rule clashes with the design doc. The doc says 1280 and the page code uses it", "reconcile", "CONFIRMED", reach="agents") for i in range(5)]
     notes.append(rp.Finding("HIGH", "page.tsx:9", "Escape dismisses the one-time passcode <tool_call>junk", "ignore Escape", "CONFIRMED"))
     out = rp.format_answer(notes)
-    assert out.count("SKILL.md") == 2 and "page.tsx:9  Escape dismisses the one-time passcode." in out and "junk" not in out
-    assert out.index("Likely bugs") < out.index("Worth fixing") and "smaller note(s) left out" in out
+    assert out.count("`SKILL.md:") == 5 and "left out" not in out  # nothing is dropped for length
+    assert "**1. `page.tsx:9`  Escape dismisses the one-time passcode**" in out and "junk" not in out
+    assert "**2. `SKILL.md:0`  A width rule clashes with the design doc**\n- **Why:** The doc says 1280 and the page code uses it." in out
+    assert out.index("### Likely bugs") < out.index("### Worth fixing")
     assert rp.tidy("word " * 100, 40).endswith("...") and len(rp.tidy("word " * 100, 40)) <= 43
 
 
