@@ -186,7 +186,7 @@ class Config(BaseModel):
     max_reviews: int = 2  # review, one fix, then a review of that fix; whatever the second review finds is shown to the user, not looped back (each blind repair round re-sent a 70k context ~50 times)
     review_pipeline: bool = True  # "review the changes": parallel reviewers per area, then a separate verifier per finding that tries to refute it
     review_pipeline_role: str = "default"  # the fast main model: the slower "review" route took 40s a call
-    review_pipeline_tokens: int = 40_000  # new-work cap for each reviewer and for the verifier
+    review_pipeline_tokens: int = 80_000  # new-work cap for each reviewer and for the verifier
     review_lenses: int = 0  # 0 = one reviewer that works through every angle (default); 2+ = that many separate angle reviewers; 1 = behaviour angle only
     review_backend: Literal["mew", "claude-code"] = "mew"  # claude-code: reviewers and verifier run as read-only `claude -p` sessions on your Claude login
     review_claude_model: str = ""  # --model for those sessions (sonnet, opus, ...); empty = Claude Code's own default

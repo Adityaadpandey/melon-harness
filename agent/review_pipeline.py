@@ -19,7 +19,8 @@ from agent import review_memory, review_target
 from agent.review import _git, build_diff, review_context
 
 MAX_GROUPS = 3
-MAX_VERIFIED = 8
+MAX_VERIFIED = 24  # claims checked per review; past it a finding stays unchecked and is reported as unverified
+VERIFY_BATCH = 6  # claims one verifier reads at a time, so each gets real turns instead of a share of one budget
 SEVERITY_ORDER = {"CRITICAL": 0, "HIGH": 1, "MEDIUM": 2, "LOW": 3}
 SKIP_SUFFIXES = (".lock", ".png", ".jpg", ".jpeg", ".gif", ".svg", ".ico", ".woff", ".woff2", ".map", "package-lock.json")
 NAMED_SCOPE = re.compile(r"\b(commits?|pr|pull request|HEAD|branch|[0-9a-f]{7,40}|#\d+)\b", re.I)  # a named scope is not "the changes"
@@ -64,6 +65,17 @@ breaks, and a sibling the change should have followed (grep for the same pattern
 does not, say why that is a defect). A defect the old code already had is not this change's."""),
 ]
 
+CONTRACT_LENS = ("contracts", """LENS: producers and consumers. Nothing else is your job. List every value, shape, string format, prop, event, route,
+cache key or return type the diff creates or changes. For each, find BOTH sides: the code that produces it and the code that reads it
+(grep the name, open every hit). Then compare them line against line, with a real example value pushed through each side:
+- A consumer that parses, matches or normalises something the producer already shapes (a regex that wants "3 - Name" when the
+  producer writes "3x Name"; a trim or a null check the other side already did) never fires: that is dead code, name both lines.
+- A producer that now emits a new shape, null, empty list, enum member or error that a consumer, type, test or API collection still
+  assumes away; a field renamed on one side only; a unit, timezone or casing change.
+- Both halves of a pair (desktop/mobile, create/update, server/client, cached/uncached): one changed and the twin did not.
+- A new fetch, query or lookup whose answer the caller already holds in a payload it received: say which payload and which field.
+Quote the producer line and the consumer line in the finding (path:line each) and the example value that breaks it. Report only
+mismatches you proved by reading both sides.""")
 SECURITY_LENS = ("security", """LENS: security and isolation. The diff touches auth, data access, secrets or money, so trace who can reach it: is every new
 route, handler or query behind the same authorization its siblings use? Is a tenant, owner or user id taken from the request instead
 of the session? Injection (SQL, shell, path, HTML) from any value that crosses a trust boundary, secrets or tokens in logs and
@@ -104,7 +116,7 @@ Never report: style, redundancy that was already there, anything a linter or typ
 defects the old code already had, behaviour that is clearly the intent of the change, pedantic nitpicks a senior engineer would not raise,
 missing tests or docs unless the project rules ask for them, a rule the code explicitly silences (a lint-ignore comment), or anything you cleared in your own thinking.
 
-Reply with at most 8 lines, one finding per line, EXACTLY:
+Reply with at most 10 lines, one finding per line, EXACTLY:
 SEVERITY | path:line | what is wrong, and who is affected (the call chain you read) | fix
 SEVERITY is HIGH only for a defect you proved by reading the code; a guess is MEDIUM and says "unverified".
 If you found nothing, reply: NONE
@@ -156,11 +168,11 @@ def one_reviewer(context: str, security: bool) -> tuple[str, str]:
 
 
 def pick_lenses(config, diff: str, files: list[str], context: str) -> list[tuple[str, str]]:
-    """Auto (review_lenses = 0) is ONE reviewer carrying every angle. review_lenses = N >= 2 fans out to N separate angle reviewers
+    """Auto (review_lenses = 0) is ONE reviewer carrying every angle plus one that only follows producers to consumers. review_lenses = N >= 2 fans out to N separate angle reviewers
     (security is appended when auth, queries or money are touched); 1 pins the behaviour angle alone."""
     secure = bool(SECURITY_HINT.search(" ".join(files) + "\n" + diff))
     if config.review_lenses == 0:
-        return [one_reviewer(context, secure)]
+        return [one_reviewer(context, secure), CONTRACT_LENS]
     picked = LENSES[: config.review_lenses]
     if config.review_lenses != 1 and secure:
         picked = [*picked, SECURITY_LENS]
@@ -360,6 +372,49 @@ def compose(findings: list[Finding], reviewers: int) -> str:
     return "\n".join(lines)
 
 
+def drop_missing_files(findings: list[Finding], files: list[str]) -> list[Finding]:
+    """A finding that cites a file that is not in the repo (and not one the change deleted) is a reviewer's slip, not a defect to hand the
+    reader: `EventTabNav.tsx:30 (file not found)` sends them looking for something that is not there."""
+    return [f for f in findings if "(file not found)" not in f.where or f.where.split(":")[0].strip().replace(" (file not found)", "") in files]
+
+
+def apply_verdicts(batch: list[Finding], reply: str, min_confidence: int, position: dict[int, int]) -> None:
+    """`position` maps a finding to its number in the whole list: SAME_AS in a reply counts inside the batch it saw."""
+    for f, v in zip(batch, parse_verdicts(reply, len(batch)).values()):
+        f.verdict, f.evidence, f.reach, f.temporary, f.at_head, f.same_as, f.confidence = v
+        if f.same_as:
+            f.same_as = position[id(batch[f.same_as - 1])] if f.same_as <= len(batch) else 0
+        if f.verdict != "REJECTED" and f.at_head:  # the old code failed the same way: not this change's defect
+            f.verdict, f.evidence = "REJECTED", "already present before this change"
+        if f.verdict != "REJECTED" and f.confidence < min_confidence:
+            f.verdict, f.evidence = "REJECTED", f"low confidence ({f.confidence}/100): {f.evidence}"
+
+
+def claim_lines(batch: list[Finding]) -> str:
+    return "\n".join(f"{n}. {f.severity} | {f.where} | {f.what} | fix: {f.fix or '(none)'}" for n, f in enumerate(batch, 1))
+
+
+async def verify(config, role: str, findings: list[Finding]) -> None:
+    """Claims go to verifiers six at a time (in parallel), so each claim gets turns of its own. A claim the verifier could not decide gets one
+    more look from a fresh verifier with a bigger budget; if it is still undecided it is left out, because an answer the reviewer
+    could not stand behind is noise to the reader. Example: "the extra fetch is redundant" stays UNCLEAR until someone opens the
+    detail query and finds what it returns that the list payload lacks."""
+    position = {id(f): n for n, f in enumerate(findings, 1)}
+    batches = [findings[i:i + VERIFY_BATCH] for i in range(0, len(findings), VERIFY_BATCH)]
+
+    async def one(batch: list[Finding], turns: int, note: str = "") -> None:
+        reply = await ask(config, note + VERIFIER_PROMPT.format(claims=claim_lines(batch)), role, max_turns=turns, max_tokens=config.review_pipeline_tokens, disabled_skills=["code-review"])
+        apply_verdicts(batch, reply, config.review_min_confidence, position)
+
+    await asyncio.gather(*(one(b, min(30, 10 + 3 * len(b))) for b in batches))
+    unclear = [f for f in findings if f.verdict == "UNCLEAR"]
+    if unclear:
+        await one(unclear, 30, "A first verifier could not decide these. Settle each: open the files it would have needed, follow the call chain to the end, and answer CONFIRMED or REJECTED.\n\n")
+        for f in unclear:
+            if f.verdict == "UNCLEAR":
+                f.verdict, f.evidence = "REJECTED", "could not be settled by reading the code"
+
+
 def tidy(text: str, limit: int = 260) -> str:
     """One readable sentence or two: model debris after a stray tag is cut, long text is clipped at a word."""
     text = re.split(r"<tool_call|\]<|\[<", text or "")[0].strip().rstrip(".;, ")
@@ -471,7 +526,7 @@ async def ask(config, prompt: str, role: str, max_turns: int, max_tokens: int, d
         "allowed_tools": ["read_file", "grep", "glob", "list_dir", "graph", "search", "outline", "git", "use_skill"],
         "auto_review": False, "auto_verify": False, "verify_commands": [], "verify_rules": [], "subagents": [],
         "enable_parallel_tasks": False, "mcp_servers": {}, "review_pipeline": False, "auto_challenge": False, "auto_scout": False,  # a challenger per sub-agent cost 80k tokens and 4 minutes
-        "max_turns": max_turns, "max_total_tokens": max_tokens, "max_seconds": 150, "approval": "never",
+        "max_turns": max_turns, "max_total_tokens": max_tokens, "max_seconds": 300, "approval": "never",
         "disabled_skills": [*config.disabled_skills, *(disabled_skills or [])],
     })
     texts: list[str] = []
@@ -563,7 +618,7 @@ async def run_review_pipeline(config, request: str) -> AsyncGenerator[tuple[str,
     if backend:
         yield "notice", "Reviewers run as Claude Code sessions (read-only)"
 
-    async def review(name: str, fs: list[str], lens: str) -> list[Finding] | None:
+    async def review(name: str, fs: list[str], lens: str, turns: int = 12) -> list[Finding] | None:
         diff = whole if len(groups) == 1 else await build_diff(cwd, fs, rev)
         others = ", ".join(f for f in files if f not in fs)[:600] or "(none)"
         scope = label if len(groups) == 1 else f"one part ({name}) of {label} that {len(groups)} reviewers split"
@@ -576,7 +631,7 @@ async def run_review_pipeline(config, request: str) -> AsyncGenerator[tuple[str,
                  + "\nSTILL IN THE OLD FOLDER (did any of these rely on what moved, e.g. inherit its loading.tsx, layout or index export? say what they lose, or that they are fine): "
                  + (", ".join(stayed) or "(nothing)") + "\n") if moves else ""
         prompt = REVIEWER_PROMPT.format(scope=scope, request=request[:1500], part=", ".join(fs[:25]), moved=moved, others=others, context=context, diff=diff, lens=lens)
-        reply = await ask(config, prompt, role, max_turns=20 if len(lenses) == 1 and lenses[0][0] == "review" else 12, max_tokens=config.review_pipeline_tokens)
+        reply = await ask(config, prompt, role, max_turns=turns, max_tokens=config.review_pipeline_tokens)
         summaries.extend(re.findall(r"(?im)^\W*SUMMARY:\s*(.+)$", reply))
         strengths.extend(re.findall(r"(?im)^\W*STRENGTH:\s*(.+)$", reply))
         aside.extend(re.findall(r"(?im)^\W*ASIDE:\s*(.+)$", reply))
@@ -585,7 +640,7 @@ async def run_review_pipeline(config, request: str) -> AsyncGenerator[tuple[str,
     summaries: list[str] = []
     strengths: list[str] = []
     aside: list[str] = []
-    replies = await asyncio.gather(*(review(n, fs, lens) for n, fs in groups for _, lens in lenses))
+    replies = await asyncio.gather(*(review(n, fs, lens, 30 if lname in ("review", "contracts") else 12) for n, fs in groups for lname, lens in lenses))
     review_tokens = sum(_spent_log)
     if all(r is None for r in replies):
         yield "notice", "The reviewer gave no answer; reviewing without the pipeline"
@@ -593,33 +648,25 @@ async def run_review_pipeline(config, request: str) -> AsyncGenerator[tuple[str,
     found = [f for part in replies if part for f in part]
     found = merge_duplicates(sorted(found, key=lambda f: SEVERITY_ORDER[f.severity]))
 
-    if config.review_gap_pass and len(groups) == 1 and len(lenses) >= 3 and whole.count("\n") >= GAP_MIN_LINES:
+    if config.review_gap_pass and len(groups) == 1 and len(lenses) >= 2 and whole.count("\n") >= GAP_MIN_LINES:
         yield "notice", "A last reviewer hunts for what the others missed"
         reported = "\n".join(f"- {f.severity} {f.where} {f.what}" for f in found) or "(nothing)"
-        extra_found = await review("the whole change", files, GAP_LENS.format(found=reported)) or []
+        extra_found = await review("the whole change", files, GAP_LENS.format(found=reported), 20) or []
         found = merge_duplicates(sorted([*found, *extra_found], key=lambda f: SEVERITY_ORDER[f.severity]))
         review_tokens = sum(_spent_log)
 
     await fix_paths(found, cwd)
-    to_check, extra = found[:MAX_VERIFIED], found[MAX_VERIFIED:]  # past the cap a finding stays unchecked and is reported as unverified
+    found = drop_missing_files(found, files)
+    to_check, extra = found[:MAX_VERIFIED], found[MAX_VERIFIED:]
     if to_check:
-        yield "notice", f"Verifying {len(to_check)} finding(s) in one pass; the verifier tries to refute and score each"
-        claims = "\n".join(f"{n}. {f.severity} | {f.where} | {f.what} | fix: {f.fix or '(none)'}" for n, f in enumerate(to_check, 1))
-        reply = await ask(config, VERIFIER_PROMPT.format(claims=claims), role, max_turns=min(24, 8 + 2 * len(to_check)), max_tokens=config.review_pipeline_tokens, disabled_skills=["code-review"])
-        for n, (f, v) in enumerate(zip(to_check, parse_verdicts(reply, len(to_check)).values()), 1):
-            f.verdict, f.evidence, f.reach, f.temporary, f.at_head, f.same_as, f.confidence = v
-            if f.verdict != "REJECTED" and f.at_head:  # the old code failed the same way: not this change's defect
-                f.verdict, f.evidence = "REJECTED", "already present before this change"
-            if f.verdict != "REJECTED" and f.confidence < config.review_min_confidence:
-                f.verdict, f.evidence = "REJECTED", f"low confidence ({f.confidence}/100): {f.evidence}"
-    for f in extra:
-        f.verdict = "UNCHECKED"
+        yield "notice", f"Verifying {len(to_check)} finding(s); the verifier tries to refute and score each"
+        await verify(config, role, to_check)
     found = merge_same_cause(to_check) + extra
     late = check_task.result() if check_task and check_task.done() and not checks and not check_task.cancelled() else checks
     if check_task and not check_task.done():
         check_task.cancel()
     found = check_findings(late, files) + found  # a failing typecheck on a changed file needs no model to confirm
-    review_memory.remember(cwd, [(f.where, f.what, f.evidence) for f in found if f.verdict == "REJECTED" and not f.evidence.startswith(("low confidence", "already present"))])
+    review_memory.remember(cwd, [(f.where, f.what, f.evidence) for f in found if f.verdict == "REJECTED" and not f.evidence.startswith(("low confidence", "already present", "could not be settled"))])
     confirmed = sum(f.verdict == "CONFIRMED" for f in found)
     rejected = sum(f.verdict == "REJECTED" for f in found)
     verify_tokens = sum(_spent_log) - review_tokens

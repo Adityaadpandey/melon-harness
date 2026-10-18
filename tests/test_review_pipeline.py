@@ -233,10 +233,10 @@ def test_duplicate_findings_from_several_angles_name_the_place_once():
     assert len(merged) == 1 and merged[0].where == "a.ts:1"
 
 
-def test_by_default_one_reviewer_carries_every_angle_and_a_pinned_count_fans_out():
+def test_by_default_one_reviewer_carries_every_angle_beside_a_contract_tracer_and_a_pinned_count_fans_out():
     cfg = Config()
     names, text = rp.pick_lenses(cfg, "+x\n" * 300, ["a.ts", "b.ts", "c.ts"], "PROJECT RULES")[0]
-    assert names == "review" and len(rp.pick_lenses(cfg, "+x\n" * 300, ["a.ts"], "")) == 1
+    assert names == "review" and [n for n, _ in rp.pick_lenses(cfg, "+x\n" * 300, ["a.ts"], "")] == ["review", "contracts"]
     assert all(w in text for w in ("LENS: behaviour", "LENS: approach", "LENS: failures", "LENS: rules")) and "LENS: history" not in text
     assert "LENS: history" in rp.pick_lenses(cfg, "+x\n", ["a.ts"], "")[0][1]  # no rules to audit: read the history instead
     assert "LENS: security" in rp.pick_lenses(cfg, "+check the jwt token\n", ["auth.ts"], "")[0][1]
@@ -401,3 +401,28 @@ async def test_a_defect_the_old_code_already_had_is_not_reported(tmp_path, monke
     out = [x async for x in rp.run_review_pipeline(cfg, "review the changes")]
     answer = next(v for k, v in out if k == "answer")
     assert answer.startswith("## Code review\n\nNo issues found.")
+
+
+def test_a_finding_that_cites_a_file_nobody_has_is_dropped_but_a_deleted_file_is_kept():
+    f = [rp.Finding("HIGH", "x/nope.ts:1 (file not found)", "w", "f"), rp.Finding("HIGH", "x/gone.ts:1 (file not found)", "w", "f"), rp.Finding("HIGH", "a.ts:2", "w", "f")]
+    assert [x.where for x in rp.drop_missing_files(f, ["x/gone.ts", "a.ts"])] == ["x/gone.ts:1 (file not found)", "a.ts:2"]
+
+
+async def test_verifier_reads_claims_in_batches_retries_the_unclear_ones_and_leaves_out_what_stays_unclear(monkeypatch):
+    calls = []
+
+    async def fake_ask(config, prompt, role, max_turns, max_tokens, disabled_skills=None):
+        calls.append(prompt)
+        if "A first verifier" in prompt:  # the second look settles the first unclear claim only
+            return "1 | CONFIRMED | a.ts:1 read it | users | ONGOING | NEW | NONE | CONF 80"
+        if "a.ts:1 |" in prompt:
+            return "\n".join(f"{n} | UNCLEAR |" for n in range(1, 7))
+        return "1 | CONFIRMED | z.ts:1 ok | users | ONGOING | NEW | NONE | CONF 90"
+
+    monkeypatch.setattr(rp, "ask", fake_ask)
+    findings = [rp.Finding("HIGH", "a.ts:1", f"first {n}", "f") if n < 6 else rp.Finding("HIGH", "z.ts:1", "last", "f") for n in range(6)]
+    findings += [rp.Finding("HIGH", "z.ts:1", "seventh", "f")]
+    await rp.verify(Config(), "default", findings)
+    assert len(calls) == 3  # two batches (6 + 1), then one retry for the unclear ones
+    assert [f.verdict for f in findings] == ["CONFIRMED"] + ["REJECTED"] * 5 + ["CONFIRMED"]
+    assert findings[1].evidence == "could not be settled by reading the code"
