@@ -28,6 +28,7 @@ REUSABLE = {"grep", "search", "glob", "list_dir", "outline", "git", "graph"}
 class ToolRegistry:
     tracer = None  # set by Session; tool timing/outcome go to the trace
     epoch = 0
+    gate = None  # set by the agent during a fix run: callable(tool name) -> refusal text or None
     progress = None  # set by the UI: callable(call_id, info)
     _read_state: dict = {}
 
@@ -95,7 +96,7 @@ class ToolRegistry:
 
         started = time.perf_counter()
         key = (name, json.dumps(params, sort_keys=True, default=str), str(cwd))
-        result = self._unread_edit_error(name, params, cwd) or self._repeat(name, key)
+        result = self._gated(name) or self._unread_edit_error(name, params, cwd) or self._repeat(name, key)
         if result is None:
             result = await self._invoke(name, params, cwd, hook_system, approval_manager, call_id)
             tool = self.get(name)
@@ -146,6 +147,14 @@ class ToolRegistry:
             return (st.st_mtime_ns, st.st_size)
         except OSError:
             return None
+
+    def _gated(self, name: str) -> ToolResult | None:
+        """`gate` (set by the agent for a fix run) returns a message to refuse a call with, or None to let it through.
+        Example: the first edit of a fix run is refused until the advisor has been consulted."""
+        if not self.gate:
+            return None
+        msg = self.gate(name)
+        return ToolResult.error_result(msg, metadata={"tool_name": name, "gated": True}) if msg else None
 
     def _unread_edit_error(self, name: str, params: dict[str, Any], cwd: Path) -> ToolResult | None:
         """Editing from memory is how wrong edits happen. An existing file must have been

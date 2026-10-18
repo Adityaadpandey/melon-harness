@@ -182,6 +182,9 @@ class Config(BaseModel):
     enable_parallel_tasks: bool = True  # expose the parallel_tasks tool (off inside workers and sub-agents)
     auto_challenge: bool = False  # a second model argues against risky requests before mew acts (on in the interactive app, --challenge for one-shot)
     auto_scout: bool = True  # non-trivial requests get a cheap read-only investigator pass first (if the profile defines one)
+    advisor: bool = True  # a parameterless `advisor` tool: a stronger model reads the whole transcript and says what the plan misses (fix runs must consult it)
+    advisor_model: str = "deepseek/deepseek-v4-pro"  # same family as the challenger; [routing] advisor = [...] overrides
+    advisor_max_calls: int = 4  # per request
     auto_review: bool = False  # independent reviewer pass over the real diff before finishing
     max_reviews: int = 2  # review, one fix, then a review of that fix; whatever the second review finds is shown to the user, not looped back (each blind repair round re-sent a 70k context ~50 times)
     review_pipeline: bool = True  # "review the changes": parallel reviewers per area, then a separate verifier per finding that tries to refute it
@@ -246,7 +249,7 @@ class Config(BaseModel):
             "tool_output_max_chars": 51_200,
         }
         if "allowed_tools" not in self.model_fields_set and not self.core_tools_only:
-            pi["allowed_tools"] = [*pi["allowed_tools"], *self._explorer_tool()]
+            pi["allowed_tools"] = [*pi["allowed_tools"], *(["advisor"] if self.advisor and self.model_role == "default" else []), *self._explorer_tool()]
         for key, value in pi.items():
             if key not in self.model_fields_set:
                 setattr(self, key, value)

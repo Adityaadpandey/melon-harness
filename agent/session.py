@@ -30,6 +30,11 @@ class Session:
         self.tool_registry.tracer = self.tracer
         self.tool_registry.archive = ResultStore(get_data_dir() / "results" / self.session_id)
         self.tool_registry.get("recall_result").store = self.tool_registry.archive
+        if config.advisor and "advisor" not in config.routing:
+            config.routing = {**config.routing, "advisor": [config.advisor_model]}
+        advisor = self.tool_registry.get("advisor")
+        advisor.client = self.client
+        advisor.transcript = lambda: self.context_manager.get_messages() if self.context_manager else []
         self.skills = load_skills(config)
         self.context_manager: ContextManager | None = None
         self.discovery_manager = ToolDiscoveryManager(
