@@ -13,7 +13,8 @@ from agent.grounding import REWRITE_PROMPT, correction_prompt, has_file_code, sh
 from agent.learn import Learned
 from agent import review_fix
 from agent.review_pipeline import run_review_pipeline
-from agent.review import merge_reviews, review_changes
+from agent.review import ReviewResult, merge_reviews, review_changes
+from agent.review_fix_verify import verify_fix
 from agent.routing_policy import EFFORT, REVIEWY, classify, length_hint
 from agent.scope import SWEEP, SWEEP_CHECKPOINT, is_broad, unfinished
 from agent.session import Session
@@ -368,6 +369,14 @@ class Agent:
                     yield AgentEvent.notice("Second reviewer looking for what the first missed...")
                     second = await review_changes(self.config, message, task.changed_files, task.verification, final_response or "", prior=res.findings or "VERDICT: PASS", role="review2")
                     res = merge_reviews(res, second)
+                if self._fix_run and not task.expired():
+                    yield AgentEvent.notice("A fresh verifier is trying to prove the fix works (it runs the checks and the findings' triggers in a copy)")
+                    fv = await verify_fix(self.config, self.config.review_pipeline_role, self.config.cwd, self._fix_brief, final_response or "", task.changed_files,
+                                          ", ".join(f"{c['command']}={'ok' if c['ok'] else 'FAILED'}" for c in task.verification))
+                    if fv.ran:
+                        yield AgentEvent.notice(f"Fix verifier: {'PASS' if fv.passed else 'FAIL'} ({fv.summary()})")
+                        if not fv.passed:
+                            res = ReviewResult("ISSUES", (res.findings + "\n\n" if res.verdict == "ISSUES" else "") + "A fresh verifier ran the fix and found:\n" + fv.feedback())
                 self._review_sec += time.monotonic() - t_review
                 if res.blocked:
                     yield AgentEvent.notice(f"The reviewer had {res.blocked} tool call(s) blocked by hooks or permission rules, so its check was narrower than usual")

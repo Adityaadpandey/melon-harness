@@ -571,3 +571,76 @@ async def test_fix_after_a_review_is_gated_on_the_advisor_before_the_edit_and_ag
         results = [str(m.content) for m in agent.session.context_manager._messages if m.role == "tool"]
         assert any("Consult the advisor before you edit" in r for r in results)  # the first edit was refused
     assert seen_fixing and "a.ts:1" in seen_fixing[0]  # the reviewer of the fix is told what the fix was for
+
+
+def test_the_fix_verifier_reply_is_parsed_and_a_pass_needs_every_finding_fixed_and_no_new_serious_problem():
+    from agent.review_fix_verify import parse
+    ok = parse("1 | FIXED | vitest a: 4 passed, fails on HEAD\nVERDICT: PASS")
+    assert ok.passed and ok.ran and ok.summary() == "1/1 finding(s) shown fixed"
+    half = parse("1 | FIXED | ok\n2 | NOT_FIXED | still throws on []\nNEW | MEDIUM | c.ts:12 | drops the empty state | restore it\nVERDICT: PASS")
+    assert not half.passed and "2. NOT_FIXED: still throws on []" in half.feedback() and "NEW MEDIUM c.ts:12 drops the empty state -> restore it" in half.feedback()
+    assert parse("1 | FIXED | ok\nNEW | LOW | c.ts:1 | naming | rename\nVERDICT: PASS").passed  # a LOW note alone does not fail a fix
+    assert not parse("I looked and it seems fine").ran  # no verdict line: the verifier did not finish
+
+
+async def test_the_fix_verifier_runs_in_a_copy_of_the_changed_tree_with_a_shell(tmp_path, monkeypatch):
+    from agent.review_fix_verify import verify_fix
+    subprocess.run("git init -q -b main && git config user.email a@b.c && git config user.name t", shell=True, cwd=tmp_path)
+    (tmp_path / "a.ts").write_text("x\n")
+    subprocess.run("git add . && git commit -qm init", shell=True, cwd=tmp_path)
+    (tmp_path / "a.ts").write_text("fixed\n")
+    seen = {}
+
+    async def fake_ask(config, prompt, role, max_turns, max_tokens, disabled_skills=None, tools=None, approval="never"):
+        seen.update(cwd=Path(config.cwd), content=(Path(config.cwd) / "a.ts").read_text(), tools=tools, approval=approval, prompt=prompt)
+        return "1 | FIXED | node t.js printed ok\nVERDICT: PASS"
+
+    monkeypatch.setattr(rp, "ask", fake_ask)
+    v = await verify_fix(Config(cwd=tmp_path), "default", tmp_path, "1. HIGH a.ts:1: it throws", "I wrapped the call", ["a.ts"], "tsc=ok")
+    assert v.passed and seen["cwd"] != tmp_path and seen["content"] == "fixed\n" and "shell" in seen["tools"] and seen["approval"] == "auto"
+    assert "1. HIGH a.ts:1: it throws" in seen["prompt"] and "I wrapped the call" in seen["prompt"] and "tsc=ok" in seen["prompt"]
+    assert not seen["cwd"].exists() and (tmp_path / "a.ts").read_text() == "fixed\n"
+
+
+async def test_a_failing_fix_verdict_goes_back_to_the_author_and_the_second_round_ends_the_run(tmp_path, monkeypatch):
+    import agent.agent as agent_mod
+    from agent.review import ReviewResult
+    from agent.review_fix_verify import FixVerdict
+
+    subprocess.run("git init -q && git config user.email a@b.c && git config user.name t", shell=True, cwd=tmp_path)
+    (tmp_path / "a.ts").write_text("x\n")
+    subprocess.run("git add . && git commit -qm init", shell=True, cwd=tmp_path)
+    (tmp_path / "a.ts").write_text("y\n")
+
+    async def fake_ask(config, prompt, role, max_turns, max_tokens, disabled_skills=None, **k):
+        return "1 | CONFIRMED | a.ts:1 read it | users | ONGOING | NEW | NONE | CONF 90" if "claims these defects" in prompt else "HIGH | a.ts:1 | the write can throw | catch it"
+
+    rounds = []
+
+    async def fake_verify(config, role, cwd, findings, claimed, files, checks):
+        rounds.append(findings)
+        return FixVerdict(False, [(1, "NOT_FIXED", "still throws on an empty list")]) if len(rounds) == 1 else FixVerdict(True, [(1, "FIXED", "ran it")])
+
+    async def fake_review(*a, **k):
+        return ReviewResult("PASS", "")
+
+    monkeypatch.setattr(rp, "ask", fake_ask)
+    monkeypatch.setattr(agent_mod, "review_changes", fake_review)
+    monkeypatch.setattr(agent_mod, "verify_fix", fake_verify)
+    cfg = Config(pi_mode=True, cwd=tmp_path, approval=ApprovalPolicy.AUTO, auto_verify=False, review_repro=False, review_lenses=1)
+    async with Agent(cfg) as agent:
+        agent.session.client = ScriptedClient([])
+        _ = [e async for e in agent.run("review the changes")]
+        client = agent.session.client = ScriptedClient([
+            call("read_file", {"path": "a.ts"}, "c1"), call("advisor", {}, "c2"), text("1. fine"),
+            call("edit", {"path": "a.ts", "old_string": "y", "new_string": "z"}, "c3"), text("fixed"),
+            call("advisor", {}, "c4"), text("1. ok"), text("done"),
+            text("also handled the empty list"),
+        ])
+        agent.session.tool_registry.get("advisor").client = client
+        events = [e async for e in agent.run("fix them")]
+        notices = [e.data.get("message", "") for e in events if e.type == AgentEventType.NOTICE]
+        assert any("Fix verifier: FAIL" in n for n in notices) and any("Fix verifier: PASS" in n for n in notices)
+        sent = [str(m.content) for m in agent.session.context_manager._messages if m.role == "user"]
+        assert any("A fresh verifier ran the fix and found" in s and "still throws on an empty list" in s for s in sent)
+    assert len(rounds) == 2 and "a.ts:1" in rounds[0]
