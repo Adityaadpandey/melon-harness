@@ -71,6 +71,14 @@ def review_context(config, request: str, files: list[str]) -> str:
         picked = []
     if picked:
         out.append("PLAYBOOKS THAT APPLY (the project's own checklists):\n" + "\n\n".join(f"### {s.name}\n{s.body}" for s in picked)[:5000])
+    try:
+        loaded = {s.name for s in picked}
+        others = [s for s in load_skills(config) if s.name not in loaded and s.name not in COVERED_BY_LENSES and not s.always and s.description]
+    except Exception:
+        others = []
+    if others:  # Claude Code lists every skill and lets the model open the ones that fit; so does the reviewer (use_skill)
+        out.append("MORE SKILLS (yours, the repo's and Claude Code's). If one fits this change, open it with use_skill BEFORE you review and check the diff against it:\n"
+                   + "\n".join(f"- {s.name}: {s.description[:110]}" for s in others[:30]))
     return "\n\n".join(out)
 
 

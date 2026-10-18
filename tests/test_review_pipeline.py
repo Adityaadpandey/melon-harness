@@ -63,7 +63,7 @@ async def test_pipeline_runs_reviewers_then_verifiers_and_hands_the_main_agent_o
         assert any("Reviewing 1 changed file" in n for n in notices) and any("1 confirmed, 1 rejected" in n for n in notices)
         assert agent.session.client.requests == []  # a read-only review is not followed by a model call or a tool loop
         done = [e.data.get("content") for e in events if e.type == AgentEventType.TEXT_COMPLETE]
-        assert len(done) == 1 and done[0].startswith("Found 1 issue.") and "1. a.ts:1  write can throw and 500 the page." in done[0] and "Fix: catch." in done[0] and "ruled them out" in done[0]
+        assert len(done) == 1 and done[0].startswith("Found 1 issue.") and "1. a.ts:1  write can throw and 500 the page." in done[0] and "Fix: catch." in done[0]
         assert "I read 1 file(s)" in done[0] and "did not run typecheck" in done[0]
         sent = " ".join(str(m.content) for m in agent.session.context_manager._messages if m.role == "user")
         assert "[confirmed] HIGH a.ts:1" in sent and "[rejected] a.ts:1" in sent
@@ -120,8 +120,8 @@ def test_format_answer_is_one_line_per_finding_caps_unproven_ones_and_says_when_
         rp.Finding("HIGH", "b.ts:9", "guessed race", "lock", "UNCLEAR"),
         rp.Finding("MEDIUM", "c.ts:1", "redundant chain", "collapse", "REJECTED"),
     ]
-    assert rp.format_answer(f).split("\n\n") == ["Found 2 issues.", "Likely bugs\n1. a.ts:4  insert 500s the list. Fix: catch.", "Worth fixing\n2. b.ts:9  guessed race (not fully verified). Fix: lock.",
-                                                 "Item 1 is the one I'd fix before merging. Want me to fix it?", "I also checked 1 other suspected problem(s); the code ruled them out."]
+    assert rp.format_answer(f).split("\n\n") == ["Found 2 issues.", "Likely bugs\n1. a.ts:4  insert 500s the list. Fix: catch.", "Not verified, worth a look\n2. b.ts:9  guessed race. Fix: lock.",
+                                                 "Item 1 is the one I'd fix before merging. Want me to fix it?"]
     assert rp.format_answer([]) == "No issues found."
     assert rp.format_answer([rp.Finding("LOW", "c.ts:1", "x", "", "REJECTED")]).startswith("No issues found. I checked 1")
 
@@ -359,4 +359,22 @@ async def test_a_pr_is_diffed_against_the_branch_it_merges_into_not_main(tmp_pat
 
 def test_frame_shows_what_was_done_well_and_what_was_set_aside():
     out = rp.frame("Verdict: approve. No issues found.", "adds paging", ["a.ts"], [], [], None, ["a.ts:4 the cursor is opaque"], ["the retry loop looks odd but is the intent"])
-    assert "What is good: a.ts:4 the cursor is opaque" in out and "Looked at and left alone: the retry loop" in out
+    assert "What is good: a.ts:4 the cursor is opaque." in out and "retry loop" not in out
+
+
+def test_a_long_noisy_review_is_cut_to_the_few_findings_worth_reading():
+    notes = [rp.Finding("MEDIUM", f"SKILL.md:{i}", "a width rule clashes with the design doc", "reconcile", "CONFIRMED") for i in range(5)]
+    notes.append(rp.Finding("HIGH", "page.tsx:9", "Escape dismisses the one-time passcode <tool_call>junk", "ignore Escape", "CONFIRMED"))
+    out = rp.format_answer(notes)
+    assert out.count("SKILL.md") == 2 and "page.tsx:9  Escape dismisses the one-time passcode." in out and "junk" not in out
+    assert out.index("Likely bugs") < out.index("Worth fixing") and "smaller note(s) left out" in out
+    assert rp.tidy("word " * 100, 40).endswith("...") and len(rp.tidy("word " * 100, 40)) <= 43
+
+
+def test_the_reviewer_is_offered_every_skill_it_can_open(tmp_path, monkeypatch):
+    from agent import review
+    from agent.skills import Skill
+    skills = [Skill("tunyt-web-design", "Tunyt UI rules for pages and components", "body"), Skill("code-review", "x", "y")]
+    monkeypatch.setattr("agent.skills.load_skills", lambda config: skills)
+    ctx = review.review_context(Config(cwd=tmp_path), "review the ui", ["a.tsx"])
+    assert "MORE SKILLS" in ctx and "tunyt-web-design: Tunyt UI rules" in ctx and "code-review:" not in ctx

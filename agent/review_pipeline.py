@@ -19,7 +19,9 @@ from agent import review_memory, review_target
 from agent.review import _git, build_diff, review_context
 
 MAX_GROUPS = 3
-MAX_VERIFIED = 10
+MAX_VERIFIED = 8
+MAX_SHOWN = 6  # a review people read has a handful of findings, not eleven
+PER_FILE = 2
 SEVERITY_ORDER = {"CRITICAL": 0, "HIGH": 1, "MEDIUM": 2, "LOW": 3}
 SKIP_SUFFIXES = (".lock", ".png", ".jpg", ".jpeg", ".gif", ".svg", ".ico", ".woff", ".woff2", ".map", "package-lock.json")
 NAMED_SCOPE = re.compile(r"\b(commits?|pr|pull request|HEAD|branch|[0-9a-f]{7,40}|#\d+)\b", re.I)  # a named scope is not "the changes"
@@ -96,7 +98,7 @@ with the trigger ("when X happens"), the path that reaches it, and what the user
 How to work: first list, for yourself, every behaviour the diff changes and what could go wrong with each; then check each one by reading
 with your tools (callers, callees, config, tests, `git show HEAD:<file>`). Read before you claim; a claim about how a library behaves counts only
 if you read the library or its docs. Say what the fix should be in the smallest form: deleting code, bumping a cache key or version, or
-removing a branch beats adding a try/catch or a fallback. One line per defect: the same cause hit in two places is one finding naming both.
+removing a branch beats adding a try/catch or a fallback. One line per defect, under 45 words, in plain words (no section numbers, no quoting whole paragraphs): the same cause hit in two places is one finding naming both.
 Do report what the change itself introduces even when it compiles: a feature, action or state the old code offered that the new one silently
 lost (a back button, an empty state, a way to recover a one-time value); a branch or route that nothing reaches; the same logic
 now written twice; one thing named two ways across the surfaces that show it; a visible restyle the project rules say to confirm first.
@@ -241,12 +243,11 @@ async def left_behind(cwd: Path, moves: list[tuple[str, str]]) -> list[str]:
 def frame(answer: str, summary: str, reviewed: list[str], moves: list[tuple[str, str]], deleted: list[str], checks: list | None = None, strengths: list[str] | None = None, aside: list[str] | None = None) -> str:
     """What a human reviewer writes around the findings: what the change does, what was and was not looked at.
     Without it "No issues found." says nothing about how much was read."""
-    lines = [f"What the change does: {summary}"] if summary else []
-    if strengths:
-        lines.append("What is good: " + " ".join(dict.fromkeys(x.strip() for x in strengths))[:400])
+    lines = [f"What the change does: {tidy(summary, 320)}."] if summary else []
+    good = [tidy(x, 200) for x in (strengths or []) if tidy(x, 200)]
+    if good:
+        lines.append(f"What is good: {good[0]}.")
     lines.append(answer)
-    if aside:
-        lines.append("Looked at and left alone: " + "; ".join(dict.fromkeys(x.strip() for x in aside))[:400])
     seen = [f"{len(reviewed)} file(s)"]
     if moves:
         seen.append(f"{len(moves)} moved unchanged (" + ", ".join(f"{a} -> {b}" for a, b in moves[:3]) + (", ..." if len(moves) > 3 else "") + ")")
@@ -361,6 +362,27 @@ def compose(findings: list[Finding], reviewers: int) -> str:
     return "\n".join(lines)
 
 
+def tidy(text: str, limit: int = 260) -> str:
+    """One readable sentence or two: model debris after a stray tag is cut, long text is clipped at a word."""
+    text = re.split(r"<tool_call|\]<|\[<", text or "")[0].strip().rstrip(".;, ")
+    if len(text) <= limit:
+        return text
+    return text[:limit].rsplit(" ", 1)[0] + "..."
+
+
+def top_findings(live: list[Finding]) -> tuple[list[Finding], int]:
+    """The findings worth a reader's time: best first, at most PER_FILE from one file (eleven notes on one markdown file are one
+    problem), at most MAX_SHOWN overall. Returns (shown, how many smaller ones were left out)."""
+    shown, per_file = [], {}
+    for f in live:
+        path = f.where.split(":", 1)[0]
+        if per_file.get(path, 0) >= PER_FILE or len(shown) >= MAX_SHOWN:
+            continue
+        per_file[path] = per_file.get(path, 0) + 1
+        shown.append(f)
+    return shown, len(live) - len(shown)
+
+
 def format_answer(findings: list[Finding]) -> str:
     """The review a user reads, built from the verified findings with no model call, written the way a colleague would say it:
     a count, the findings grouped by how much they matter, each one a sentence or two with its fix, and what to do first. Example:
@@ -370,39 +392,40 @@ def format_answer(findings: list[Finding]) -> str:
         Likely bugs
         1. a.ts:4  The insert can throw and 500 the whole list. Fix: catch it.
 
-        Minor
+        Worth fixing
         2. b.ts:9  ...
 
-        Items 1 is the one I'd fix before merging. Want me to fix it?
+        Item 1 is the one I'd fix before merging. Want me to fix it?
     """
-    live = sorted((f for f in findings if f.verdict != "REJECTED"), key=lambda f: SEVERITY_ORDER[shown_severity(f)])
+    live = sorted((f for f in findings if f.verdict != "REJECTED"), key=lambda f: (f.verdict not in ("CONFIRMED",), SEVERITY_ORDER[shown_severity(f)]))
     ruled = sum(f.verdict == "REJECTED" for f in findings)
     if not live:
         return "No issues found." + (f" I checked {ruled} suspected problem(s) and the code ruled them out." if ruled else "")
-    blocking = [f for f in live if shown_severity(f) in ("CRITICAL", "HIGH")]
-    rest = [f for f in live if shown_severity(f) == "MEDIUM"]
-    minor = [f for f in live if f not in blocking and f not in rest]
-    out = [f"Found {len(live)} issue{'s' if len(live) != 1 else ''}."]
+    shown, hidden = top_findings(live)
+    proven = [f for f in shown if f.verdict == "CONFIRMED"]
+    blocking = [f for f in proven if shown_severity(f) in ("CRITICAL", "HIGH")]
+    rest = [f for f in proven if shown_severity(f) == "MEDIUM"]
+    minor = [f for f in proven if f not in blocking and f not in rest]
+    guess = [f for f in shown if f.verdict != "CONFIRMED"]
+    out = [f"Found {len(live)} issue{'s' if len(live) != 1 else ''}" + (f"; the {len(shown)} that matter most:" if hidden else ".")]
     n = 0
-    for title, group in (("Likely bugs", blocking), ("Worth fixing", rest), ("Minor", minor)):
+    for title, group in (("Likely bugs", blocking), ("Worth fixing", rest), ("Minor", minor), ("Not verified, worth a look", guess)):
         if not group:
             continue
         lines = [title]
         for f in group:
             n += 1
-            what = f.what.strip().rstrip(".") + (" (not fully verified)" if f.verdict != "CONFIRMED" else "")
-            tail = [f" It goes away by itself: {f.temporary}." if f.temporary else "",
-                    " The code before this change already did this." if f.at_head else "",
-                    f" Affects {f.reach}." if f.reach and f.reach != "n/a" else ""]
-            lines.append(f"{n}. {f.where}  {what}.{''.join(tail)}" + (f" Fix: {f.fix.strip().rstrip('.')}." if f.fix else ""))
+            tail = [f" It goes away by itself: {f.temporary}." if f.temporary else "", " The code before this change already did this." if f.at_head else "",
+                    f" Affects {tidy(f.reach, 80)}." if f.reach and f.reach != "n/a" else ""]
+            lines.append(f"{n}. {f.where}  {tidy(f.what)}.{''.join(tail)}" + (f" Fix: {tidy(f.fix, 160)}." if f.fix else ""))
         out.append("\n".join(lines))
+    if hidden:
+        out.append(f"{hidden} smaller note(s) left out.")
     if blocking:
         nums = ", ".join(str(i) for i in range(1, len(blocking) + 1))
         out.append(f"{'Item' if len(blocking) == 1 else 'Items'} {nums} {'is the one' if len(blocking) == 1 else 'are the ones'} I'd fix before merging. Want me to fix {'it' if len(blocking) == 1 else 'them'}?")
     else:
         out.append("None of these block the merge. Want me to fix any of them?")
-    if ruled:
-        out.append(f"I also checked {ruled} other suspected problem(s); the code ruled them out.")
     return "\n\n".join(out)
 
 
@@ -577,7 +600,7 @@ async def run_review_pipeline(config, request: str) -> AsyncGenerator[tuple[str,
     if to_check:
         yield "notice", f"Verifying {len(to_check)} finding(s) in one pass; the verifier tries to refute and score each"
         claims = "\n".join(f"{n}. {f.severity} | {f.where} | {f.what} | fix: {f.fix or '(none)'}" for n, f in enumerate(to_check, 1))
-        reply = await ask(config, VERIFIER_PROMPT.format(claims=claims), role, max_turns=10, max_tokens=config.review_pipeline_tokens, disabled_skills=["code-review"])
+        reply = await ask(config, VERIFIER_PROMPT.format(claims=claims), role, max_turns=min(24, 8 + 2 * len(to_check)), max_tokens=config.review_pipeline_tokens, disabled_skills=["code-review"])
         for n, (f, v) in enumerate(zip(to_check, parse_verdicts(reply, len(to_check)).values()), 1):
             f.verdict, f.evidence, f.reach, f.temporary, f.at_head, f.same_as, f.confidence = v
             if f.verdict != "REJECTED" and f.confidence < config.review_min_confidence:
@@ -595,5 +618,5 @@ async def run_review_pipeline(config, request: str) -> AsyncGenerator[tuple[str,
     verify_tokens = sum(_spent_log) - review_tokens
     yield "notice", f"Verified: {confirmed} confirmed, {rejected} rejected, {len(found) - confirmed - rejected} unverified"
     yield "notice", f"Tokens: reviewers {review_tokens:,} + verifier {verify_tokens:,} = {review_tokens + verify_tokens:,}"
-    yield "answer", frame(format_answer(found), " ".join(dict.fromkeys(x.strip() for x in summaries[:6]))[:700], files, moves, deleted, late, strengths[:2], aside[:3])
+    yield "answer", frame(format_answer(found), summaries[0].strip() if summaries else "", files, moves, deleted, late, strengths[:2], aside[:3])
     yield "result", compose(found, len(groups) * len(lenses))
