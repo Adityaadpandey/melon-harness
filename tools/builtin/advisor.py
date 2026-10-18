@@ -87,15 +87,18 @@ class AdvisorTool(Tool):
         self.calls += 1
         prompt = [{"role": "system", "content": ADVISOR_SYSTEM},
                   {"role": "user", "content": "TRANSCRIPT SO FAR:\n\n" + render_transcript(self.transcript()) + "\n\nGive your advice now."}]
-        advice, error = "", ""
+        advice, final, error = "", "", ""
         try:
             async for ev in self.client.chat_completion(prompt, stream=False, role="advisor"):
-                if ev.type == StreamEventType.MESSAGE_COMPLETE:
-                    advice += ev.text_delta.content if ev.text_delta else ""
+                if ev.type == StreamEventType.TEXT_DELTA and ev.text_delta:
+                    advice += ev.text_delta.content
+                elif ev.type == StreamEventType.MESSAGE_COMPLETE and ev.text_delta:
+                    final += ev.text_delta.content  # a non-streaming reply arrives whole on the last event
                 elif ev.type == StreamEventType.ERROR:
                     error = ev.error or "unknown error"
         except Exception as e:  # an advisor that cannot answer must not stop the work
             error = f"{type(e).__name__}: {e}"
+        advice = advice or final
         if not advice.strip():
             return ToolResult.error_result(f"The advisor could not answer ({error[:160] or 'empty reply'}). Carry on without it.")
         return ToolResult.success_result("ADVISOR:\n" + advice.strip())

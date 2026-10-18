@@ -100,6 +100,8 @@ class ToolRegistry:
         if result is None:
             result = await self._invoke(name, params, cwd, hook_system, approval_manager, call_id)
             tool = self.get(name)
+            if name == "advisor":
+                tool.last_call_at = self._writes  # the edits so far were put to the advisor (an advisor that is down is not nagged about)
             if tool and tool.is_mutating(params):
                 self._writes += 1
             elif name in REUSABLE and result.success and call_id:

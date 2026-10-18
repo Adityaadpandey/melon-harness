@@ -11,6 +11,7 @@ from agent.events import AgentEvent, AgentEventType
 from agent.root import pick_root
 from agent.grounding import REWRITE_PROMPT, correction_prompt, has_file_code, shows_second_thoughts, verify_references, wants_change
 from agent.learn import Learned
+from agent import review_fix
 from agent.review_pipeline import run_review_pipeline
 from agent.review import merge_reviews, review_changes
 from agent.routing_policy import EFFORT, REVIEWY, classify, length_hint
@@ -83,6 +84,9 @@ class Agent:
         self._allowance = 0
         self._calls_used = 0
         self._calls_warned = False
+        self._shown: list = []  # findings of the last review, in the order the answer numbered them
+        self._fix_run = False
+        self._fix_brief = ""
         self._read_only = False
         self._todos_reminded = ""
         self._pipelined = False
@@ -126,6 +130,13 @@ class Agent:
             self._long_answer = 0
         self._pipelined = False
         self._pipeline_answer = ""
+        self._fix_run, self._fix_brief = False, ""
+        if self._shown and not REVIEWY.search(message) and review_fix.asks_for_fix(message):
+            picked = review_fix.chosen(message, self._shown)  # "fix them" after a review: those findings, with everything the review learned
+            if picked:
+                self._fix_run, self._fix_brief = True, review_fix.short(picked)
+                message_for_model += "\n\n---\n" + review_fix.brief(picked)
+                yield AgentEvent.notice(f"Fixing {len(picked)} finding(s) from the last review: advisor first, then the fix, then an independent check")
         if self.config.review_pipeline and self.config.model_role == "default" and REVIEWY.search(message):
             results = ""
             async for kind, value in run_review_pipeline(self.config, message):
@@ -133,9 +144,15 @@ class Agent:
                     yield AgentEvent.notice(value)
                 elif kind == "answer":
                     self._pipeline_answer = value
+                elif kind == "findings":
+                    self._shown = value  # what "fix 2" will point at
                 else:
                     results = value
             self._pipelined = bool(results)
+            if results and review_fix.review_and_fix(message) and (picked := review_fix.chosen("", self._shown)):
+                self._fix_run, self._fix_brief = True, review_fix.short(picked)
+                message_for_model += "\n\n---\n" + review_fix.brief(picked)
+                yield AgentEvent.notice(f"Fixing the {len(picked)} proven finding(s): advisor first, then the fix, then an independent check")
             if results:
                 message_for_model += (
                     "\n\n---\nReview results. Each claim below was checked by a separate agent that read the code and tried to refute it. "
@@ -218,13 +235,19 @@ class Agent:
             max_seconds=self.config.max_seconds,
             max_repairs=self.config.max_repairs,
         )
+        registry = self.session.tool_registry
+        advisor = registry.get("advisor") if any(t.name == "advisor" for t in registry.get_tools()) else None
+        if advisor:
+            advisor.calls = 0  # the limit is per request
+        registry.gate = review_fix.edit_gate(registry, advisor) if self._fix_run and advisor else None  # a fix run may not edit before the advisor has been consulted
+        base_writes, advisor_nudges = registry._writes, 0
         self._waited_base = self.session.approval_manager.waited
         before = await snapshot(self.config.cwd)
         backup_ref = await backup(self.config.cwd) if before is not None else None
         final_response: str | None = None
         nudged = False
         reviews = 0
-        sent_back = ""  # findings the author was just asked to fix: the next review checks that fix
+        sent_back = self._fix_brief  # findings the author was just asked to fix: the next review checks that fix (a fix run starts with the review's own)
         grounded_once = False
         rewrote = False
         stop_blocks = 0  # times a stop hook sent the work back; capped so a hook cannot loop forever
@@ -328,8 +351,15 @@ class Agent:
                 )
                 continue
 
+            if self._fix_run and advisor and advisor_nudges < 2 and not task.expired() and review_fix.needs_final_advice(registry, advisor, base_writes):
+                advisor_nudges += 1
+                yield AgentEvent.notice("The fix changed code since the advisor last looked; asking for a final consultation")
+                self.session.context_manager.add_user_message(review_fix.ADVISOR_LAST)
+                continue
+
             # checks passed (or none exist): an independent reviewer reads the real diff
-            if self.config.auto_review and reviews < self.config.max_reviews and not task.expired():
+            max_reviews = max(self.config.max_reviews, 3) if self._fix_run else self.config.max_reviews  # a fix gets review, repair, re-review
+            if (self.config.auto_review or self._fix_run) and reviews < max_reviews and not task.expired():
                 reviews += 1
                 yield AgentEvent.notice("Independent review of the diff...")
                 t_review = time.monotonic()
@@ -343,7 +373,7 @@ class Agent:
                     yield AgentEvent.notice(f"The reviewer had {res.blocked} tool call(s) blocked by hooks or permission rules, so its check was narrower than usual")
                 task.review = {"verdict": res.verdict, "findings": res.findings}
                 self.session.tracer.emit("review", task=task.id, verdict=res.verdict, findings=res.findings[:1500])
-                if res.verdict == "ISSUES" and reviews >= self.config.max_reviews:
+                if res.verdict == "ISSUES" and reviews >= max_reviews:
                     # the fix itself was reviewed and still has problems: another blind round costs ~50 calls, so the user decides
                     yield AgentEvent.notice("The review of the fix still found problems (left unfixed):\n" + res.findings)
                 elif res.verdict == "ISSUES" and task.repairs < task.max_repairs:

@@ -484,6 +484,16 @@ def headline(what: str) -> tuple[str, str]:
     return cut, text[len(cut):].strip()
 
 
+def display_order(findings: list[Finding]) -> list[Finding]:
+    """The findings in the order the answer numbers them (proven blockers, proven fixes, minor, then guesses). "Fix 2" means item 2 of that list."""
+    live = sorted((f for f in findings if f.verdict != "REJECTED"), key=lambda f: (f.verdict != "CONFIRMED", SEVERITY_ORDER[shown_severity(f)], f.where))
+    proven = [f for f in live if f.verdict == "CONFIRMED"]
+    blocking = [f for f in proven if shown_severity(f) in ("CRITICAL", "HIGH")]
+    rest = [f for f in proven if shown_severity(f) == "MEDIUM"]
+    minor = [f for f in proven if f not in blocking and f not in rest]
+    return [*blocking, *rest, *minor, *(f for f in live if f.verdict != "CONFIRMED")]
+
+
 def format_answer(findings: list[Finding]) -> str:
     """The review a user reads, built from the verified findings with no model call. Every finding that survived is shown,
     nothing is dropped for length; they are laid out so they are quick to read (markdown, which the terminal renders):
@@ -746,5 +756,6 @@ async def _run_review(config, request: str, target) -> AsyncGenerator[tuple[str,
     yield "notice", f"Verified: {confirmed} confirmed, {rejected} rejected, {len(found) - confirmed - rejected} unverified"
     yield "notice", f"Tokens: reviewers {review_tokens:,} + verifier {verify_tokens:,} = {review_tokens + verify_tokens:,}"
     scope = f"{label}" + (" (" + "; ".join(target.notes) + ")" if target and target.notes else "") + "." if target else ""
+    yield "findings", display_order(found)
     yield "answer", frame(format_answer(found), summaries[0].strip() if summaries else "", files, moves, deleted, late, strengths[:2], aside[:3], scope)
     yield "result", compose(found, len(groups) * len(lenses))

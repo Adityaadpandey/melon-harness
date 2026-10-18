@@ -500,3 +500,74 @@ async def test_a_confirmed_high_is_run_in_a_throwaway_copy_and_one_that_does_not
     assert b.repro.startswith("tried to reproduce and could not") and b.severity == "MEDIUM" and not c.repro
     assert seen["cwd"] != tmp_path and seen["has_change"] == "y\n" and seen["linked"] and seen["approval"] == "auto" and "shell" in seen["tools"]
     assert not seen["cwd"].exists() and (tmp_path / "a.ts").read_text() == "y\n"  # the copy is gone, the checkout untouched
+
+
+def test_a_fix_reply_is_told_apart_from_other_messages_and_picks_the_numbered_findings():
+    from agent import review_fix as rf
+    for yes in ("fix them", "yes, fix it", "ok go ahead and fix these", "Fix all", "fix the issues", "fix 1 and 3", "please fix #2"):
+        assert rf.asks_for_fix(yes), yes
+    for no in ("don't fix anything", "how would you fix this?", "review and fix the PR", "what does fix mean here"):
+        assert not rf.asks_for_fix(no), no
+    shown = [rp.Finding("HIGH", "a.ts:1", "w1", "f1", "CONFIRMED"), rp.Finding("MEDIUM", "b.ts:2", "w2", "f2", "CONFIRMED"), rp.Finding("MEDIUM", "c.ts:3", "w3", "f3", "UNCLEAR")]
+    assert [f.where for f in rf.chosen("fix them", shown)] == ["a.ts:1", "b.ts:2"]  # a guess is only fixed when named
+    assert [f.where for f in rf.chosen("fix 3 and 1", shown)] == ["c.ts:3", "a.ts:1"]
+    assert rf.review_and_fix("review this pr and fix what you find") and not rf.review_and_fix("review this pr, don't fix anything")
+    text = rf.brief(shown[:1])
+    assert "a.ts:1" in text and "ROOT CAUSE" in text and "`advisor`" in text and "DONE MEANS" in text
+
+
+def test_the_numbers_in_the_answer_are_the_numbers_fix_refers_to():
+    f = [rp.Finding("MEDIUM", "m.ts:1", "medium one. why", "f", "CONFIRMED"), rp.Finding("HIGH", "h.ts:1", "high one. why", "f", "CONFIRMED"), rp.Finding("HIGH", "g.ts:1", "guess. why", "f", "UNCLEAR"), rp.Finding("HIGH", "r.ts:1", "no", "f", "REJECTED")]
+    order = rp.display_order(f)
+    assert [x.where for x in order] == ["h.ts:1", "m.ts:1", "g.ts:1"]
+    answer = rp.format_answer(f)
+    assert answer.index("`h.ts:1`") < answer.index("`m.ts:1`") < answer.index("`g.ts:1`") and "**1. `h.ts:1`" in answer
+
+
+async def test_fix_after_a_review_is_gated_on_the_advisor_before_the_edit_and_again_before_the_end(tmp_path, monkeypatch):
+    import agent.agent as agent_mod
+    from agent.review import ReviewResult
+    from agent.events import AgentEventType
+
+    subprocess.run("git init -q && git config user.email a@b.c && git config user.name t", shell=True, cwd=tmp_path)
+    (tmp_path / "a.ts").write_text("x\n")
+    subprocess.run("git add . && git commit -qm init", shell=True, cwd=tmp_path)
+    (tmp_path / "a.ts").write_text("y\n")
+
+    async def fake_ask(config, prompt, role, max_turns, max_tokens, disabled_skills=None, **k):
+        if "claims these defects" in prompt:
+            return "1 | CONFIRMED | a.ts:1 read it | users | ONGOING | NEW | NONE | CONF 90"
+        return "HIGH | a.ts:1 | the write can throw | catch it"
+
+    seen_fixing = []
+
+    async def fake_review(config, request, files, checks, claims="", prior="", role="review", fixing=""):
+        seen_fixing.append(fixing)
+        return ReviewResult("PASS", "")
+
+    monkeypatch.setattr(rp, "ask", fake_ask)
+    monkeypatch.setattr(agent_mod, "review_changes", fake_review)
+    cfg = Config(pi_mode=True, cwd=tmp_path, approval=ApprovalPolicy.AUTO, auto_verify=False, review_repro=False, review_lenses=1)
+    async with Agent(cfg) as agent:
+        agent.session.client = ScriptedClient([])
+        _ = [e async for e in agent.run("review the changes")]
+        assert [f.where for f in agent._shown] == ["a.ts:1"]
+        client = agent.session.client = ScriptedClient([
+            call("read_file", {"path": "a.ts"}, "c1"),
+            call("edit", {"path": "a.ts", "old_string": "y", "new_string": "z"}, "c2"),  # refused: no advisor yet
+            call("advisor", {}, "c3"),
+            text("1. the root cause is the shared writer"),  # the advisor's own reply
+            call("edit", {"path": "a.ts", "old_string": "y", "new_string": "z"}, "c4"),
+            text("fixed a.ts:1"),
+            call("advisor", {}, "c5"),  # the end-of-fix nudge
+            text("1. covered; double-check the empty case"),
+            text("Done: a.ts:1 now catches the write."),
+        ])
+        agent.session.tool_registry.get("advisor").client = client
+        events = [e async for e in agent.run("fix them")]
+        notices = [e.data.get("message", "") for e in events if e.type == AgentEventType.NOTICE]
+        assert any("Fixing 1 finding(s)" in n for n in notices) and any("final consultation" in n for n in notices)
+        assert (tmp_path / "a.ts").read_text() == "z\n"
+        results = [str(m.content) for m in agent.session.context_manager._messages if m.role == "tool"]
+        assert any("Consult the advisor before you edit" in r for r in results)  # the first edit was refused
+    assert seen_fixing and "a.ts:1" in seen_fixing[0]  # the reviewer of the fix is told what the fix was for
