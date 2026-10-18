@@ -1,4 +1,5 @@
 import subprocess
+from pathlib import Path
 
 import agent.review_pipeline as rp
 from agent.agent import Agent
@@ -48,7 +49,7 @@ async def test_pipeline_runs_reviewers_then_verifiers_and_hands_the_main_agent_o
     (tmp_path / "a.ts").write_text("y\n")
     prompts = []
 
-    async def fake_ask(config, prompt, role, max_turns, max_tokens, disabled_skills=None):
+    async def fake_ask(config, prompt, role, max_turns, max_tokens, disabled_skills=None, **k):
         prompts.append((role, prompt))
         if "claims these defects" in prompt:
             return "1 | CONFIRMED | a.ts:1 no catch | dashboard\n2 | REJECTED | a.ts:1 handled elsewhere | n/a"
@@ -468,3 +469,34 @@ async def test_a_missing_pr_base_is_reported_instead_of_silently_falling_back_to
 def test_a_diff_that_lives_in_one_area_is_split_into_parts_when_it_is_clipped():
     parts = rp.split_clipped([f"apps/web/src/a{n}.ts" for n in range(7)])
     assert [n for n, _ in parts] == ["part 1", "part 2", "part 3"] and sum(len(f) for _, f in parts) == 7
+
+
+def test_a_repro_reply_is_read_as_reproduced_not_reproduced_or_cannot_run():
+    from agent.review_repro import parse_repro
+    assert parse_repro("noise\nREPRODUCED | pnpm vitest a | expected 3x got 3 -")[0] == "REPRODUCED"
+    assert parse_repro("- NOT_REPRODUCED | node x.js | prints 3x Name")[0] == "NOT_REPRODUCED"
+    assert parse_repro("it probably fails")[0] == "CANNOT_RUN"
+
+
+async def test_a_confirmed_high_is_run_in_a_throwaway_copy_and_one_that_does_not_reproduce_drops_to_medium(tmp_path, monkeypatch):
+    run = lambda c: subprocess.run(c, shell=True, cwd=tmp_path, capture_output=True, check=True)
+    run("git init -q -b main && git config user.email a@b.c && git config user.name t")
+    (tmp_path / "a.ts").write_text("x\n"); (tmp_path / "node_modules").mkdir(); run("git add a.ts && git commit -qm init")
+    (tmp_path / "a.ts").write_text("y\n")
+    seen = {}
+
+    async def fake_ask(config, prompt, role, max_turns, max_tokens, disabled_skills=None, tools=None, approval="never"):
+        if tools:
+            seen.update(cwd=Path(config.cwd), tools=tools, approval=approval, has_change=(Path(config.cwd) / "a.ts").read_text(), linked=(Path(config.cwd) / "node_modules").is_symlink())
+            return "NOT_REPRODUCED | node t.js | prints the right thing" if "second" in prompt else "REPRODUCED | node t.js | got 3 want 3x"
+        return ""
+
+    monkeypatch.setattr(rp, "ask", fake_ask)
+    a = rp.Finding("HIGH", "a.ts:1", "first", "f", "CONFIRMED", "read it")
+    b = rp.Finding("HIGH", "a.ts:1", "second", "f", "CONFIRMED", "read it")
+    c = rp.Finding("HIGH", "a.ts:1", "third", "f", "UNCLEAR")
+    await rp.reproduce(Config(cwd=tmp_path), "default", tmp_path, [a, b, c], ["a.ts"], None)
+    assert a.repro.startswith("reproduced:") and a.severity == "HIGH"
+    assert b.repro.startswith("tried to reproduce and could not") and b.severity == "MEDIUM" and not c.repro
+    assert seen["cwd"] != tmp_path and seen["has_change"] == "y\n" and seen["linked"] and seen["approval"] == "auto" and "shell" in seen["tools"]
+    assert not seen["cwd"].exists() and (tmp_path / "a.ts").read_text() == "y\n"  # the copy is gone, the checkout untouched

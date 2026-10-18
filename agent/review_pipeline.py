@@ -191,6 +191,7 @@ class Finding:
     temporary: str = ""  # how long a self-healing failing state lasts, empty when it stays
     at_head: bool = False  # the code before the change already failed the same way
     same_as: int = 0  # claim number this one repeats (one cause, several callers); 0 when it stands alone
+    repro: str = ""  # what running the code showed: "ran X: <output line>", or that it could not be made to happen
     confidence: int = 100  # the verifier's 0-100 belief that this is real and will be hit; below the cutoff it is dropped
 
 
@@ -375,7 +376,7 @@ def compose(findings: list[Finding], reviewers: int) -> str:
         lines.append("No reviewer found a defect.")
     for f in live:
         tag = "confirmed" if f.verdict == "CONFIRMED" else "unverified"
-        lines.append(f"- [{tag}] {shown_severity(f)} {f.where}  {f.what} -> {f.fix}" + (f"  (evidence: {f.evidence})" if f.evidence else "") + (f"  (affects: {f.reach})" if f.reach and f.reach != "n/a" else ""))
+        lines.append(f"- [{tag}] {shown_severity(f)} {f.where}  {f.what} -> {f.fix}" + (f"  (evidence: {f.evidence})" if f.evidence else "") + (f"  (affects: {f.reach})" if f.reach and f.reach != "n/a" else "") + (f"  (repro: {f.repro})" if f.repro else ""))
     for f in rejected:
         lines.append(f"- [rejected] {f.where}  {f.what[:90]}  because: {f.evidence or 'the code contradicts it'}")
     return "\n".join(lines)
@@ -422,6 +423,41 @@ async def verify(config, role: str, findings: list[Finding]) -> None:
         for f in unclear:
             if f.verdict == "UNCLEAR":
                 f.verdict, f.evidence = "REJECTED", "could not be settled by reading the code"
+
+
+async def reproduce(config, role: str, cwd: Path, findings: list[Finding], files: list[str], target) -> None:
+    """Run the confirmed HIGH findings in a throwaway copy of the change. A defect that shows up in output is the strongest evidence there is;
+    one the real code path refuses to show is capped at MEDIUM, with what was tried written next to it."""
+    from agent.review_repro import MAX_REPROS, REPRO_PROMPT, REPRO_TOOLS, drop_scratch, link_dependencies, make_scratch, parse_repro
+    from config.config import Config
+
+    picks = [f for f in findings if f.verdict == "CONFIRMED" and shown_severity(f) in ("CRITICAL", "HIGH")][:MAX_REPROS]
+    if not picks:
+        return
+    own = not (target and target.cwd)  # a PR worktree is already a throwaway
+    if own:
+        committed = bool(target) and not target.includes_worktree
+        scratch = await make_scratch(cwd, files, target.rev[-1] if committed else "HEAD", from_worktree=not committed)
+    else:
+        scratch = target.cwd
+        link_dependencies(target.repo or cwd, scratch)
+    if not scratch:
+        return
+    try:
+        scfg = Config(**{**config.to_dict(), "cwd": scratch})
+
+        async def one(f: Finding) -> None:
+            reply = await ask(scfg, REPRO_PROMPT.format(claim=f"{f.where} | {f.what}", evidence=f.evidence or "(none)"), role, 20, config.review_pipeline_tokens, tools=REPRO_TOOLS, approval="auto")
+            word, rest = parse_repro(reply)
+            if word == "REPRODUCED":
+                f.repro = f"reproduced: {rest}"
+            elif word == "NOT_REPRODUCED":
+                f.repro, f.severity = f"tried to reproduce and could not: {rest}", "MEDIUM" if f.severity in ("CRITICAL", "HIGH") else f.severity
+
+        await asyncio.gather(*(one(f) for f in picks))
+    finally:
+        if own:
+            await drop_scratch(cwd, scratch)
 
 
 def tidy(text: str, limit: int = 260) -> str:
@@ -489,6 +525,8 @@ def format_answer(findings: list[Finding]) -> str:
                 lines.append(f"- **Temporary:** goes away by itself ({tidy(f.temporary, 80)})")
             if f.fix:
                 lines.append(f"- **Fix:** {tidy(f.fix, 400).rstrip('.')}")
+            if f.repro:
+                lines.append(f"- **Repro:** {tidy(f.repro, 300)}")
             lines.append("")
         out.append("\n".join(lines).rstrip())
     if blocking:
@@ -515,14 +553,15 @@ async def fix_paths(findings: list[Finding], cwd: Path) -> None:
         f.where = (same_name[0] + sep + rest) if len(same_name) == 1 else f.where + " (file not found)"
 
 
-async def ask(config, prompt: str, role: str, max_turns: int, max_tokens: int, disabled_skills: list[str] | None = None) -> str:
+async def ask(config, prompt: str, role: str, max_turns: int, max_tokens: int, disabled_skills: list[str] | None = None,
+              tools: list[str] | None = None, approval: str = "never") -> str:
     """One read-only sub-agent with its own context; returns its last text. A crash or a stop is an empty answer, never an error."""
     from agent.agent import Agent
     from agent.events import AgentEventType
     from agent.review_claude import ask_claude, available
     from config.config import Config
 
-    if config.review_backend == "claude-code" and available():
+    if config.review_backend == "claude-code" and available() and not tools:  # a repro needs a shell, which the read-only Claude sessions do not get
         answer, tokens = await ask_claude(config, prompt)
         if answer.strip():
             _spent_log.append(tokens)
@@ -532,10 +571,10 @@ async def ask(config, prompt: str, role: str, max_turns: int, max_tokens: int, d
     cfg = Config(**{
         **config.to_dict(),
         "model_role": role,
-        "allowed_tools": ["read_file", "grep", "glob", "list_dir", "graph", "search", "outline", "git", "use_skill"],
+        "allowed_tools": tools or ["read_file", "grep", "glob", "list_dir", "graph", "search", "outline", "git", "use_skill"],
         "auto_review": False, "auto_verify": False, "verify_commands": [], "verify_rules": [], "subagents": [],
         "enable_parallel_tasks": False, "mcp_servers": {}, "review_pipeline": False, "auto_challenge": False, "auto_scout": False,  # a challenger per sub-agent cost 80k tokens and 4 minutes
-        "max_turns": max_turns, "max_total_tokens": max_tokens, "max_seconds": 300, "approval": "never",
+        "max_turns": max_turns, "max_total_tokens": max_tokens, "max_seconds": 300, "approval": approval,
         "disabled_skills": [*config.disabled_skills, *(disabled_skills or [])],
     })
     texts: list[str] = []
@@ -690,6 +729,12 @@ async def _run_review(config, request: str, target) -> AsyncGenerator[tuple[str,
         yield "notice", f"Verifying {len(to_check)} finding(s); the verifier tries to refute and score each"
         await verify(config, role, to_check)
     found = merge_same_cause(to_check) + extra
+    if config.review_repro and any(f.verdict == "CONFIRMED" for f in found):
+        yield "notice", "Running the confirmed defects in a throwaway copy to see them happen"
+        try:
+            await reproduce(config, role, cwd, found, files, target)
+        except Exception:  # a repro that cannot start leaves the verified finding as it was
+            pass
     late = check_task.result() if check_task and check_task.done() and not checks and not check_task.cancelled() else checks
     if check_task and not check_task.done():
         check_task.cancel()

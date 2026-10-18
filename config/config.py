@@ -192,6 +192,7 @@ class Config(BaseModel):
     review_claude_model: str = ""  # --model for those sessions (sonnet, opus, ...); empty = Claude Code's own default
     review_run_checks: bool = True  # run the project's typecheck/lint beside the reviewers; a failure on a changed file is a finding
     review_min_confidence: int = 60  # the verifier scores each claim 0-100; below this it is dropped as not worth the reader's time
+    review_repro: bool = True  # a confirmed HIGH is run in a throwaway copy of the change (sandboxed shell) to see the defect happen; one that does not reproduce is capped at MEDIUM
     review_gap_pass: bool = True  # for a big diff, one more reviewer hunts for what the angles all missed
     second_reviewer: bool = False  # after the reviewer, a second one hunts for what the first missed (doubles review cost)
     check_references: bool = True  # verify file:line citations in the final answer against the tree
