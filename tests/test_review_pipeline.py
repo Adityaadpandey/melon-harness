@@ -63,8 +63,8 @@ async def test_pipeline_runs_reviewers_then_verifiers_and_hands_the_main_agent_o
         assert any("Reviewing 1 changed file" in n for n in notices) and any("1 confirmed, 1 rejected" in n for n in notices)
         assert agent.session.client.requests == []  # a read-only review is not followed by a model call or a tool loop
         done = [e.data.get("content") for e in events if e.type == AgentEventType.TEXT_COMPLETE]
-        assert len(done) == 1 and done[0].startswith("Verdict: changes requested") and "1. HIGH a.ts:1  write can throw and 500 the page" in done[0] and "Fix: catch" in done[0] and "Checked and ruled out: 1" in done[0]
-        assert "Read 1 file(s)" in done[0] and "Not run: typecheck" in done[0]
+        assert len(done) == 1 and done[0].startswith("Found 1 issue.") and "1. a.ts:1  write can throw and 500 the page." in done[0] and "Fix: catch." in done[0] and "ruled them out" in done[0]
+        assert "I read 1 file(s)" in done[0] and "did not run typecheck" in done[0]
         sent = " ".join(str(m.content) for m in agent.session.context_manager._messages if m.role == "user")
         assert "[confirmed] HIGH a.ts:1" in sent and "[rejected] a.ts:1" in sent
     assert [r for r, p in prompts if "claims these defects" in p] == ["default"]  # ONE verifier, on the fast model
@@ -120,10 +120,10 @@ def test_format_answer_is_one_line_per_finding_caps_unproven_ones_and_says_when_
         rp.Finding("HIGH", "b.ts:9", "guessed race", "lock", "UNCLEAR"),
         rp.Finding("MEDIUM", "c.ts:1", "redundant chain", "collapse", "REJECTED"),
     ]
-    assert rp.format_answer(f).split("\n\n") == ["Verdict: changes requested (1 blocker(s), 1 to fix)", "Blocking", "1. HIGH a.ts:4  insert 500s the list\n   Fix: catch",
-                                                 "Should fix", "2. MEDIUM (unverified) b.ts:9  guessed race\n   Fix: lock", "Checked and ruled out: 1 claim(s), e.g. c.ts:1 (the code contradicts it)", "Ready to merge? No: fix the blocker(s) first."]
-    assert rp.format_answer([]) == "Verdict: approve. No issues found."
-    assert rp.format_answer([rp.Finding("LOW", "c.ts:1", "x", "", "REJECTED")]).startswith("Verdict: approve. No issues found. The verifier ruled out 1")
+    assert rp.format_answer(f).split("\n\n") == ["Found 2 issues.", "Likely bugs\n1. a.ts:4  insert 500s the list. Fix: catch.", "Worth fixing\n2. b.ts:9  guessed race (not fully verified). Fix: lock.",
+                                                 "Item 1 is the one I'd fix before merging. Want me to fix it?", "I also checked 1 other suspected problem(s); the code ruled them out."]
+    assert rp.format_answer([]) == "No issues found."
+    assert rp.format_answer([rp.Finding("LOW", "c.ts:1", "x", "", "REJECTED")]).startswith("No issues found. I checked 1")
 
 
 async def test_a_reviewer_that_returns_nothing_is_a_failure_and_the_normal_review_loop_runs(tmp_path, monkeypatch):
@@ -151,7 +151,7 @@ def test_a_self_healing_or_already_present_failure_is_capped_at_medium_and_says_
          rp.Finding("HIGH", "b.ts:2", "write throws", "catch", "CONFIRMED", at_head=True),
          rp.Finding("HIGH", "c.ts:1", "proven and lasting", "fix", "CONFIRMED")]
     text = rp.format_answer(f)
-    assert text.index("HIGH c.ts:1") < text.index("MEDIUM (temporary: 15 min) a.ts:4") and "already did this" in text
+    assert text.index("c.ts:1  proven") < text.index("a.ts:4  backfill") and "goes away by itself: 15 min" in text and "already did this" in text
 
 
 def test_the_same_cause_in_one_file_is_one_finding_naming_every_line():
@@ -211,7 +211,7 @@ async def test_a_file_moved_into_a_new_folder_is_one_move_line_not_a_deletion_pl
     stayed = await rp.left_behind(tmp_path, moves)
     assert "events/other.tsx" in stayed and "events/[id]/page.tsx" in stayed and "events/page.tsx" not in stayed
     out = rp.frame("No issues found.", "Moves the list page into a route group.", added, moves, deleted)
-    assert "events/page.tsx -> events/(list)/page.tsx" in out and "Not run: typecheck" in out and "git add -A" in out and out.startswith("What the change does")
+    assert "events/page.tsx -> events/(list)/page.tsx" in out and "did not run typecheck" in out and "git add -A" in out and out.startswith("What the change does")
 
 
 def test_review_context_brings_the_folders_rules_and_the_matching_playbook(tmp_path):
@@ -266,7 +266,7 @@ async def test_a_claim_the_verifier_scores_below_the_cutoff_is_ruled_out_and_rem
     cfg = Config(pi_mode=True, cwd=tmp_path, approval=ApprovalPolicy.AUTO, auto_verify=False, review_lenses=1)
     out = [x async for x in rp.run_review_pipeline(cfg, "review the changes")]
     answer = next(v for k, v in out if k == "answer")
-    assert answer.startswith("Verdict: approve. No issues found.") and "ruled out 1" in answer
+    assert answer.startswith("No issues found.") and "checked 1 suspected" in answer
     assert rm.render(tmp_path) == ""  # a low score is "not worth reporting", not "proven wrong": it is not remembered
 
 
@@ -360,4 +360,4 @@ async def test_a_pr_is_diffed_against_the_branch_it_merges_into_not_main(tmp_pat
 
 def test_frame_shows_what_was_done_well_and_what_was_set_aside():
     out = rp.frame("Verdict: approve. No issues found.", "adds paging", ["a.ts"], [], [], None, ["a.ts:4 the cursor is opaque"], ["the retry loop looks odd but is the intent"])
-    assert "Done well: a.ts:4 the cursor is opaque" in out and "Looked at and set aside: the retry loop" in out
+    assert "What is good: a.ts:4 the cursor is opaque" in out and "Looked at and left alone: the retry loop" in out

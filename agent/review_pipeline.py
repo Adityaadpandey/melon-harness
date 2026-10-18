@@ -234,17 +234,18 @@ def frame(answer: str, summary: str, reviewed: list[str], moves: list[tuple[str,
     Without it "No issues found." says nothing about how much was read."""
     lines = [f"What the change does: {summary}"] if summary else []
     if strengths:
-        lines.append("Done well: " + " ".join(dict.fromkeys(x.strip() for x in strengths))[:400])
+        lines.append("What is good: " + " ".join(dict.fromkeys(x.strip() for x in strengths))[:400])
     lines.append(answer)
     if aside:
-        lines.append("Looked at and set aside: " + "; ".join(dict.fromkeys(x.strip() for x in aside))[:400])
+        lines.append("Looked at and left alone: " + "; ".join(dict.fromkeys(x.strip() for x in aside))[:400])
     seen = [f"{len(reviewed)} file(s)"]
     if moves:
         seen.append(f"{len(moves)} moved unchanged (" + ", ".join(f"{a} -> {b}" for a, b in moves[:3]) + (", ..." if len(moves) > 3 else "") + ")")
     if deleted:
         seen.append(f"{len(deleted)} deleted")
-    ran = "Ran: " + ", ".join(f"{c.command} ({'passed' if c.ok else 'FAILED'})" for c in checks) + "." if checks else "Not run: typecheck, lint, tests."
-    lines.append("Read " + ", ".join(seen) + ". " + ran + (" Stage the move with git add -A on both paths so git keeps the rename." if moves else ""))
+    bad = [c.command for c in checks or [] if not c.ok]
+    ran = (f"Checks that FAILED: {', '.join(bad)}." if bad else f"{len(checks)} project check(s) passed (typecheck, lint, tests).") if checks else "I did not run typecheck, lint or tests."
+    lines.append("I read " + ", ".join(seen) + ". " + ran + (" Stage the move with git add -A on both paths so git keeps the rename." if moves else ""))
     return "\n\n".join(lines)
 
 
@@ -352,45 +353,47 @@ def compose(findings: list[Finding], reviewers: int) -> str:
 
 
 def format_answer(findings: list[Finding]) -> str:
-    """The review a user reads, built from the verified findings with no model call: a verdict first, blockers before
-    the rest, and for each finding where it is, why it bites and what to do. Example:
+    """The review a user reads, built from the verified findings with no model call, written the way a colleague would say it:
+    a count, the findings grouped by how much they matter, each one a sentence or two with its fix, and what to do first. Example:
 
-        Verdict: changes requested (1 blocker, 1 to fix)
-        Blocking
-        1. a.ts:4  insert 500s the list
-           Affects: every visitor   Evidence: read a.ts:4
-           Fix: catch it
+        Found 2 issues.
+
+        Likely bugs
+        1. a.ts:4  The insert can throw and 500 the whole list. Fix: catch it.
+
+        Minor
+        2. b.ts:9  ...
+
+        Items 1 is the one I'd fix before merging. Want me to fix it?
     """
     live = sorted((f for f in findings if f.verdict != "REJECTED"), key=lambda f: SEVERITY_ORDER[shown_severity(f)])
-    ruled = [f for f in findings if f.verdict == "REJECTED"]
+    ruled = sum(f.verdict == "REJECTED" for f in findings)
     if not live:
-        return "Verdict: approve. No issues found." + (f" The verifier ruled out {len(ruled)} claim(s)." if ruled else "")
+        return "No issues found." + (f" I checked {ruled} suspected problem(s) and the code ruled them out." if ruled else "")
     blocking = [f for f in live if shown_severity(f) in ("CRITICAL", "HIGH")]
     rest = [f for f in live if shown_severity(f) == "MEDIUM"]
     minor = [f for f in live if f not in blocking and f not in rest]
-    head = "Verdict: changes requested" if blocking else "Verdict: approve with comments"
-    counts = ", ".join(x for x in (f"{len(blocking)} blocker(s)" if blocking else "", f"{len(rest)} to fix" if rest else "", f"{len(minor)} minor" if minor else "") if x)
-    out = [f"{head} ({counts})"]
+    out = [f"Found {len(live)} issue{'s' if len(live) != 1 else ''}."]
     n = 0
-    for title, group in (("Blocking", blocking), ("Should fix", rest), ("Minor", minor)):
+    for title, group in (("Likely bugs", blocking), ("Worth fixing", rest), ("Minor", minor)):
         if not group:
             continue
-        out.append(title)
+        lines = [title]
         for f in group:
             n += 1
-            notes = [" (unverified)" if f.verdict != "CONFIRMED" else "", f" (temporary: {f.temporary})" if f.temporary else "",
-                     " (the code before this change already did this)" if f.at_head else ""]
-            block = [f"{n}. {shown_severity(f)}{''.join(notes)} {f.where}  {f.what}"]
-            facts = [x for x in (f"Affects: {f.reach}" if f.reach and f.reach != "n/a" else "", f"Evidence: {f.evidence}" if f.evidence else "") if x]
-            if facts:
-                block.append("   " + "   ".join(facts))
-            if f.fix:
-                block.append(f"   Fix: {f.fix}")
-            out.append("\n".join(block))
+            what = f.what.strip().rstrip(".") + (" (not fully verified)" if f.verdict != "CONFIRMED" else "")
+            tail = [f" It goes away by itself: {f.temporary}." if f.temporary else "",
+                    " The code before this change already did this." if f.at_head else "",
+                    f" Affects {f.reach}." if f.reach and f.reach != "n/a" else ""]
+            lines.append(f"{n}. {f.where}  {what}.{''.join(tail)}" + (f" Fix: {f.fix.strip().rstrip('.')}." if f.fix else ""))
+        out.append("\n".join(lines))
+    if blocking:
+        nums = ", ".join(str(i) for i in range(1, len(blocking) + 1))
+        out.append(f"{'Item' if len(blocking) == 1 else 'Items'} {nums} {'is the one' if len(blocking) == 1 else 'are the ones'} I'd fix before merging. Want me to fix {'it' if len(blocking) == 1 else 'them'}?")
+    else:
+        out.append("None of these block the merge. Want me to fix any of them?")
     if ruled:
-        shown = "; ".join(f"{f.where} ({(f.evidence or 'the code contradicts it')[:70]})" for f in ruled[:3])
-        out.append(f"Checked and ruled out: {len(ruled)} claim(s)" + (f", e.g. {shown}" if shown else ""))
-    out.append("Ready to merge? " + ("No: fix the blocker(s) first." if blocking else "With fixes." if rest else "Yes, the minor notes can follow."))
+        out.append(f"I also checked {ruled} other suspected problem(s); the code ruled them out.")
     return "\n\n".join(out)
 
 
