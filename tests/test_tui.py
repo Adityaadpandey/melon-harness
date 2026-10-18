@@ -256,3 +256,13 @@ async def test_input_box_ctrl_c_clears_then_interrupts_and_ctrl_d_ends(tmp_path)
         await ask("\x03")                                    # on an empty line it interrupts
     with pytest.raises(EOFError):
         await ask("\x04")
+
+
+def test_copy_skips_rail_and_border():
+    from ui.screen import Screen
+
+    class Fake:
+        _plain = lambda self, i: [" ◆ hello world", " ▎ second line", "│ boxed text   │"][i]
+
+    body = lambda i: Screen._body(Fake(), i)
+    assert [" ◆ hello world"[slice(*body(0))], " ▎ second line"[slice(*body(1))], "│ boxed text   │"[slice(*body(2))]] == ["hello world", "second line", "boxed text"]

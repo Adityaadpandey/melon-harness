@@ -8,6 +8,7 @@ from __future__ import annotations
 import io
 import math
 import os
+import re
 import time
 from typing import Any
 
@@ -56,6 +57,10 @@ class Sink:
 
     def isatty(self) -> bool:
         return True
+
+
+# what rich draws at the start of a line that is not the text: " ▎ ", " ◆ ", " │ ", " ▍ ", "▌ " or a box corner
+_DECOR = re.compile(r"^(?: [▎◆│▍] ?|▌ |[│┃╭╰]\s?)")
 
 
 def _size() -> tuple[int, int]:
@@ -252,9 +257,24 @@ class Screen:
         n = len(self._plain(i))
         return (a[1] if i == a[0] else 0), (min(n, b[1] + 1) if i == b[0] else n)
 
+    def _body(self, i: int) -> tuple[int, int]:
+        """Columns of line i that hold the text itself, without the rail glyph on the left
+        (" ▎ ", " ◆ ", " │ ") or a panel's side border on the right. Copying skips the rest."""
+        line = self._plain(i)
+        m = _DECOR.match(line)
+        lo = m.end() if m else 0
+        hi = len(line.rstrip())
+        if hi > lo and line[hi - 1] in "│┃":
+            hi = len(line[:hi - 1].rstrip())
+        return lo, max(lo, hi)
+
     def all_text(self) -> str:
         """The whole transcript as plain text, for /copy all."""
-        return "\n".join(self._plain(i).rstrip() for i in range(len(self._formatted()[3]))).strip()
+        rows = []
+        for i in range(len(self._formatted()[3])):
+            lo, hi = self._body(i)
+            rows.append(self._plain(i)[lo:hi])
+        return "\n".join(rows).strip()
 
     def _selected_text(self) -> str:
         if not self.sel:
@@ -263,7 +283,8 @@ class Screen:
         rows = []
         for i in range(a[0], b[0] + 1):
             lo, hi = self._span(i, a, b)
-            rows.append(self._plain(i)[lo:hi].rstrip())
+            top, end = self._body(i)
+            rows.append(self._plain(i)[max(lo, top):min(hi, end)].rstrip())
         return "\n".join(rows).strip("\n")
 
     def _mouse_main(self, ev):

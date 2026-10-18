@@ -39,6 +39,13 @@ for _i, _c in enumerate("abcdefghijklmnopqrstuvwxyz"):
     ANSI_SEQUENCES[f"\x1b[{ord(_c)};5u"] = getattr(Keys, f"Control{_c.upper()}")
     ANSI_SEQUENCES[f"\x1b[{ord(_c)};3u"] = (Keys.Escape, _c)
 
+# Every other CSI-u key (ctrl+digit, alt+symbol, ctrl+shift+x, ...) has no binding here. Left
+# unmapped, prompt_toolkit types the raw "[49;5u" into the input box, so swallow them instead.
+for _code in range(1, 128):
+    for _mod in range(2, 17):
+        ANSI_SEQUENCES.setdefault(f"\x1b[{_code};{_mod}u", Keys.Ignore)
+    ANSI_SEQUENCES.setdefault(f"\x1b[{_code}u", Keys.Ignore)
+
 _kitty_on = False
 
 
