@@ -55,7 +55,7 @@ async def test_pipeline_runs_reviewers_then_verifiers_and_hands_the_main_agent_o
         return "HIGH | a.ts:1 | write can throw and 500 the page | catch\nHIGH | a.ts:1 | a guess about a race | lock"
 
     monkeypatch.setattr(rp, "ask", fake_ask)
-    cfg = Config(pi_mode=True, cwd=tmp_path, approval=ApprovalPolicy.AUTO, auto_verify=False)
+    cfg = Config(pi_mode=True, cwd=tmp_path, approval=ApprovalPolicy.AUTO, auto_verify=False, review_lenses=4)
     async with Agent(cfg) as agent:
         agent.session.client = ScriptedClient([])  # the answer is built from the verified findings: the model is not called again
         events = [e async for e in agent.run("review the changes")]
@@ -63,12 +63,14 @@ async def test_pipeline_runs_reviewers_then_verifiers_and_hands_the_main_agent_o
         assert any("Reviewing 1 changed file" in n for n in notices) and any("1 confirmed, 1 rejected" in n for n in notices)
         assert agent.session.client.requests == []  # a read-only review is not followed by a model call or a tool loop
         done = [e.data.get("content") for e in events if e.type == AgentEventType.TEXT_COMPLETE]
-        assert len(done) == 1 and done[0].startswith("HIGH a.ts:1  write can throw and 500 the page -> catch\n\n1 more claim(s) were ruled out by the verifier.")
+        assert len(done) == 1 and done[0].startswith("Verdict: changes requested") and "1. HIGH a.ts:1  write can throw and 500 the page" in done[0] and "Fix: catch" in done[0] and "Checked and ruled out: 1" in done[0]
         assert "Read 1 file(s)" in done[0] and "Not run: typecheck" in done[0]
         sent = " ".join(str(m.content) for m in agent.session.context_manager._messages if m.role == "user")
         assert "[confirmed] HIGH a.ts:1" in sent and "[rejected] a.ts:1" in sent
     assert [r for r, p in prompts if "claims these defects" in p] == ["default"]  # ONE verifier, on the fast model
-    assert sum("You are reviewing" in p for _, p in prompts) == 1  # and one reviewer for a small diff
+    reviewers = [p for _, p in prompts if "principal engineer reviewing" in p]
+    assert len(reviewers) == 4  # one reviewer per angle, even for a small diff
+    assert {w for w in ("LENS: behaviour", "LENS: approach", "LENS: failures", "LENS: rules") if any(w in p for p in reviewers)} == {"LENS: behaviour", "LENS: approach", "LENS: failures", "LENS: rules"}
 
 
 async def test_a_named_scope_or_a_clean_tree_skips_the_pipeline(tmp_path, monkeypatch):
@@ -118,9 +120,10 @@ def test_format_answer_is_one_line_per_finding_caps_unproven_ones_and_says_when_
         rp.Finding("HIGH", "b.ts:9", "guessed race", "lock", "UNCLEAR"),
         rp.Finding("MEDIUM", "c.ts:1", "redundant chain", "collapse", "REJECTED"),
     ]
-    assert rp.format_answer(f).split("\n\n") == ["HIGH a.ts:4  insert 500s the list -> catch", "MEDIUM (unverified) b.ts:9  guessed race -> lock", "1 more claim(s) were ruled out by the verifier."]
-    assert rp.format_answer([]) == "No issues found."
-    assert rp.format_answer([rp.Finding("LOW", "c.ts:1", "x", "", "REJECTED")]).startswith("No issues found. The verifier ruled out 1")
+    assert rp.format_answer(f).split("\n\n") == ["Verdict: changes requested (1 blocker(s), 1 to fix)", "Blocking", "1. HIGH a.ts:4  insert 500s the list\n   Fix: catch",
+                                                 "Should fix", "2. MEDIUM (unverified) b.ts:9  guessed race\n   Fix: lock", "Checked and ruled out: 1 claim(s), e.g. c.ts:1 (the code contradicts it)"]
+    assert rp.format_answer([]) == "Verdict: approve. No issues found."
+    assert rp.format_answer([rp.Finding("LOW", "c.ts:1", "x", "", "REJECTED")]).startswith("Verdict: approve. No issues found. The verifier ruled out 1")
 
 
 async def test_a_reviewer_that_returns_nothing_is_a_failure_and_the_normal_review_loop_runs(tmp_path, monkeypatch):
@@ -143,12 +146,12 @@ async def test_a_reviewer_that_returns_nothing_is_a_failure_and_the_normal_revie
 
 def test_a_self_healing_or_already_present_failure_is_capped_at_medium_and_says_why():
     got = rp.parse_verdicts("1 | CONFIRMED | a.ts:4 no catch | every visitor | TEMPORARY (cache entries before deploy, 15 min) | NEW\n2 | CONFIRMED | b.ts:2 no catch | all | ONGOING | ALREADY_AT_HEAD\n3 | CONFIRMED | c.ts:1 x | all | ONGOING | NEW", 3)
-    assert got[1][3] == "cache entries before deploy, 15 min" and got[2][4] is True and got[3][3:] == ("", False, 0)
+    assert got[1][3] == "cache entries before deploy, 15 min" and got[2][4] is True and got[3][3:] == ("", False, 0, 100)
     f = [rp.Finding("HIGH", "a.ts:4", "backfill can 500", "bump the key", "CONFIRMED", temporary="15 min"),
          rp.Finding("HIGH", "b.ts:2", "write throws", "catch", "CONFIRMED", at_head=True),
          rp.Finding("HIGH", "c.ts:1", "proven and lasting", "fix", "CONFIRMED")]
-    lines = rp.format_answer(f).split("\n\n")
-    assert lines[0].startswith("HIGH c.ts:1") and lines[1].startswith("MEDIUM (temporary: 15 min) a.ts:4") and "already did this" in lines[2]
+    text = rp.format_answer(f)
+    assert text.index("HIGH c.ts:1") < text.index("MEDIUM (temporary: 15 min) a.ts:4") and "already did this" in text
 
 
 def test_the_same_cause_in_one_file_is_one_finding_naming_every_line():
@@ -209,3 +212,147 @@ async def test_a_file_moved_into_a_new_folder_is_one_move_line_not_a_deletion_pl
     assert "events/other.tsx" in stayed and "events/[id]/page.tsx" in stayed and "events/page.tsx" not in stayed
     out = rp.frame("No issues found.", "Moves the list page into a route group.", added, moves, deleted)
     assert "events/page.tsx -> events/(list)/page.tsx" in out and "Not run: typecheck" in out and "git add -A" in out and out.startswith("What the change does")
+
+
+def test_review_context_brings_the_folders_rules_and_the_matching_playbook(tmp_path):
+    from agent.review import review_context
+
+    (tmp_path / "apps" / "web").mkdir(parents=True)
+    (tmp_path / "AGENTS.md").write_text("Never log auth tokens anywhere in the server code.\n")
+    (tmp_path / "apps" / "web" / "AGENTS.md").write_text("Use pnpm, never npm, in the web app scripts.\n")
+    (tmp_path / "apps" / "web" / "a.tsx").write_text("x\n")
+    ctx = review_context(Config(cwd=tmp_path), "review the changes", ["apps/web/a.tsx"])
+    assert "Never log auth tokens" in ctx and "Use pnpm" in ctx and "shown once" not in ctx
+    assert ctx.index("Never log") < ctx.index("Use pnpm")  # root first, the deeper folder after
+
+
+def test_duplicate_findings_from_several_angles_name_the_place_once():
+    found = [rp.Finding("HIGH", "a.ts:1", "write can throw and 500 the page", "catch it") for _ in range(4)]
+    merged = rp.merge_duplicates(found)
+    assert len(merged) == 1 and merged[0].where == "a.ts:1"
+
+
+def test_a_small_diff_gets_two_angles_a_big_one_four_and_auth_code_adds_a_security_one():
+    cfg = Config()
+    small, big = "+x\n" * 10, "+x\n" * 300
+    assert [n for n, _ in rp.pick_lenses(cfg, small, ["a.ts"], "")] == ["behaviour", "approach"]
+    assert [n for n, _ in rp.pick_lenses(cfg, big, ["a.ts", "b.ts", "c.ts"], "")] == ["behaviour", "approach", "failures", "rules", "history"]
+    mid = "+x\n" * 100
+    assert [n for n, _ in rp.pick_lenses(cfg, mid, ["a.ts", "b.ts", "c.ts"], "RULES")][3] == "rules"  # rules exist: audit against them
+    assert [n for n, _ in rp.pick_lenses(cfg, mid, ["a.ts", "b.ts", "c.ts"], "")][3] == "history"  # none: read the history instead
+    assert rp.pick_lenses(cfg, "+check the jwt token\n", ["auth.ts"], "")[-1][0] == "security"
+    assert [n for n, _ in rp.pick_lenses(Config(review_lenses=1), "+jwt\n", ["auth.ts"], "")] == ["behaviour"]  # 1 pins a single generalist
+
+
+def test_verdicts_carry_a_confidence_and_a_low_one_is_dropped_from_the_answer():
+    got = rp.parse_verdicts("1 | CONFIRMED | a.ts:4 no catch | users | ONGOING | NEW | NONE | CONF 45\n2 | CONFIRMED | b.ts:1 x | all | ONGOING | NEW | NONE", 2)
+    assert got[1][6] == 45 and got[2][6] == 100  # a reply without a score reads as sure
+
+
+async def test_a_claim_the_verifier_scores_below_the_cutoff_is_ruled_out_and_remembered(tmp_path, monkeypatch):
+    subprocess.run("git init -q && git config user.email a@b.c && git config user.name t", shell=True, cwd=tmp_path)
+    (tmp_path / "a.ts").write_text("x\n")
+    subprocess.run("git add . && git commit -qm init", shell=True, cwd=tmp_path)
+    (tmp_path / "a.ts").write_text("y\n")
+    import agent.review_memory as rm
+    monkeypatch.setattr(rm, "path_for", lambda cwd, base=None: tmp_path / "mem.json")
+
+    async def fake_ask(config, prompt, role, max_turns, max_tokens, disabled_skills=None):
+        if "claims these defects" in prompt:
+            return "1 | CONFIRMED | a.ts:1 maybe | few | ONGOING | NEW | NONE | CONF 30"
+        return "MEDIUM | a.ts:1 | a rare race | lock"
+
+    monkeypatch.setattr(rp, "ask", fake_ask)
+    cfg = Config(pi_mode=True, cwd=tmp_path, approval=ApprovalPolicy.AUTO, auto_verify=False, review_lenses=1)
+    out = [x async for x in rp.run_review_pipeline(cfg, "review the changes")]
+    answer = next(v for k, v in out if k == "answer")
+    assert answer.startswith("Verdict: approve. No issues found.") and "ruled out 1" in answer
+    assert rm.render(tmp_path) == ""  # a low score is "not worth reporting", not "proven wrong": it is not remembered
+
+
+def test_check_findings_blame_only_failures_that_name_a_changed_file():
+    from agent.verify import CheckResult
+
+    bad = CheckResult("npx tsc --noEmit", False, 2, 4.0, "src/a.ts(12,5): error TS2322: nope\nsrc/old.ts(3,1): error TS1")
+    got = rp.check_findings([bad, CheckResult("lint", True, 0, 1.0, "")], ["src/a.ts"])
+    assert [(f.where, f.verdict) for f in got] == [("src/a.ts:12", "CONFIRMED")]
+    assert rp.check_findings([bad], ["src/other.ts"]) == []  # old debt elsewhere is not this change's
+
+
+def test_claude_code_runs_read_only_with_the_repos_secret_rules_and_its_json_is_parsed():
+    import agent.review_claude as rc
+
+    cmd = rc.build_command(Config(review_claude_model="sonnet"), "hello", "sonnet")
+    assert cmd[:3] == ["claude", "-p", "hello"] and "Edit" in cmd[cmd.index("--disallowedTools"):] and "Bash(git blame:*)" in cmd
+    assert any(c.startswith("Read(**/.env") for c in cmd) and cmd[-2:] == ["--model", "sonnet"]
+    assert rc.parse_output('{"result": "SUMMARY: x\\nNONE", "usage": {"input_tokens": 5, "output_tokens": 7}}') == ("SUMMARY: x\nNONE", 12)
+    assert rc.parse_output('{"is_error": true, "result": "boom"}') == ("", 0) and rc.parse_output("not json") == ("", 0)
+
+
+def test_review_memory_keeps_a_ruled_out_claim_once_and_shows_it_to_the_next_review(tmp_path):
+    import agent.review_memory as rm
+
+    rm.remember(tmp_path, [("a.ts:4", "unguarded write", "caller wraps it")], base=tmp_path / "d")
+    rm.remember(tmp_path, [("a.ts:9", "unguarded write", "caller wraps it")], base=tmp_path / "d")  # same file and wording
+    assert len(rm.load(tmp_path, tmp_path / "d")) == 1
+    assert "a.ts:4: unguarded write" in rm.render(tmp_path, tmp_path / "d") and rm.render(tmp_path / "x", tmp_path / "e") == ""
+
+
+async def test_review_targets_resolve_last_commits_a_commit_and_the_branch(tmp_path):
+    import agent.review_target as rt
+
+    def sh(c): subprocess.run(c, shell=True, cwd=tmp_path, check=True, capture_output=True)
+    sh("git init -q -b main && git config user.email a@b.c && git config user.name t")
+    for i in range(3):
+        (tmp_path / f"f{i}.ts").write_text(f"{i}\n")
+        sh(f"git add . && git commit -qm c{i}")
+    t = await rt.resolve(tmp_path, "review my last 2 commits", ())
+    assert t and t.rev == ("HEAD~2", "HEAD") and sorted(t.files) == ["f1.ts", "f2.ts"] and not t.includes_worktree
+    sha = subprocess.run("git rev-parse --short HEAD", shell=True, cwd=tmp_path, capture_output=True, text=True).stdout.strip()
+    one = await rt.resolve(tmp_path, f"review commit {sha}", ())
+    assert one and one.files == ["f2.ts"]
+    assert await rt.resolve(tmp_path, "review this branch", ()) is None  # on main there is no branch to compare
+    sh("git checkout -q -b feat")
+    (tmp_path / "g.ts").write_text("new\n")
+    sh("git add . && git commit -qm g")
+    br = await rt.resolve(tmp_path, "review this branch", ())
+    assert br and br.files == ["g.ts"] and br.includes_worktree
+    assert await rt.resolve(tmp_path, "review the changes", ()) is None  # the working tree is the default, not a target
+    assert await rt.resolve(tmp_path, "review my last 9 commits", ()) is None  # more commits than exist
+
+
+def test_review_bench_scores_recall_and_noise():
+    from bench.review_bench import CASES, score
+
+    case = next(c for c in CASES if c.id == "pagination")
+    got = score(case, "HIGH src/paging.py:3  page 1 skips the first page -> use (page - 1)\nLOW src/other.py:1  naming")
+    assert got == {"planted": 1, "found": 1, "findings": 2, "noise": 1}
+    control = next(c for c in CASES if c.id == "control")
+    assert score(control, "No issues found.") == {"planted": 0, "found": 0, "findings": 0, "noise": 0}
+
+
+def test_claude_code_never_inherits_a_gateway_endpoint_or_key(monkeypatch):
+    import agent.review_claude as rc
+
+    for k in ("ANTHROPIC_BASE_URL", "ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN"):
+        monkeypatch.setenv(k, "x")
+    monkeypatch.setenv("API_KEY", "mew-gateway-key")
+    env = rc.clean_env()
+    assert not any(k.startswith("ANTHROPIC_") for k in env) and env["API_KEY"] == "mew-gateway-key"  # mew's own key is untouched, Claude Code never sees an override
+
+
+async def test_a_pr_is_diffed_against_the_branch_it_merges_into_not_main(tmp_path, monkeypatch):
+    import agent.review_target as rt
+    run = lambda c: subprocess.run(c, shell=True, cwd=tmp_path, capture_output=True, check=True)
+    run("git init -q -b main && git config user.email a@b.c && git config user.name t")
+    (tmp_path / "a.txt").write_text("1\n"); run("git add . && git commit -qm base")
+    run("git checkout -qb develop"); (tmp_path / "dev.txt").write_text("d\n"); run("git add . && git commit -qm dev")
+    run("git checkout -qb feat"); (tmp_path / "f.txt").write_text("f\n"); run("git add . && git commit -qm feat")
+
+    async def info(cwd, number=""):
+        return "feat", "develop"
+
+    monkeypatch.setattr(rt, "_pr_info", info)
+    got = await rt.resolve(tmp_path, "review PR #7", ())
+    assert got.files == ["f.txt"] and "develop" in got.label  # dev.txt belongs to develop, not to this PR
+    assert (await rt.resolve(tmp_path, "review this branch", ())).files == ["f.txt"]

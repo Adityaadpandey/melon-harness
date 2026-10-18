@@ -15,30 +15,79 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import AsyncGenerator
 
-from agent.review import _git, build_diff
+from agent import review_memory, review_target
+from agent.review import _git, build_diff, review_context
 
 MAX_GROUPS = 3
-MAX_VERIFIED = 6
+MAX_VERIFIED = 10
 SEVERITY_ORDER = {"CRITICAL": 0, "HIGH": 1, "MEDIUM": 2, "LOW": 3}
 SKIP_SUFFIXES = (".lock", ".png", ".jpg", ".jpeg", ".gif", ".svg", ".ico", ".woff", ".woff2", ".map", "package-lock.json")
 NAMED_SCOPE = re.compile(r"\b(commits?|pr|pull request|HEAD|branch|[0-9a-f]{7,40}|#\d+)\b", re.I)  # a named scope is not "the changes"
 
-REVIEWER_PROMPT = """You are reviewing {scope}. You did not write it.
+# Each reviewer reads the same change through one lens, the way Claude Code runs a bug scan, a rules audit and a
+# history check side by side. A single generalist skims; four specialists each go deep on one question.
+LENSES = [
+    ("behaviour", """LENS: behaviour. For every changed function, write down the claim it now makes ("returns null only when X"), then read its
+callers and callees and try to break the claim. For every new or changed condition, flag or gate, find everything that flips it at
+runtime and say what the user sees then (a button disabled while isFetching, and every mutation refetches it: it dims on every tap).
+Check wrong operands, inverted conditions, stale state, async ordering, races, leaks, off-by-one, null paths. Read what the diff deleted
+before saying a replacement is missing: the new code often leans on a library doing that work."""),
+    ("approach", """LENS: approach. Judge the change the way the owner of this system would, not line by line. Is this the right fix at the right layer,
+or a patch on the symptom while the cause stays (a guard in one caller when every caller shares the broken function)? Is there a simpler
+change that does the same job (delete the branch, reuse the helper that already exists a few files over, change the data instead of the code)?
+What is the blast radius: who else calls or deploys this, does old data, an old client or a half-finished rollout still work, can it be
+rolled back? Does it follow how the neighbouring code solves the same problem, and if it does not, is the new way better? A real concern
+about the design is a finding even when every line is correct: name the better shape and what it saves."""),
+    ("failures", """LENS: failures and contracts. For every new awaited call or write on a request path (DB insert, cache write, outbound fetch), ask
+what the user gets when it throws; optional data that now fails the whole response is a finding. Look for swallowed errors, empty
+catches and fallbacks that hide a real failure. For every changed signature, return shape, event, route, schema, env var, cache key or
+migration, grep every caller and consumer and open the line that reads it: the type may say one thing and the runtime data another.
+Missing tests count only where the project rules ask for them or a risky branch has none."""),
+    ("rules", """LENS: rules and intent. Check the diff against the PROJECT RULES and PLAYBOOKS above: every finding quotes the rule in a few
+words and the line that breaks it; a rule that is about how the author works (never commit, ask first) is not a review finding. Then
+check the request: is something it asked for missing from the diff, and is something it did not ask for in it (scope creep, a new
+dependency, a rewrite of working code)? Also read the comments in the touched files: does the change break guidance written there?"""),
+    ("history", """LENS: history. Use git: `git log -5 --oneline -- <file>`, `git blame` or `git log -L` on the changed region, `git show HEAD:<file>`.
+Look for a change that undoes an earlier fix (read that commit's message), an invariant a previous commit set up that the diff
+breaks, and a sibling the change should have followed (grep for the same pattern next door: if five handlers do X and the new one
+does not, say why that is a defect). A defect the old code already had is not this change's."""),
+]
+
+SECURITY_LENS = ("security", """LENS: security and isolation. The diff touches auth, data access, secrets or money, so trace who can reach it: is every new
+route, handler or query behind the same authorization its siblings use? Is a tenant, owner or user id taken from the request instead
+of the session? Injection (SQL, shell, path, HTML) from any value that crosses a trust boundary, secrets or tokens in logs and
+responses, fail-open checks (an error path that returns "allowed"), missing rate limits or idempotency on a write that moves money
+or sends mail. Read the middleware and the sibling handlers before claiming a gap.""")
+GAP_LENS = """LENS: what the others missed. Four reviewers, each with one angle, already reported the findings below. Do not repeat
+them. Re-read the riskiest hunk of the diff yourself and ask the question none of the angles owns: what input, ordering or state
+did nobody try? If one of their findings is wrong, say so on a line starting with REJECT.
+ALREADY REPORTED:
+{found}"""
+SECURITY_HINT = re.compile(r"\b(auth\w*|token|password|passwd|secret|permission\w*|tenant\w*|session|cookie|jwt|oauth|csrf|cors|payment\w*|stripe|webhook\w*|"
+                           r"role|admin|rbac|acl|sanitiz\w*|escape|exec|eval|innerHTML|queryRaw|\$queryRaw|SELECT|INSERT|DELETE)\b", re.I)
+BIG_DIFF_LINES = 200
+GAP_MIN_LINES = 80
+
+REVIEWER_PROMPT = """You are a principal engineer reviewing {scope}. You did not write it, and you will be accountable if it ships broken.
 The request: {request}
 
 FILES: {part}
 {moved}OTHER CHANGED FILES (read them only to follow a call chain): {others}
 
-DIFF:
+{context}DIFF:
 {diff}
 
-Hunt for defects the user would hit. Read the callers and callees with your tools before claiming anything. For every new or changed
-condition, flag or gate, find what flips it at runtime. For every new awaited call or write on a request path, ask what the user gets
-when it throws (optional data that now fails the whole response is a finding). Read what the diff deleted before saying a replacement
-is missing. Run `git show HEAD:<file>` to see how the old code behaved: if it already failed the same way, the change did not
-introduce it. Say what the fix should be in the smallest form: deleting code, bumping a cache key or version, or removing a branch
-beats adding a try/catch or a fallback. One line per defect: the same cause hit in two places is one finding naming both lines.
-No style, redundancy or "could drift later" items; nothing you cleared in your own thinking.
+{lens}
+
+Hold the bar a principal engineer holds: find the defect that pages someone at 3am, not the ten that make a review look busy. Explain each finding
+with the trigger ("when X happens"), the path that reaches it, and what the user or the system does then. Prefer the root cause over the symptom.
+
+How to work: first list, for yourself, every behaviour the diff changes and what could go wrong with each; then check each one by reading
+with your tools (callers, callees, config, tests, `git show HEAD:<file>`). Read before you claim; a claim about how a library behaves counts only
+if you read the library or its docs. Say what the fix should be in the smallest form: deleting code, bumping a cache key or version, or
+removing a branch beats adding a try/catch or a fallback. One line per defect: the same cause hit in two places is one finding naming both.
+Never report: style, redundancy, "could drift later", anything a linter or typechecker catches, defects on lines the diff did not touch,
+defects the old code already had, behaviour that is clearly the intent of the change, or anything you cleared in your own thinking.
 
 Reply with at most 5 lines, one finding per line, EXACTLY:
 SEVERITY | path:line | what is wrong, and who is affected (the call chain you read) | fix
@@ -61,12 +110,34 @@ Also settle how bad it is. Is the failing state permanent, or does it go away by
 a window after deploy)? Did the code at HEAD (`git show HEAD:<file>`) already fail the same way, so the change did not add it?
 Say ALREADY_AT_HEAD too when the request already depends on the same thing and fails without the change whenever this fails
 (a new write to the same Postgres the request already reads: if Postgres is down it 500s anyway; only "reads work, the write fails" is new).
+A claim that cites a project rule counts only if that rule exists in the instruction file and the cited line really breaks it
+(open the file: a rule paraphrased from memory is REJECTED). A claim about code the diff did not touch is REJECTED.
 If two claims are the same cause (one missing guard hit from several callers), write SAME_AS <the lower number> on the later one.
 
-Reply with one line per claim, EXACTLY:
-N | CONFIRMED or REJECTED or UNCLEAR | path:line what you read that decides it | who is actually affected (n/a if rejected) | ONGOING or TEMPORARY (in under 10 words, e.g. "cache entries before deploy, 15 min") | NEW or ALREADY_AT_HEAD | NONE or SAME_AS <number>
+Think each claim through before you answer: what input or state triggers it, who gets there, and what they see. Reply with one line per claim, EXACTLY:
+N | CONFIRMED or REJECTED or UNCLEAR | path:line what you read that decides it | who is actually affected (n/a if rejected) | ONGOING or TEMPORARY (in under 10 words, e.g. "cache entries before deploy, 15 min") | NEW or ALREADY_AT_HEAD | NONE or SAME_AS <number> | CONF <0-100>
+CONF is how sure you are the defect is real AND will be hit in practice: 0 a false positive or pre-existing, 25 maybe, 50 real but rare or minor,
+75 verified and will be hit, 100 certain and frequent. A function whose documented contract the change breaks is 75 or more even when this repo
+has no other caller: callers are outside the diff, and the next one gets the wrong answer. Judge it as a senior engineer would.
 CONFIRMED means you read the code that proves it. REJECTED means the code contradicts it or already handles it (say where).
 UNCLEAR means you could not decide with the files available. Nothing else."""
+
+
+def pick_lenses(config, diff: str, files: list[str], context: str) -> list[tuple[str, str]]:
+    """How many angles a change deserves. A 10-line fix gets two; a big one gets five; auth, queries and money add a fifth.
+    `review_lenses` > 0 pins the count instead (1 = a single generalist)."""
+    lines = diff.count("\n")
+    if config.review_lenses > 0:
+        picked = LENSES[: config.review_lenses]
+    elif lines < 40 and len(files) <= 2:
+        picked = LENSES[:2]  # behaviour + approach
+    elif lines < BIG_DIFF_LINES:
+        picked = [*LENSES[:3], LENSES[3] if context else LENSES[4]]
+    else:
+        picked = list(LENSES)
+    if config.review_lenses != 1 and SECURITY_HINT.search(" ".join(files) + "\n" + diff):
+        picked = [*picked, SECURITY_LENS]
+    return picked
 
 
 @dataclass
@@ -81,6 +152,7 @@ class Finding:
     temporary: str = ""  # how long a self-healing failing state lasts, empty when it stays
     at_head: bool = False  # the code before the change already failed the same way
     same_as: int = 0  # claim number this one repeats (one cause, several callers); 0 when it stands alone
+    confidence: int = 100  # the verifier's 0-100 belief that this is real and will be hit; below the cutoff it is dropped
 
 
 def changed_files(porcelain: str) -> list[str]:
@@ -139,7 +211,7 @@ async def left_behind(cwd: Path, moves: list[tuple[str, str]]) -> list[str]:
     return out[:15]
 
 
-def frame(answer: str, summary: str, reviewed: list[str], moves: list[tuple[str, str]], deleted: list[str]) -> str:
+def frame(answer: str, summary: str, reviewed: list[str], moves: list[tuple[str, str]], deleted: list[str], checks: list | None = None) -> str:
     """What a human reviewer writes around the findings: what the change does, what was and was not looked at.
     Without it "No issues found." says nothing about how much was read."""
     lines = [f"What the change does: {summary}"] if summary else []
@@ -149,7 +221,8 @@ def frame(answer: str, summary: str, reviewed: list[str], moves: list[tuple[str,
         seen.append(f"{len(moves)} moved unchanged (" + ", ".join(f"{a} -> {b}" for a, b in moves[:3]) + (", ..." if len(moves) > 3 else "") + ")")
     if deleted:
         seen.append(f"{len(deleted)} deleted")
-    lines.append("Read " + ", ".join(seen) + ". Not run: typecheck, lint, tests." + (" Stage the move with git add -A on both paths so git keeps the rename." if moves else ""))
+    ran = "Ran: " + ", ".join(f"{c.command} ({'passed' if c.ok else 'FAILED'})" for c in checks) + "." if checks else "Not run: typecheck, lint, tests."
+    lines.append("Read " + ", ".join(seen) + ". " + ran + (" Stage the move with git add -A on both paths so git keeps the rename." if moves else ""))
     return "\n\n".join(lines)
 
 
@@ -176,21 +249,22 @@ def parse_findings(text: str) -> list[Finding]:
     return out
 
 
-def parse_verdicts(text: str, count: int) -> dict[int, tuple[str, str, str, str, bool, int]]:
-    """One `N | VERDICT | evidence | reach | ONGOING/TEMPORARY (how long) | NEW/ALREADY_AT_HEAD` line per claim.
-    A claim the verifier skipped stays UNCLEAR; the last two fields are optional (an older reply without them reads as ongoing and new)."""
-    out = {n: ("UNCLEAR", "", "", "", False, 0) for n in range(1, count + 1)}
+def parse_verdicts(text: str, count: int) -> dict[int, tuple[str, str, str, str, bool, int, int]]:
+    """One `N | VERDICT | evidence | reach | ONGOING/TEMPORARY (how long) | NEW/ALREADY_AT_HEAD | SAME_AS | CONF n` line per claim.
+    A claim the verifier skipped stays UNCLEAR; the trailing fields are optional (an older reply without them reads as ongoing, new, sure)."""
+    out = {n: ("UNCLEAR", "", "", "", False, 0, 100) for n in range(1, count + 1)}
     for m in re.finditer(r"^\W*(\d+)\s*\|\s*(CONFIRMED|REJECTED|UNCLEAR)\s*\|(.*)$", text or "", re.I | re.M):
         n = int(m.group(1))
         if n not in out:
             continue
         rest = [p.strip() for p in m.group(3).split("|")]
-        rest += [""] * (5 - len(rest))
+        rest += [""] * (6 - len(rest))
         twin = re.search(r"SAME_AS\s*#?(\d+)", rest[4], re.I)
+        conf = re.search(r"(\d{1,3})", rest[5])
         lasts = re.sub(r"^TEMPORARY\b[\s:(-]*", "", rest[2], flags=re.I).rstrip(") ") if rest[2].upper().startswith("TEMPORARY") else ""
         if rest[2].upper().startswith("TEMPORARY") and not lasts:
             lasts = "temporary"
-        out[n] = (m.group(2).upper(), rest[0][:400], rest[1][:200], lasts[:120], "ALREADY" in rest[3].upper(), int(twin.group(1)) if twin else 0)
+        out[n] = (m.group(2).upper(), rest[0][:400], rest[1][:200], lasts[:120], "ALREADY" in rest[3].upper(), int(twin.group(1)) if twin else 0, min(100, int(conf.group(1))) if conf else 100)
     return out
 
 
@@ -223,14 +297,20 @@ def merge_duplicates(findings: list[Finding]) -> list[Finding]:
     def words(t: str) -> set[str]:
         return set(re.findall(r"[a-z]{4,}", t.lower()))
 
+    def alike(a: str, b: str) -> bool:
+        wa, wb = words(a), words(b)
+        return bool(wa and wb) and len(wa & wb) >= 0.6 * min(len(wa), len(wb))
+
     merged: list[Finding] = []
     for f in findings:
-        same = next((m for m in merged if m.where.split(":")[0] == f.where.split(":")[0] and m.fix and f.fix
-                     and len(words(m.fix) & words(f.fix)) >= 0.6 * min(len(words(m.fix)), len(words(f.fix)))), None)
+        same = next((m for m in merged if m.where.split(":")[0] == f.where.split(":")[0]
+                     and ((m.fix and f.fix and alike(m.fix, f.fix)) or alike(m.what, f.what))), None)
         if same is None:
             merged.append(f)
-        else:
-            same.where += ", " + (f.where.split(":", 1)[1] if ":" in f.where else f.where)
+            continue
+        place = f.where.split(":", 1)[1] if ":" in f.where else f.where
+        if place not in same.where:  # four angles hitting the same line name it once
+            same.where += ", " + place
     return merged
 
 
@@ -238,7 +318,7 @@ def compose(findings: list[Finding], reviewers: int) -> str:
     """The block the main agent answers from. Rejected findings are listed so it can say what was ruled out, but never as findings."""
     live = sorted((f for f in findings if f.verdict in ("CONFIRMED", "UNCLEAR", "UNCHECKED")), key=lambda f: SEVERITY_ORDER[shown_severity(f)])
     rejected = [f for f in findings if f.verdict == "REJECTED"]
-    lines = [f"{reviewers} reviewers read the change in parallel; each finding was then checked by a separate agent that tried to refute it."]
+    lines = [f"{reviewers} reviewer(s) read the change in parallel, each through its own angle; each finding was then checked by a separate agent that tried to refute it."]
     if not live and not rejected:
         lines.append("No reviewer found a defect.")
     for f in live:
@@ -250,19 +330,44 @@ def compose(findings: list[Finding], reviewers: int) -> str:
 
 
 def format_answer(findings: list[Finding]) -> str:
-    """The review a user reads, built from the verified findings with no model call: one line each, rejected ones dropped."""
+    """The review a user reads, built from the verified findings with no model call: a verdict first, blockers before
+    the rest, and for each finding where it is, why it bites and what to do. Example:
+
+        Verdict: changes requested (1 blocker, 1 to fix)
+        Blocking
+        1. a.ts:4  insert 500s the list
+           Affects: every visitor   Evidence: read a.ts:4
+           Fix: catch it
+    """
     live = sorted((f for f in findings if f.verdict != "REJECTED"), key=lambda f: SEVERITY_ORDER[shown_severity(f)])
-    lines = []
-    for f in live:
-        proven = f.verdict == "CONFIRMED"
-        note = "" if proven else " (unverified)"
-        note += f" (temporary: {f.temporary})" if f.temporary else ""
-        note += " (the code before this change already did this)" if f.at_head else ""
-        lines.append(f"{shown_severity(f)}{note} {f.where}  {f.what}" + (f" -> {f.fix}" if f.fix else ""))
-    ruled_out = sum(f.verdict == "REJECTED" for f in findings)
-    if not lines:
-        return "No issues found." + (f" The verifier ruled out {ruled_out} claim(s)." if ruled_out else "")
-    return "\n\n".join(lines) + (f"\n\n{ruled_out} more claim(s) were ruled out by the verifier." if ruled_out else "")
+    ruled = [f for f in findings if f.verdict == "REJECTED"]
+    if not live:
+        return "Verdict: approve. No issues found." + (f" The verifier ruled out {len(ruled)} claim(s)." if ruled else "")
+    blocking = [f for f in live if shown_severity(f) in ("CRITICAL", "HIGH")]
+    rest = [f for f in live if f not in blocking]
+    head = "Verdict: changes requested" if blocking else "Verdict: approve with comments"
+    counts = ", ".join(x for x in (f"{len(blocking)} blocker(s)" if blocking else "", f"{len(rest)} to fix" if rest else "") if x)
+    out = [f"{head} ({counts})"]
+    n = 0
+    for title, group in (("Blocking", blocking), ("Should fix", rest)):
+        if not group:
+            continue
+        out.append(title)
+        for f in group:
+            n += 1
+            notes = [" (unverified)" if f.verdict != "CONFIRMED" else "", f" (temporary: {f.temporary})" if f.temporary else "",
+                     " (the code before this change already did this)" if f.at_head else ""]
+            block = [f"{n}. {shown_severity(f)}{''.join(notes)} {f.where}  {f.what}"]
+            facts = [x for x in (f"Affects: {f.reach}" if f.reach and f.reach != "n/a" else "", f"Evidence: {f.evidence}" if f.evidence else "") if x]
+            if facts:
+                block.append("   " + "   ".join(facts))
+            if f.fix:
+                block.append(f"   Fix: {f.fix}")
+            out.append("\n".join(block))
+    if ruled:
+        shown = "; ".join(f"{f.where} ({(f.evidence or 'the code contradicts it')[:70]})" for f in ruled[:3])
+        out.append(f"Checked and ruled out: {len(ruled)} claim(s)" + (f", e.g. {shown}" if shown else ""))
+    return "\n\n".join(out)
 
 
 _spent_log: list[int] = []  # new input + output tokens of each sub-agent, in the order they finished
@@ -286,12 +391,20 @@ async def ask(config, prompt: str, role: str, max_turns: int, max_tokens: int, d
     """One read-only sub-agent with its own context; returns its last text. A crash or a stop is an empty answer, never an error."""
     from agent.agent import Agent
     from agent.events import AgentEventType
+    from agent.review_claude import ask_claude, available
     from config.config import Config
+
+    if config.review_backend == "claude-code" and available():
+        answer, tokens = await ask_claude(config, prompt)
+        if answer.strip():
+            _spent_log.append(tokens)
+            return answer
+        # an empty answer (not logged in, timeout) falls through to a mew reviewer instead of losing the review
 
     cfg = Config(**{
         **config.to_dict(),
         "model_role": role,
-        "allowed_tools": ["read_file", "grep", "glob", "list_dir", "graph", "search", "outline", "git"],
+        "allowed_tools": ["read_file", "grep", "glob", "list_dir", "graph", "search", "outline", "git", "use_skill"],
         "auto_review": False, "auto_verify": False, "verify_commands": [], "verify_rules": [], "subagents": [],
         "enable_parallel_tasks": False, "mcp_servers": {}, "review_pipeline": False, "auto_challenge": False, "auto_scout": False,  # a challenger per sub-agent cost 80k tokens and 4 minutes
         "max_turns": max_turns, "max_total_tokens": max_tokens, "max_seconds": 150, "approval": "never",
@@ -309,59 +422,135 @@ async def ask(config, prompt: str, role: str, max_turns: int, max_tokens: int, d
     return texts[-1] if texts else ""
 
 
+CHECK_WAIT = 90  # seconds the reviewers wait for typecheck/lint before starting without it
+
+
+async def run_checks(config, files: list[str]):
+    """The project's own typecheck / lint / related specs for the changed files, run once and shared with every reviewer."""
+    from agent.verify import run_check, select_checks
+
+    try:
+        return [await run_check(cmd, Path(config.cwd) / sub, config) for cmd, sub in select_checks(config, files)]
+    except Exception:  # a check that cannot start is a missing signal, never a failed review
+        return []
+
+
+def check_findings(results, files: list[str]) -> list[Finding]:
+    """A failed check that names a changed file is a proven defect with no model involved: `src/a.ts(12,5): error TS2322`.
+    A failure that names none of them (old debt elsewhere) is left for the frame to mention, not blamed on this change."""
+    out = []
+    for r in results:
+        if r.ok:
+            continue
+        for f in files:
+            m = re.search(rf"{re.escape(f)}[(:](\d+)", r.output_tail)
+            if m:
+                line = next((ln for ln in r.output_tail.splitlines() if f in ln), "").strip()
+                out.append(Finding("HIGH", f"{f}:{m.group(1)}", f"`{r.command}` fails here: {line[:160]}", f"make `{r.command}` pass", "CONFIRMED", f"exit {r.exit_code} of {r.command}", "everyone who builds this"))
+                break
+    return out
+
+
 async def run_review_pipeline(config, request: str) -> AsyncGenerator[tuple[str, str], None]:
     """Yields ("notice", text) as it goes and finally ("result", block), or nothing when there is nothing to review.
-    One reviewer reads the whole change (two when the diff is too big for one reading), then ONE verifier checks every claim."""
+    Reviewers each take one angle on the change (more of them for a bigger or riskier diff), the project's checks run beside
+    them, a last reviewer hunts for what they all missed, then ONE verifier tries to refute every claim and scores it."""
     cwd = Path(config.cwd)
-    porcelain = await _git(cwd, "status", "--porcelain", "-uall")  # -uall: a new folder is listed file by file, not as one "dir/" entry
-    files = changed_files(porcelain)
-    moves, deleted, files = await pair_moves(cwd, deleted_files(porcelain), files)
-    files = files + deleted  # build_diff shows a deletion as what was removed
+    target = await review_target.resolve(cwd, request, SKIP_SUFFIXES)
+    if target is None and NAMED_SCOPE.search(request):
+        return  # it names a commit/PR/branch we cannot read from here: the normal review answers
+    moves: list[tuple[str, str]] = []
+    deleted: list[str] = []
+    if target:
+        files, rev, label = target.files, target.rev, target.label
+    else:
+        porcelain = await _git(cwd, "status", "--porcelain", "-uall")  # -uall: a new folder is listed file by file, not as one "dir/" entry
+        files = changed_files(porcelain)
+        moves, deleted, files = await pair_moves(cwd, deleted_files(porcelain), files)
+        files = files + deleted  # build_diff shows a deletion as what was removed
+        rev, label = ("HEAD",), "the whole uncommitted change"
     if not files and not moves:
         return
-    whole = await build_diff(cwd, files)
+    whole = await build_diff(cwd, files, rev)
     groups = [("the whole change", files)] if "[diff clipped]" not in whole else group_files(files, 2)
-    yield "notice", f"Reviewing {len(files)} changed file(s)" + (f" and {len(moves)} moved unchanged" if moves else "") + (f" with {len(groups)} reviewers in parallel" if len(groups) > 1 else "")
+    yield "notice", f"Reviewing {len(files)} changed file(s)" + (f" in {label}" if target else "") + (f" and {len(moves)} moved unchanged" if moves else "") + (f" with {len(groups)} reviewers in parallel" if len(groups) > 1 else "")
     role = config.review_pipeline_role
     stayed = await left_behind(cwd, moves)
     _spent_log.clear()
 
-    async def review(name: str, fs: list[str]) -> list[Finding] | None:
-        diff = whole if len(groups) == 1 else await build_diff(cwd, fs)
+    check_task = asyncio.create_task(run_checks(config, files)) if config.review_run_checks and (target is None or target.includes_worktree) else None
+    checks: list = []
+    if check_task:
+        try:
+            checks = await asyncio.wait_for(asyncio.shield(check_task), CHECK_WAIT)
+        except asyncio.TimeoutError:
+            yield "notice", f"Checks are still running after {CHECK_WAIT}s; the reviewers start without them"
+        if checks:
+            yield "notice", "Checks: " + ", ".join(f"{c.command} {'ok' if c.ok else 'FAILED'}" for c in checks)
+    checked = ("AUTOMATED CHECKS ALREADY RUN (a failure naming a changed file is already reported; do not repeat it, do not re-run them): "
+               + "; ".join(f"{c.command}={'ok' if c.ok else 'FAILED'}" for c in checks) + "\n\n") if checks else ""
+    context = checked + review_memory.render(cwd) + review_context(config, request, files)
+    context = context + "\n\n" if context else ""
+    lenses = pick_lenses(config, whole, files, context) if len(groups) == 1 else LENSES[:2]  # a split diff already multiplies the reviewers
+    if len(lenses) > 1:
+        yield "notice", f"Each reviewer takes one angle: {', '.join(n for n, _ in lenses)}" + (" (rules and playbooks loaded)" if "PROJECT RULES" in context or "PLAYBOOKS" in context else "")
+    backend = " through Claude Code" if config.review_backend == "claude-code" else ""
+    if backend:
+        yield "notice", "Reviewers run as Claude Code sessions (read-only)"
+
+    async def review(name: str, fs: list[str], lens: str) -> list[Finding] | None:
+        diff = whole if len(groups) == 1 else await build_diff(cwd, fs, rev)
         others = ", ".join(f for f in files if f not in fs)[:600] or "(none)"
-        scope = "the whole uncommitted change" if len(groups) == 1 else f"one part ({name}) of an uncommitted change that {len(groups)} reviewers split"
+        scope = label if len(groups) == 1 else f"one part ({name}) of {label} that {len(groups)} reviewers split"
+        if target and not target.includes_worktree:
+            scope += f" (a committed range: read old code with `git show {rev[0]}:<file>` and new code with `git show {rev[1]}:<file>`)"
         moved = ("MOVED WITHOUT ANY CHANGE (identical bytes, so there is nothing in them to review; check that imports and paths still resolve): "
                  + "; ".join(f"{a} -> {b}" for a, b in moves)
                  + "\nSTILL IN THE OLD FOLDER (did any of these rely on what moved, e.g. inherit its loading.tsx, layout or index export? say what they lose, or that they are fine): "
                  + (", ".join(stayed) or "(nothing)") + "\n") if moves else ""
-        prompt = REVIEWER_PROMPT.format(scope=scope, request=request[:1500], part=", ".join(fs[:25]), moved=moved, others=others, diff=diff)
-        reply = await ask(config, prompt, role, max_turns=8, max_tokens=config.review_pipeline_tokens)
+        prompt = REVIEWER_PROMPT.format(scope=scope, request=request[:1500], part=", ".join(fs[:25]), moved=moved, others=others, context=context, diff=diff, lens=lens)
+        reply = await ask(config, prompt, role, max_turns=12, max_tokens=config.review_pipeline_tokens)
         summaries.extend(re.findall(r"(?im)^\W*SUMMARY:\s*(.+)$", reply))
         return parse_findings(reply) if reply.strip() else None
 
     summaries: list[str] = []
-    replies = await asyncio.gather(*(review(n, fs) for n, fs in groups))
+    replies = await asyncio.gather(*(review(n, fs, lens) for n, fs in groups for _, lens in lenses))
     review_tokens = sum(_spent_log)
     if all(r is None for r in replies):
         yield "notice", "The reviewer gave no answer; reviewing without the pipeline"
         return  # an empty answer is a failure, not "no defects": the normal review loop takes over
     found = [f for part in replies if part for f in part]
     found = merge_duplicates(sorted(found, key=lambda f: SEVERITY_ORDER[f.severity]))
+
+    if config.review_gap_pass and len(groups) == 1 and len(lenses) >= 3 and whole.count("\n") >= GAP_MIN_LINES:
+        yield "notice", "A last reviewer hunts for what the others missed"
+        reported = "\n".join(f"- {f.severity} {f.where} {f.what}" for f in found) or "(nothing)"
+        extra_found = await review("the whole change", files, GAP_LENS.format(found=reported)) or []
+        found = merge_duplicates(sorted([*found, *extra_found], key=lambda f: SEVERITY_ORDER[f.severity]))
+        review_tokens = sum(_spent_log)
+
     await fix_paths(found, cwd)
     to_check, extra = found[:MAX_VERIFIED], found[MAX_VERIFIED:]  # past the cap a finding stays unchecked and is reported as unverified
     if to_check:
-        yield "notice", f"Verifying {len(to_check)} finding(s) in one pass; the verifier tries to refute each"
+        yield "notice", f"Verifying {len(to_check)} finding(s) in one pass; the verifier tries to refute and score each"
         claims = "\n".join(f"{n}. {f.severity} | {f.where} | {f.what} | fix: {f.fix or '(none)'}" for n, f in enumerate(to_check, 1))
-        reply = await ask(config, VERIFIER_PROMPT.format(claims=claims), role, max_turns=6, max_tokens=config.review_pipeline_tokens, disabled_skills=["code-review"])
+        reply = await ask(config, VERIFIER_PROMPT.format(claims=claims), role, max_turns=10, max_tokens=config.review_pipeline_tokens, disabled_skills=["code-review"])
         for n, (f, v) in enumerate(zip(to_check, parse_verdicts(reply, len(to_check)).values()), 1):
-            f.verdict, f.evidence, f.reach, f.temporary, f.at_head, f.same_as = v
+            f.verdict, f.evidence, f.reach, f.temporary, f.at_head, f.same_as, f.confidence = v
+            if f.verdict != "REJECTED" and f.confidence < config.review_min_confidence:
+                f.verdict, f.evidence = "REJECTED", f"low confidence ({f.confidence}/100): {f.evidence}"
     for f in extra:
         f.verdict = "UNCHECKED"
     found = merge_same_cause(to_check) + extra
+    late = check_task.result() if check_task and check_task.done() and not checks and not check_task.cancelled() else checks
+    if check_task and not check_task.done():
+        check_task.cancel()
+    found = check_findings(late, files) + found  # a failing typecheck on a changed file needs no model to confirm
+    review_memory.remember(cwd, [(f.where, f.what, f.evidence) for f in found if f.verdict == "REJECTED" and not f.evidence.startswith("low confidence")])
     confirmed = sum(f.verdict == "CONFIRMED" for f in found)
     rejected = sum(f.verdict == "REJECTED" for f in found)
     verify_tokens = sum(_spent_log) - review_tokens
     yield "notice", f"Verified: {confirmed} confirmed, {rejected} rejected, {len(found) - confirmed - rejected} unverified"
-    yield "notice", f"Tokens: reviewer {review_tokens:,} + verifier {verify_tokens:,} = {review_tokens + verify_tokens:,}"
-    yield "answer", frame(format_answer(found), summaries[0].strip() if summaries else "", files, moves, deleted)
-    yield "result", compose(found, len(groups))
+    yield "notice", f"Tokens: reviewers {review_tokens:,} + verifier {verify_tokens:,} = {review_tokens + verify_tokens:,}"
+    yield "answer", frame(format_answer(found), summaries[0].strip() if summaries else "", files, moves, deleted, late)
+    yield "result", compose(found, len(groups) * len(lenses))

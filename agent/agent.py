@@ -11,8 +11,8 @@ from agent.events import AgentEvent, AgentEventType
 from agent.root import pick_root
 from agent.grounding import REWRITE_PROMPT, correction_prompt, has_file_code, shows_second_thoughts, verify_references, wants_change
 from agent.learn import Learned
-from agent.review_pipeline import NAMED_SCOPE, run_review_pipeline
-from agent.review import review_changes
+from agent.review_pipeline import run_review_pipeline
+from agent.review import merge_reviews, review_changes
 from agent.routing_policy import EFFORT, REVIEWY, classify, length_hint
 from agent.scope import SWEEP, SWEEP_CHECKPOINT, is_broad, unfinished
 from agent.session import Session
@@ -126,7 +126,7 @@ class Agent:
             self._long_answer = 0
         self._pipelined = False
         self._pipeline_answer = ""
-        if self.config.review_pipeline and self.config.model_role == "default" and REVIEWY.search(message) and not NAMED_SCOPE.search(message):
+        if self.config.review_pipeline and self.config.model_role == "default" and REVIEWY.search(message):
             results = ""
             async for kind, value in run_review_pipeline(self.config, message):
                 if kind == "notice":
@@ -224,6 +224,7 @@ class Agent:
         final_response: str | None = None
         nudged = False
         reviews = 0
+        sent_back = ""  # findings the author was just asked to fix: the next review checks that fix
         grounded_once = False
         rewrote = False
         stop_blocks = 0  # times a stop hook sent the work back; capped so a hook cannot loop forever
@@ -332,18 +333,26 @@ class Agent:
                 reviews += 1
                 yield AgentEvent.notice("Independent review of the diff...")
                 t_review = time.monotonic()
-                res = await review_changes(self.config, message, task.changed_files, task.verification, final_response or "")
+                res = await review_changes(self.config, message, task.changed_files, task.verification, final_response or "", **({"fixing": sent_back} if sent_back else {}))
+                if self.config.second_reviewer and res.verdict in ("PASS", "ISSUES"):
+                    yield AgentEvent.notice("Second reviewer looking for what the first missed...")
+                    second = await review_changes(self.config, message, task.changed_files, task.verification, final_response or "", prior=res.findings or "VERDICT: PASS", role="review2")
+                    res = merge_reviews(res, second)
                 self._review_sec += time.monotonic() - t_review
                 if res.blocked:
                     yield AgentEvent.notice(f"The reviewer had {res.blocked} tool call(s) blocked by hooks or permission rules, so its check was narrower than usual")
                 task.review = {"verdict": res.verdict, "findings": res.findings}
                 self.session.tracer.emit("review", task=task.id, verdict=res.verdict, findings=res.findings[:1500])
-                if res.verdict == "ISSUES" and task.repairs < task.max_repairs:
+                if res.verdict == "ISSUES" and reviews >= self.config.max_reviews:
+                    # the fix itself was reviewed and still has problems: another blind round costs ~50 calls, so the user decides
+                    yield AgentEvent.notice("The review of the fix still found problems (left unfixed):\n" + res.findings)
+                elif res.verdict == "ISSUES" and task.repairs < task.max_repairs:
+                    sent_back = res.findings
                     task.transition(TaskStatus.REPAIRING, "review findings")
                     yield AgentEvent.notice("Reviewer found issues; sending them back for a fix")
                     self.session.context_manager.add_user_message(
                         "An independent reviewer examined your diff and reported these problems:\n\n"
-                        f"{res.findings}\n\nFix each one that is real. If a finding is wrong, say why in one "
+                        f"{res.findings}\n\nFix the HIGH ones that are real; list MEDIUM and LOW ones in your answer instead of fixing them, so the diff stays small. If a finding is wrong, say why in one "
                         "sentence and leave the code alone. Keep changes minimal, then stop."
                     )
                     continue
@@ -408,7 +417,7 @@ class Agent:
             if limit and self._calls_used >= limit:
                 async for ev in self._wrap_up(
                     task, f"Call budget reached ({limit} tool rounds)",
-                    f"The {limit}-round budget for this read-only request is spent (the user can type /more to allow 10 more)",
+                    f"The {limit}-round budget for this request is spent (the user can type /more to allow 10 more)",
                 ):
                     yield ev
                 self._budget_hit = False  # the answer was produced; this is not a token-budget failure
@@ -422,6 +431,11 @@ class Agent:
                         f"Budget check: {self._calls_used} of {limit} tool rounds used. Pick the two candidates most likely to be real defects "
                         "and use the remaining rounds, in parallel, to read the code that proves or refutes each. Drop the rest: an unread "
                         "candidate is not a finding. Keep any notes to 5 lines (candidate, file:line, checked or not; no severity)."
+                    )
+                elif not self._read_only:
+                    warning = (
+                        f"Budget check: {self._calls_used} of {limit} tool rounds used. Fix the HIGH items first, batch the remaining "
+                        "edits and checks into parallel calls, and list anything you will not get to so the user can decide."
                     )
                 else:
                     warning = (
@@ -720,9 +734,10 @@ class Agent:
         """Read-only requests (review, explain, find) get a hard cap on tool rounds (model turns that call
         tools; parallel calls in one turn count once): a model that is only reading never has to stop by itself, and 63 calls on a 3-commit review is a cost, not thoroughness.
         Requests that change files and sub-agents are not capped here (they have turn and token budgets)."""
-        if not self._read_only or self.config.model_role != "default" or not self.config.read_call_budget:
+        budget = self.config.read_call_budget if self._read_only else self.config.write_call_budget
+        if self.config.model_role != "default" or not budget:
             return 0
-        return self._allowance or self.config.read_call_budget  # after /more: exactly that many more calls
+        return self._allowance or budget  # after /more: exactly that many more calls
 
     async def _tidy_if_cache_went_cold(self) -> AsyncGenerator[AgentEvent, None]:
         """The first call after a pause is billed in full because the provider's prompt cache expired.
@@ -753,7 +768,7 @@ class Agent:
         # or AGENTS.md read goes with them), and the rewrite throws away the provider's cache. Claude Code
         # waits until the context is genuinely filling up; so do we (half of the compaction limit), unless
         # the cache has gone cold anyway and the rewrite is free.
-        if not force and cm._latest_usage.total_tokens < 0.5 * cm._limit():
+        if not force and cm._latest_usage.total_tokens < min(0.5 * cm._limit(), self.config.prune_at_tokens):
             return
         if cm.prune_tool_outputs():
             if remind:

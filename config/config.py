@@ -182,11 +182,18 @@ class Config(BaseModel):
     enable_parallel_tasks: bool = True  # expose the parallel_tasks tool (off inside workers and sub-agents)
     auto_challenge: bool = False  # a second model argues against risky requests before mew acts (on in the interactive app, --challenge for one-shot)
     auto_scout: bool = True  # non-trivial requests get a cheap read-only investigator pass first (if the profile defines one)
+    auto_review: bool = False  # independent reviewer pass over the real diff before finishing
+    max_reviews: int = 2  # review, one fix, then a review of that fix; whatever the second review finds is shown to the user, not looped back (each blind repair round re-sent a 70k context ~50 times)
     review_pipeline: bool = True  # "review the changes": parallel reviewers per area, then a separate verifier per finding that tries to refute it
     review_pipeline_role: str = "default"  # the fast main model: the slower "review" route took 40s a call
-    review_pipeline_tokens: int = 20_000  # new-work cap for each reviewer; a verifier gets half
-    auto_review: bool = False  # independent reviewer pass over the real diff before finishing
-    max_reviews: int = 2  # a repair after review findings gets looked at again
+    review_pipeline_tokens: int = 40_000  # new-work cap for each reviewer and for the verifier
+    review_lenses: int = 0  # reviewers per review, each with its own angle (behaviour, failures, rules, history); 0 = by diff size and risk, 1 = a single generalist
+    review_backend: Literal["mew", "claude-code"] = "mew"  # claude-code: reviewers and verifier run as read-only `claude -p` sessions on your Claude login
+    review_claude_model: str = ""  # --model for those sessions (sonnet, opus, ...); empty = Claude Code's own default
+    review_run_checks: bool = True  # run the project's typecheck/lint beside the reviewers; a failure on a changed file is a finding
+    review_min_confidence: int = 60  # the verifier scores each claim 0-100; below this it is dropped as not worth the reader's time
+    review_gap_pass: bool = True  # for a big diff, one more reviewer hunts for what the angles all missed
+    second_reviewer: bool = False  # after the reviewer, a second one hunts for what the first missed (doubles review cost)
     check_references: bool = True  # verify file:line citations in the final answer against the tree
     require_read_before_edit: bool = True  # editing a file the agent never read is refused
     auto_verify: bool = True
@@ -194,12 +201,14 @@ class Config(BaseModel):
     verify_timeout_sec: int = 600
 
     max_total_tokens: int = 300_000  # new work per request (uncached input + output; re-sent cached context is free); stops runaway runs
-    tool_output_max_chars: int = 16_000  # per tool result sent to the model
+    tool_output_max_chars: int = 8_000  # per tool result sent to the model
     pricing: dict[str, ModelPrice] = Field(default_factory=dict)  # model id -> price, for cost estimates
 
     max_seconds: float = 1800  # wall-clock budget for one user request
     compact_at_tokens: int = 200_000  # compact earlier than the model window
     read_call_budget: int = 12  # tool rounds (a turn of parallel calls counts once) a read-only request (review, explain) may use before it must answer; 0 = no cap
+    write_call_budget: int = 60  # tool rounds a request that changes files may use before it must stop and report; 0 = no cap
+    prune_at_tokens: int = 40_000  # clear old tool results once the prompt passes this (or half the compaction limit, if lower)
     cache_ttl_seconds: int = 300  # a pause longer than this means the provider's prompt cache has expired
     idle_compact_at_tokens: int = 40_000  # after such a pause, summarise history above this size before the first call
     keep_recent_tokens: int = 20_000  # tail kept verbatim when compacting
@@ -230,7 +239,6 @@ class Config(BaseModel):
             return self
         pi = {
             "allowed_tools": ["read_file", "write_file", "edit", "shell"] if self.core_tools_only else ["read_file", "write_file", "edit", "shell", "grep", "glob", "list_dir", "graph", "todos"],  # graph only shows up when graphify-out/graph.json exists
-            "read_call_budget": 0,
             "check_references": False,
             "auto_scout": False,
             "enable_parallel_tasks": False,

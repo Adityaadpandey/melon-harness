@@ -99,7 +99,7 @@ def write(n):
 async def test_reviewer_findings_go_back_for_one_fix(repo, monkeypatch):
     calls = []
 
-    async def fake_review(config, request, files, checks, claims=""):
+    async def fake_review(config, request, files, checks, claims="", **kw):
         calls.append(files)
         return ReviewResult("ISSUES", "1. x.py:1 missing guard | evidence: none") if len(calls) == 1 else ReviewResult("PASS", "")
 
@@ -213,6 +213,32 @@ def test_answer_size_limits_are_in_the_prompt_and_the_review_skill(tmp_path):
     assert "Under 120 words" in get_system_prompt(Config(pi_mode=False, cwd=tmp_path), None, [], [])
 
 
+async def test_second_reviewer_sees_the_first_findings_and_its_catch_is_merged(repo, monkeypatch):
+    seen = []
+
+    async def fake_review(config, request, files, checks, claims="", prior="", role="review"):
+        seen.append((role, prior))
+        return ReviewResult("PASS", "") if role == "review" else ReviewResult("ISSUES", "1. x.py:2 off by one | evidence: loop")
+
+    monkeypatch.setattr(agent_mod, "review_changes", fake_review)
+    cfg = Config(pi_mode=False, cwd=repo, approval=ApprovalPolicy.AUTO, auto_verify=False, auto_review=True, second_reviewer=True, max_reviews=1)
+    async with Agent(cfg) as a:
+        a.session.client = ScriptedClient([write("x.py"), text("done"), write("y.py"), text("fixed")])
+        evs = [e async for e in a.run("go")]
+        rep = next(e for e in evs if e.type == AgentEventType.AGENT_END).data["report"]
+        assert [r for r, _ in seen] == ["review", "review2"] and seen[1][1] == "VERDICT: PASS"
+        assert rep["review"]["verdict"] == "ISSUES" and "off by one" in rep["review"]["findings"]
+
+
+def test_merge_keeps_both_reports_and_ignores_a_second_reviewer_that_found_nothing():
+    from agent.review import merge_reviews
+
+    a, b = ReviewResult("ISSUES", "1. a"), ReviewResult("ISSUES", "1. b")
+    assert "1. a" in merge_reviews(a, b).findings and "1. b" in merge_reviews(a, b).findings
+    assert merge_reviews(a, ReviewResult("PASS", "")) is a and merge_reviews(a, ReviewResult("UNPARSED", "x")) is a
+    assert merge_reviews(ReviewResult("PASS", ""), b) is b
+
+
 async def test_pi_mode_playbook_message_does_not_offer_the_use_skill_tool(tmp_path):
     from agent.agent import Agent
     from tests.fakes import ScriptedClient, text
@@ -233,3 +259,19 @@ def test_a_repo_s_own_claude_skill_loads_and_a_quoted_phrase_in_its_description_
     (d / "SKILL.md").write_text('---\nname: motion-audit\ndescription: Use when asked to "improve the animations" of the app.\n---\nbody\n')
     sk = load_skills(Config(cwd=tmp_path))
     assert [s.name for s in match_skills(sk, "please improve the animations on discover")] == ["motion-audit"]
+
+
+async def test_the_fix_is_reviewed_once_and_what_it_still_finds_is_shown_not_looped(repo, monkeypatch):
+    calls = []
+
+    async def fake_review(config, request, files, checks, claims="", **kw):
+        calls.append(kw)
+        return ReviewResult("ISSUES", "1. x.py:1 missing guard | evidence: none")
+
+    monkeypatch.setattr(agent_mod, "review_changes", fake_review)
+    cfg = Config(pi_mode=False, cwd=repo, approval=ApprovalPolicy.AUTO, auto_verify=False, auto_review=True)
+    async with Agent(cfg) as a:
+        a.session.client = ScriptedClient([write("x.py"), text("done"), write("y.py"), text("fixed")])
+        evs = [e async for e in a.run("go")]
+        assert len(calls) == 2 and "missing guard" in calls[1]["fixing"] and "fixing" not in calls[0]
+        assert any("still found problems" in str(e.data) for e in evs)
