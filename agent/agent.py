@@ -802,7 +802,11 @@ class Agent:
         text = todos.render() if todos else ""
         if text and "[ ]" in text and text != self._todos_reminded:
             self._todos_reminded = text
-            self.session.context_manager.add_user_message(f"Task list (still current; old tool results were cleared):\n{text}")
+            # the list is only as current as the last `todos set`: say so, or a list nobody ticked reads as ten open steps
+            self.session.context_manager.add_user_message(
+                "Task list as last set (old tool results were cleared). Steps you already finished but did not tick are "
+                f"still shown open: tick them with `todos` first, then carry on with the rest.\n{text}"
+            )
 
     def _prune(self, remind: bool = False, force: bool = False) -> None:
         cm = self.session.context_manager

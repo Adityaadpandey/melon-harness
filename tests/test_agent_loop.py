@@ -491,7 +491,7 @@ async def test_todo_set_replaces_the_list_in_one_call_and_survives_a_clear(cfg):
         said = [m.content or "" for m in agent.session.context_manager._messages if m.role == "user"]
         assert any("[x] read diff" in c and "[ ] fix bug" in c for c in said)
         agent._remind_todos()  # unchanged list: not repeated
-        assert sum("Task list (still current" in (m.content or "") for m in agent.session.context_manager._messages) == 1
+        assert sum("Task list as last set" in (m.content or "") for m in agent.session.context_manager._messages) == 1
 
 
 async def test_before_tool_hook_exit_2_blocks_the_call_and_after_tool_stderr_reaches_the_model(tmp_path):
