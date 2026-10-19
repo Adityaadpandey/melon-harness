@@ -10,8 +10,8 @@
   <rect width="1200" height="300" rx="20" fill="url(#bg)"/>
   <text x="70" y="128" font-family="Menlo, Consolas, monospace" font-size="32" fill="#ff8fc7">=^0.0^=</text>
   <text x="70" y="212" font-family="Menlo, Consolas, monospace" font-size="96" font-weight="700" fill="url(#ink)">melon</text>
-  <text x="300" y="196" font-family="-apple-system, Segoe UI, Helvetica, Arial, sans-serif" font-size="30" fill="#ecebf5">The coding agent that proves its work.</text>
-  <text x="300" y="232" font-family="-apple-system, Segoe UI, Helvetica, Arial, sans-serif" font-size="20" fill="#9a98b0">verify · review · ground · and never send a token twice</text>
+  <text x="400" y="196" font-family="-apple-system, Segoe UI, Helvetica, Arial, sans-serif" font-size="30" fill="#ecebf5">The coding agent that proves its work.</text>
+  <text x="400" y="232" font-family="-apple-system, Segoe UI, Helvetica, Arial, sans-serif" font-size="20" fill="#9a98b0">verify · review · ground · and never send a token twice</text>
   <g font-family="Menlo, Consolas, monospace" font-size="17" text-anchor="middle">
     <rect x="70" y="252" width="150" height="30" rx="15" fill="#2a2147"/><text x="145" y="272" fill="#ff8fc7">fast</text>
     <rect x="236" y="252" width="150" height="30" rx="15" fill="#2a2147"/><text x="311" y="272" fill="#c3a6ff">cheap</text>
