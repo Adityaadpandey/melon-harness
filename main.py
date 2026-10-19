@@ -208,12 +208,11 @@ class CLI:
         parts.append(model)
         if sess:
             used = sess.context_manager.context_used()
-            window = sess.context_manager.context_window
+            window = sess.client.registry.get(self.config.model_name).context_length  # what the agent compacts against
             if used:
                 parts.append(f"ctx {context_bar(100 * used / window, 12)}  {used / 1000:.0f}k/{window / 1000:.0f}k")
             u = summarize_usage(sess.tracer.events, self.config.pricing)
             if u["calls"]:
-                parts.append(f"↑{u['prompt_tokens'] / 1000:.0f}k ↓{u['completion_tokens'] / 1000:.1f}k  {u['cache_hit_pct']:.0f}% cached")
                 if u["est_cost_usd"] is not None:
                     parts.append(f"${u['est_cost_usd']}")
             if self.config.sandbox != "off":
@@ -706,7 +705,7 @@ class CLI:
             cm = self.agent.session.context_manager
             used, limit = cm.context_used(), int(cm._limit())
             cleared = sum(1 for m in cm._messages if m.pruned_at)
-            console.print(f"\n[bold]Context[/bold]  {used:,} / {limit:,} tokens before compaction ({used * 100 // max(limit, 1)}%), window {cm.context_window:,}")
+            console.print(f"\n[bold]Context[/bold]  {used:,} / {limit:,} tokens before compaction ({used * 100 // max(limit, 1)}%), window {self.agent.session.client.registry.get(self.config.model_name).context_length:,}")
             by_role: dict[str, int] = {}
             for m in cm._messages:
                 by_role[m.role] = by_role.get(m.role, 0) + (m.token_count or 0)

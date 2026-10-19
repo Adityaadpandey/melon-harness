@@ -182,9 +182,14 @@ class Screen:
         self.status = Window(_Pane(self._status, self.scroll, on_mouse=lambda ev: self._mouse_beyond(ev, -1)), height=lambda: Dimension.exact(self._status_render()[1]))
         self.sections = [Window(_Pane(lambda k=k: self._section(k), self.scroll, on_mouse=self._mouse_elsewhere), wrap_lines=False, style=f"bg:{BG_PANEL}", height=Dimension(weight=1)) for k in ("agents", "read", "write", "cmd")]
         rule = lambda: Window(height=1, char="─", style=f"fg:{RULE} bg:{BG_PANEL}")
+        # only sections that have something are drawn, so a quiet panel is not four empty boxes
+        shown = []
+        for k, w in enumerate(self.sections):
+            shown += [ConditionalContainer(rule(), filter=Condition(lambda k=k: self._has(k) and any(self._has(j) for j in range(k)))),
+                      ConditionalContainer(w, filter=Condition(lambda k=k: self._has(k)))]
         side = VSplit([
             Window(width=1, char="│", style=f"fg:{RULE}"),
-            HSplit([self.sections[0], rule(), self.sections[1], rule(), self.sections[2], rule(), self.sections[3]], width=SIDE_WIDTH, style=f"bg:{BG_PANEL}"),
+            HSplit(shown, width=SIDE_WIDTH, style=f"bg:{BG_PANEL}"),
         ])
         wide = Condition(lambda: self._side_on(_size()[0]))
         header = Window(_Pane(self._header, self.scroll, on_mouse=lambda ev: self._mouse_beyond(ev, 1)), height=1, style=f"bg:{BG_BOX}")
@@ -204,6 +209,10 @@ class Screen:
         self.sel, self.anchor, self._dragging, self._edge = None, None, False, 0
 
     # -- layout helpers ------------------------------------------------
+    def _has(self, k: int) -> bool:
+        t = self.tui
+        return bool((t.agents or t.agent_log, t.read_files, t.written, t.commands)[k])
+
     def _side_on(self, cols: int) -> bool:
         t = self.tui
         self._side_seen = self._side_seen or bool(t.read_files or t.written or t.commands or t.agents or t.agent_log)
@@ -396,6 +405,7 @@ class Screen:
     # -- panes ---------------------------------------------------------
     def _transcript(self):
         self.console.width = self._main_width(_size()[0])  # follows terminal resizes
+        self.tui.side_panel = self._side_on(_size()[0])
         if self._dragging and self._edge and self.sel:  # holding the pointer at an edge: keep scrolling and stretch the selection with it
             self.scroll(2 * self._edge)
             info = self.main.render_info
@@ -439,7 +449,7 @@ class Screen:
             c.print(Text.assemble((" ? ", f"bold {LAVENDER}"), (q, "bold")))
             for i, opt in enumerate(opts, 1):
                 label, _, why = opt.partition(" — ")  # a choice may carry a one-line explanation after the dash
-                c.print(Text.assemble((f"   [{i}] ", f"bold {CORAL if i == len(opts) else ACCENT}"), (label, f"bold {FG}" if why else FG), (f"  {why}" if why else "", MUTED), ("  (enter)" if i == 1 else "", MUTED)))
+                c.print(Text.assemble((f"   [{i}] ", f"bold {CORAL if i == len(opts) else ACCENT}"), (label, f"bold {FG}" if why else FG), (f"  {why}" if why else "", MUTED), ("  ⏎" if i == 1 else "", MUTED)))
         out = c.file.getvalue().rstrip("\n") + "\n" + self._scanner(c.width)
         self._status_cache = (time.monotonic(), out, out.count("\n") + 1)
         return out, out.count("\n") + 1

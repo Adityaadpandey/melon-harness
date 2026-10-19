@@ -112,7 +112,7 @@ KIND_COLOR = {
     "edit": AMBER, "write_file": AMBER,
     "shell": LAVENDER,
     "web_search": TEAL, "web_fetch": TEAL,
-    "memory": MINT, "todos": MINT, "use_skill": MINT,
+    "memory": MINT, "todos": MINT, "ask_user": LAVENDER, "use_skill": MINT,
 }
 
 
@@ -135,6 +135,9 @@ def tool_parts(name: str, args: dict[str, Any], cwd: Path | None) -> tuple[str, 
     if name.startswith("subagent_"):
         goal = str(args.get("goal", ""))
         return f"{agent_title(name[len('subagent_'):])} agent", goal[:70] + ("…" if len(goal) > 70 else "")
+    if name == "ask_user":
+        qs = args.get("questions") or []
+        return "Question", (str(qs[0].get("question", "")) if qs and isinstance(qs[0], dict) else "") + (f" (+{len(qs) - 1} more)" if len(qs) > 1 else "")
     key = PRIMARY_ARG.get(name)
     val = args.get(key) if key else None
     if val is None and args:
@@ -287,6 +290,8 @@ def summarize_result(name: str, success: bool, output: str, error: str | None, m
             return "Already read (unchanged)", []
         total, a, b = md.get("total_lines"), md.get("shown_start"), md.get("shown_end")
         n = (b - a + 1) if a and b else total
+        if n is None:
+            n = len(output.splitlines())
         return f"Read {n if n is not None else '?'} lines" + (f" (of {total})" if total and n != total else ""), []
     if name in {"edit", "write_file"}:
         return (output.strip().splitlines() or ["Done"])[0], []
@@ -404,6 +409,7 @@ class TUI:
         self.agent_log: list[dict[str, Any]] = []  # ones that finished this turn
         self.results: deque = deque(maxlen=30)  # full tool results for /expand
         self.last_reply = ""
+        self.side_panel = False  # the side panel is on screen and already lists every file read
         self.fullscreen = False  # a full-screen pane shows the status line, so no Live region
         # what the side panel lists: files read, files written, commands run
         self.read_files: dict[str, int] = {}
@@ -618,6 +624,8 @@ class TUI:
         self.results.append({"label": tool_label(name, args, self.cwd), "success": success, "output": output, "error": error, "diff": diff})
         summary, preview = summarize_result(name, success, output, error, md, exit_code, args)
         is_edit = name in {"edit", "write_file"} and success and diff
+        if self.quiet and success and name == "read_file" and self.side_panel:
+            return  # the panel's READ list shows it
         if self.quiet and not is_edit:
             # `read  src/app.py  ·  Read 40 lines` on a single line; /expand shows the full output
             line = header_text(name, args, self.cwd)
