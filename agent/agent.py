@@ -391,8 +391,10 @@ class Agent:
                     yield AgentEvent.notice("Reviewer found issues; sending them back for a fix")
                     self.session.context_manager.add_user_message(
                         "An independent reviewer examined your diff and reported these problems:\n\n"
-                        f"{res.findings}\n\nFix the HIGH ones that are real; list MEDIUM and LOW ones in your answer instead of fixing them, so the diff stays small. If a finding is wrong, say why in one "
-                        "sentence and leave the code alone. Keep changes minimal, then stop."
+                        f"{res.findings}\n\nFix every finding that is real and sits in code this diff added or changed, whatever its severity: a dead control or a "
+                        "blank page that your change caused is a regression, not a nit. Only defer a finding about code you did not touch, and list it. "
+                        "If a finding is wrong, say why in one sentence and leave the code alone. After the fix, run what proves it (the page, request or test the "
+                        "finding names), not only the typecheck."
                     )
                     continue
 
