@@ -9,6 +9,16 @@
   <img alt="sandbox" src="https://img.shields.io/badge/sandbox-macOS-ffd28f?style=flat-square">
 </p>
 
+<p align="center">
+  <a href="#quick-start">Quick start</a> ·
+  <a href="#mew-in-numbers">Numbers</a> ·
+  <a href="#architecture">Architecture</a> ·
+  <a href="#design-decisions">Design decisions</a> ·
+  <a href="#reviews-and-fixing-what-they-find">Reviews</a> ·
+  <a href="#safety">Safety</a> ·
+  <a href="#not-there-yet">Not there yet</a>
+</p>
+
 # mew
 
 **The coding agent that proves its work.**
@@ -28,26 +38,61 @@ A real session, not a mock-up: the request was judged hard and routed to the str
 said so and failed over, the cost report shows 85% of input cached, and the result is `verified` with a plain note that the passing
 checks do not exercise the changed behaviour.
 
+## mew in numbers
+
+Measured from this repo, not rounded up. Where a figure is an estimate, it says so.
+
+<table>
+<tr>
+<td align="center"><h3>~0.7k</h3>tokens in the system prompt<br><sub>was ~3k, <b>4x smaller</b></sub></td>
+<td align="center"><h3>75%</h3>of input served from cache<br><sub>32-call replay, estimated</sub></td>
+<td align="center"><h3>1.2s</h3>warm search index<br><sub>cold: 13.7s, <b>11x faster</b></sub></td>
+<td align="center"><h3>449</h3>offline tests<br><sub>all passing in ~27s</sub></td>
+</tr>
+<tr>
+<td align="center"><h3>~22%</h3>of tool output still in context<br><sub>last request of the replay vs all ingested</sub></td>
+<td align="center"><h3>85%</h3>input cached in a real session<br><sub>21 calls, see screenshot</sub></td>
+<td align="center"><h3>2</h3>agents must agree<br><sub>a reviewer finds it, a verifier fails to refute it</sub></td>
+<td align="center"><h3>3</h3>independent safety layers<br><sub>tools, shell scan, OS sandbox</sub></td>
+</tr>
+</table>
+
+| | |
+|---|---|
+| Codebase | about 18k lines of Python, plus 5.7k lines of tests in 52 files |
+| Surface | 21 built-in tool files, 19 skills, 7 model roles, 10 hook points, 7 approval modes |
+| Context replay | 32 model calls, 64 tool runs, 453k characters of tool output; the last request carries about 25k tokens |
+| Benchmarks | context replay (free, deterministic), planted-bug review bench, and real-repo tasks in a scratch clone |
+
+How the replay numbers are made: `python -m bench.context_replay` scripts a "model" that makes the same calls in the same order
+whatever the harness does, so any difference between two runs comes from the harness. It needs no API key and gives identical
+numbers every run. Cache reads are estimated from the longest prefix a request shares with the previous one. Only the 75% figure
+and the 22% figure come from it; the 85% figure is from the live provider usage in the screenshot.
+
+The planted-bug review bench is tiny (a handful of cases, two saved runs), so no recall number is claimed. It is there so you can
+measure your own reviewer on your own bugs.
+
 ## Contents
 
-1. [The idea in one picture](#the-idea-in-one-picture)
-2. [Quick start](#quick-start)
-3. [Architecture](#architecture)
-4. [Life of a request](#life-of-a-request)
-5. [Design decisions](#design-decisions) (the part worth reading)
-6. [Context: how mew stays cheap](#context-how-mew-stays-cheap)
-7. [Finding code without reading everything](#finding-code-without-reading-everything)
-8. [Correctness: verify, review, ground](#correctness-verify-review-ground)
-9. [Reviews, and fixing what they find](#reviews-and-fixing-what-they-find)
-10. [Safety](#safety)
-11. [Models and routing](#models-and-routing)
-12. [Memory and learning](#memory-and-learning)
-13. [Parallel agents](#parallel-agents)
-14. [Skills, subagents, profiles](#skills-subagents-profiles)
-15. [Interactive UI](#interactive-ui)
-16. [Extending: MCP, hooks, commands](#extending-mcp-hooks-commands)
-17. [Tests and benchmarks](#tests-and-benchmarks)
-18. [Not there yet](#not-there-yet)
+1. [mew in numbers](#mew-in-numbers)
+2. [The idea in one picture](#the-idea-in-one-picture)
+3. [Quick start](#quick-start)
+4. [Architecture](#architecture)
+5. [Life of a request](#life-of-a-request)
+6. [Design decisions](#design-decisions) (the part worth reading)
+7. [Context: how mew stays cheap](#context-how-mew-stays-cheap)
+8. [Finding code without reading everything](#finding-code-without-reading-everything)
+9. [Correctness: verify, review, ground](#correctness-verify-review-ground)
+10. [Reviews, and fixing what they find](#reviews-and-fixing-what-they-find)
+11. [Safety](#safety)
+12. [Models and routing](#models-and-routing)
+13. [Memory and learning](#memory-and-learning)
+14. [Parallel agents](#parallel-agents)
+15. [Skills, subagents, profiles](#skills-subagents-profiles)
+16. [Interactive UI](#interactive-ui)
+17. [Extending: MCP, hooks, commands](#extending-mcp-hooks-commands)
+18. [Tests and benchmarks](#tests-and-benchmarks)
+19. [Not there yet](#not-there-yet)
 
 ## The idea in one picture
 
@@ -154,6 +199,12 @@ flowchart TB
 | Config | `config/` | Layered config, project trust |
 
 ## Life of a request
+
+<p align="center">
+  <img src="docs/flow.svg" alt="Request flow: classify, scout, edit, verification gate, review, citation check" width="100%">
+</p>
+
+The same flow as a diagram you can follow branch by branch:
 
 ```mermaid
 flowchart LR
@@ -492,7 +543,7 @@ Plus:
   stash). `/undo` restores what the last request changed and removes files it created. Untracked files that existed before are never
   deleted.
 
-Approval modes: `on-request` (default), `auto-edit`, `auto`, `plan` (read-only, ends in a plan), `never`, `yolo`. Shift+Tab cycles them.
+Approval modes: `on-request` (default), `auto-edit`, `auto`, `plan` (read-only, ends in a plan), `never`, `on-failure`, `yolo`. Shift+Tab cycles them.
 
 ## Models and routing
 
