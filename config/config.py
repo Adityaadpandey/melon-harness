@@ -181,6 +181,7 @@ class Config(BaseModel):
     max_parallel_agents: int = 4  # concurrent sub-agents / workers
     enable_parallel_tasks: bool = True  # expose the parallel_tasks tool (off inside workers and sub-agents)
     auto_challenge: bool = False  # a second model argues against risky requests before mew acts (on in the interactive app, --challenge for one-shot)
+    auto_learn: bool = False  # a model reads each reply for corrections and preferences and saves them as lessons (on in the interactive app)
     auto_scout: bool = True  # non-trivial requests get a cheap read-only investigator pass first (if the profile defines one)
     advisor: bool = True  # a parameterless `advisor` tool: a stronger model reads the whole transcript and says what the plan misses (fix runs must consult it)
     advisor_model: str = "deepseek/deepseek-v4-pro"  # same family as the challenger; [routing] advisor = [...] overrides

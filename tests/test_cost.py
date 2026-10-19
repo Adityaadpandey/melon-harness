@@ -220,9 +220,6 @@ def test_learned_lessons_and_edit_history_shape_prompt_and_search(tmp_path):
     L2.record_run(brief, ["src/about.tsx"])  # importing the same session twice adds nothing
     assert len(L2.data["edits"]) == 2 and L2.prior("offline ticket counter")  # a long brief still matches a short search
     assert L2.forget(1).startswith("Never edit") and "Never edit" not in (repo / "AGENTS.md").read_text()
-    assert L2.learn_from("always use pnpm in this repo") and not L2.learn_from("fix the blank line bug")  # a standing rule is learned by itself
-    assert L2.learn_from("no, not a toggle, a system-theme switch", "add a dark mode toggle") and 'add a dark mode toggle' in L2.lessons()[-1]  # a redirect keeps what it corrected
-    assert not L2.learn_from("no")  # too short to be a lesson
 
 
 async def test_changed_file_is_answered_with_a_diff_not_the_whole_file(tmp_path):
@@ -264,3 +261,16 @@ def test_request_size_is_split_by_part_without_keeping_the_text():
             {"role": "assistant", "content": "", "tool_calls": [{"function": {"name": "grep", "arguments": "{}"}}]},
             {"role": "tool", "content": "x" * 100}]
     assert request_chars(msgs) == {"system": 3, "user": 5, "assistant": 0, "tool_calls": 6, "tool_results": 100}
+
+
+async def test_judge_turns_a_models_verdict_into_a_rule_or_nothing():
+    from agent.learn import judge
+    from client.response import StreamEvent, StreamEventType, TextDelta
+
+    class Say:
+        def __init__(self, text): self.text = text
+        async def chat_completion(self, *a, **k):
+            yield StreamEvent(type=StreamEventType.MESSAGE_COMPLETE, text_delta=TextDelta(content=self.text))
+
+    assert await judge(Say("Dark mode follows the system theme; no manual toggle."), "add a dark mode toggle", "Added a toggle", "no, follow the system") == "Dark mode follows the system theme; no manual toggle."
+    assert await judge(Say("NONE"), "add a toggle", "done", "thanks!") == ""

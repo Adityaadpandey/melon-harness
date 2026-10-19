@@ -10,7 +10,7 @@ from agent.brevity import HOLD_CHARS, LONG_ANSWER_WORDS, interim_line
 from agent.events import AgentEvent, AgentEventType
 from agent.root import pick_root
 from agent.grounding import REWRITE_PROMPT, correction_prompt, has_file_code, shows_second_thoughts, verify_references, wants_change
-from agent.learn import CORRECTION, Learned
+from agent.learn import Learned, judge
 from agent import review_fix
 from agent.review_pipeline import run_review_pipeline
 from agent.review import ReviewResult, merge_reviews, review_changes
@@ -104,7 +104,9 @@ class Agent:
         self._scout_error = ""
         self._no_approver = False
         self._playbooks_sent: set[str] = set()  # names whose text is in the conversation; cleared on compaction
-        self._last_request = ""  # the user's previous request: what a "no, not this" is correcting
+        self._last_request = ""  # the user's previous request and the answer it got: what a "no, not this" is about
+        self._last_answer = ""
+        self._learning: asyncio.Task | None = None
         self._unsent = ""  # the request while the review pipeline, scout or challenger runs, before it is in the history
 
     def on_interrupt(self) -> None:
@@ -124,19 +126,25 @@ class Agent:
         self.config.cwd = self._root_hint = root
         return True
 
+    async def _learn_from(self, message: str, before: str, answer: str) -> str:
+        """A model reads the user's reply next to what it replied to; a correction, a "yes, like that" or a stated
+        preference becomes a lesson. Returns the rule saved, or "" when there was nothing to learn."""
+        rule = await judge(self.session.client, before, answer, message)
+        return rule if rule and Learned(self.config.cwd).add_lesson(rule, "auto") else ""
+
     async def run(self, message: str):
         await self.session.hook_system.trigger_before_agent(message)
         if self._adopt_root(pick_root(self.config.cwd, message, self._root_hint)):
             yield AgentEvent.notice(f"Working in {self.config.cwd} (the repo this request is about)")
         yield AgentEvent.agent_start(message)
         self._unsent = message
-        try:
-            if Learned(self.config.cwd).learn_from(message, self._last_request):
-                yield AgentEvent.notice("Learned from that: saved to AGENTS.md (/lessons lists it, /forget removes it)")
-        except Exception:
-            pass  # learning is a bonus
-        if not CORRECTION.match(message.strip()):
-            self._last_request = message  # a correction is not itself something to be corrected later
+        if self._learning and self._learning.done():
+            if self._learning.result():
+                yield AgentEvent.notice(f"Learned: {self._learning.result()} (saved to AGENTS.md; /forget removes it)")
+            self._learning = None
+        if self.config.auto_learn and self._last_request and not self._learning:
+            self._learning = asyncio.create_task(self._learn_from(message, self._last_request, self._last_answer))  # in the background, so the reply is not held up
+        self._last_request = message
         matched = match_skills(self.session.skills, message)
         # a playbook already in the conversation is named, not pasted again (the code-review one is ~1.5k tokens a request)
         playbooks = [p for p in matched if p.name not in self._playbooks_sent]
@@ -458,6 +466,7 @@ class Agent:
             created = [f for f in task.changed_files if f not in (before or {})]
             self.undo_info = {"ref": backup_ref, "files": list(task.changed_files), "created": created}
             self.checkpoints = [*self.checkpoints, {**self.undo_info, "request": message[:80]}][-20:]
+        self._last_answer = final_response or ""
         if final_response and len(final_response.split()) > LONG_ANSWER_WORDS and not REVIEWY.search(message):
             self._long_answer = len(final_response.split())
         await self.session.hook_system.trigger_after_agent(message, final_response)

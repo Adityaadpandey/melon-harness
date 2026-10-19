@@ -969,6 +969,7 @@ def main(
     if effort:
         config.reasoning_effort = effort
     config.auto_challenge = challenge_mode or not (prompt or json_mode or rpc_mode)
+    config.auto_learn = not (prompt or json_mode or rpc_mode)
     if approval:
         config.approval = ApprovalPolicy(approval)
     elif prompt and config.approval == ApprovalPolicy.ON_REQUEST:
