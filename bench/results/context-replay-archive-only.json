@@ -1,0 +1,47 @@
+{
+ "label": "archive-only",
+ "compact_at_tokens": 200000,
+ "budget": 2000000,
+ "runs": [
+  {
+   "requests": 32,
+   "tools_executed": 64,
+   "tool_result_chars_ingested": 452707,
+   "input_tokens_est": 707597,
+   "cached_tokens_est": 531519,
+   "uncached_tokens_est": 176078,
+   "duplicate_result_chars_carried": 0,
+   "last_request_tokens_est": 24904
+  },
+  {
+   "requests": 32,
+   "tools_executed": 64,
+   "tool_result_chars_ingested": 452707,
+   "input_tokens_est": 707597,
+   "cached_tokens_est": 531519,
+   "uncached_tokens_est": 176078,
+   "duplicate_result_chars_carried": 0,
+   "last_request_tokens_est": 24904
+  },
+  {
+   "requests": 32,
+   "tools_executed": 64,
+   "tool_result_chars_ingested": 452707,
+   "input_tokens_est": 707597,
+   "cached_tokens_est": 531519,
+   "uncached_tokens_est": 176078,
+   "duplicate_result_chars_carried": 0,
+   "last_request_tokens_est": 24904
+  }
+ ],
+ "median": {
+  "requests": 32,
+  "tools_executed": 64,
+  "tool_result_chars_ingested": 452707,
+  "input_tokens_est": 707597,
+  "cached_tokens_est": 531519,
+  "uncached_tokens_est": 176078,
+  "duplicate_result_chars_carried": 0,
+  "last_request_tokens_est": 24904
+ }
+}

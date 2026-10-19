@@ -1,0 +1,47 @@
+{
+ "label": "baseline-tight",
+ "compact_at_tokens": 60000,
+ "budget": 2000000,
+ "runs": [
+  {
+   "requests": 32,
+   "tools_executed": 64,
+   "tool_result_chars_ingested": 452322,
+   "input_tokens_est": 744538,
+   "cached_tokens_est": 567566,
+   "uncached_tokens_est": 176972,
+   "duplicate_result_chars_carried": 0,
+   "last_request_tokens_est": 25922
+  },
+  {
+   "requests": 32,
+   "tools_executed": 64,
+   "tool_result_chars_ingested": 452322,
+   "input_tokens_est": 744538,
+   "cached_tokens_est": 567566,
+   "uncached_tokens_est": 176972,
+   "duplicate_result_chars_carried": 0,
+   "last_request_tokens_est": 25922
+  },
+  {
+   "requests": 32,
+   "tools_executed": 64,
+   "tool_result_chars_ingested": 452322,
+   "input_tokens_est": 744538,
+   "cached_tokens_est": 567566,
+   "uncached_tokens_est": 176972,
+   "duplicate_result_chars_carried": 0,
+   "last_request_tokens_est": 25922
+  }
+ ],
+ "median": {
+  "requests": 32,
+  "tools_executed": 64,
+  "tool_result_chars_ingested": 452322,
+  "input_tokens_est": 744538,
+  "cached_tokens_est": 567566,
+  "uncached_tokens_est": 176972,
+  "duplicate_result_chars_carried": 0,
+  "last_request_tokens_est": 25922
+ }
+}

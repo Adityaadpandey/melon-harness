@@ -1,0 +1,22 @@
+[
+ {
+  "case": "pagination",
+  "seconds": 68.7,
+  "tokens": "Tokens: reviewers 801 + verifier 555 = 1,356",
+  "answer": "What the change does: The change drops the `- 1` from the start offset in `paginate`, so the slice now starts at `page * size` instead of `(page - 1) * size`.\n\nNo issues found. The verifier ruled out 1 claim(s).\n\nRead 1 file(s). Not run: typecheck, lint, tests.",
+  "planted": 1,
+  "found": 0,
+  "findings": 0,
+  "noise": 0
+ },
+ {
+  "case": "control",
+  "seconds": 21.9,
+  "tokens": "Tokens: reviewers 667 + verifier 0 = 667",
+  "answer": "What the change does: `total` now returns the built-in `sum(xs)` instead of adding the items up in a manual loop.\n\nNo issues found.\n\nRead 1 file(s). Not run: typecheck, lint, tests.",
+  "planted": 0,
+  "found": 0,
+  "findings": 0,
+  "noise": 0
+ }
+]

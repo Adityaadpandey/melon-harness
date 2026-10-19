@@ -1,0 +1,22 @@
+[
+ {
+  "case": "pagination",
+  "seconds": 42.2,
+  "tokens": "Tokens: reviewers 744 + verifier 526 = 1,270",
+  "answer": "What the change does: The change drops the `- 1` from the start offset in `paginate`, so the page number is now treated as 0-indexed even though the docstring still says 1-indexed.\n\nHIGH src/paging.py:3  `start = page * size` skips the first `size` items on page 1 (`paginate(range(10), 1, 5)` returns items 5-9), and page 0 now returns the first page where it used to return a negative-slice result. The docstring still says \"1-indexed\", so any 1-indexed caller loses its first page and gets the wrong items on every other page. No callers exist in the repo, so any callers are outside it. -> Revert to `start = (page - 1) * size`. If 0-indexing is the intent, change the docstring too, and then check every caller.\n\nRead 1 file(s). Not run: typecheck, lint, tests.",
+  "planted": 1,
+  "found": 1,
+  "findings": 1,
+  "noise": 0
+ },
+ {
+  "case": "missing-auth",
+  "seconds": 38.0,
+  "tokens": "Tokens: reviewers 1,611 + verifier 1,094 = 2,705",
+  "answer": "What the change does: Adds `DELETE /events/:id`, wired straight to `deleteEvent`, so anyone who can reach the server can delete an event.\n\nHIGH src/routes.ts:3  `router.delete('/events/:id', deleteEvent)` omits `requireAuth`, while both sibling routes on lines 1-2 use it. Any unauthenticated caller can delete any event by id. The repo has only this file, so I found no auth in `deleteEvent` or any router-level middleware that would cover it. -> Add `requireAuth` as in the sibling routes. Also add an ownership/role check inside `deleteEvent`, since authentication alone lets any logged-in user delete other people's events.\n\n2 more claim(s) were ruled out by the verifier.\n\nRead 1 file(s). Not run: typecheck, lint, tests.",
+  "planted": 1,
+  "found": 1,
+  "findings": 1,
+  "noise": 0
+ }
+]
