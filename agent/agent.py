@@ -820,6 +820,8 @@ class Agent:
             reader = reg.get("read_file")
             for rel in cm.last_prune["read_paths"]:
                 reader.forget(resolve_path(self.config.cwd, rel))
+            # folder rules (apps/web/AGENTS.md) rode in on an old result that may be gone now: attach them again next time
+            reg.forget_instructions()
             self.session.tracer.emit("prune", **{**cm.last_prune, "read_paths": len(cm.last_prune["read_paths"])})
 
     async def _compact(self) -> bool:
@@ -830,6 +832,7 @@ class Agent:
         if not summary:
             return False
         self.session.tool_registry.epoch += 1  # earlier reads are no longer in context
+        self.session.tool_registry.forget_instructions()  # and neither are the folder rules that came with them
         cm.apply_compaction(summary, cut, get_data_dir() / "transcripts" / f"{self.session.session_id}.jsonl")
         self._remind_todos()
         cm.set_latest_usage(usage)

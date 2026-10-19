@@ -186,7 +186,7 @@ def test_pruning_waits_until_the_context_is_half_full(tmp_path):
     for i in range(8):
         cm.add_assistant_message("", [{"id": f"c{i}", "type": "function", "function": {"name": "grep", "arguments": "{}"}}])
         cm.add_tool_result(f"c{i}", "word " * 20_000)
-    agent.session = type("S", (), {"context_manager": cm, "tool_registry": type("R", (), {"get": lambda self, n: type("Rd", (), {"forget": lambda self, p: None})()})(), "tracer": type("T", (), {"emit": lambda *a, **k: None})()})()
+    agent.session = type("S", (), {"context_manager": cm, "tool_registry": type("R", (), {"get": lambda self, n: type("Rd", (), {"forget": lambda self, p: None})(), "forget_instructions": lambda self: None})(), "tracer": type("T", (), {"emit": lambda *a, **k: None})()})()
     cm.set_latest_usage(TokenUsage(30_000, 10, 30_010))  # under prune_at_tokens: left alone
     agent._prune()
     assert not any(m.pruned_at for m in cm._messages)
@@ -223,3 +223,23 @@ def test_compacted_messages_are_saved_and_the_summary_points_at_them(tmp_path):
     cm.add_user_message("more " + "m" * 2000)
     cm.apply_compaction("SECOND", cm.find_cut(300), log)
     assert not any(json.loads(l)["content"].startswith("# Earlier") for l in log.read_text().splitlines())
+
+
+async def test_folder_rules_come_back_after_a_compaction(tmp_path):
+    (tmp_path / "web").mkdir()
+    (tmp_path / "web" / "AGENTS.md").write_text("WEB RULE: ask before restyling")
+    (tmp_path / "web" / "a.ts").write_text("x")
+    (tmp_path / "web" / "b.ts").write_text("y")
+    cfg = Config(pi_mode=False, cwd=tmp_path, approval=ApprovalPolicy.AUTO, auto_verify=False, keep_recent_tokens=10)
+    async with Agent(cfg) as a:
+        async def fake_compress(cm):
+            return "FOLDED", TokenUsage(1, 1, 2), len(cm._messages)
+
+        a.session.chat_compactor.compress = fake_compress
+        a.session.client = ScriptedClient([call("read_file", {"path": "web/a.ts"}), text("done")])
+        [e async for e in a.run("first")]
+        assert await a._compact()  # the read that carried the rule is folded into the summary
+        a.session.client = ScriptedClient([call("read_file", {"path": "web/b.ts"}, "c2"), text("done")])
+        [e async for e in a.run("second")]
+        results = [m.content for m in a.session.context_manager._messages if m.role == "tool"]
+        assert "WEB RULE" in results[-1]

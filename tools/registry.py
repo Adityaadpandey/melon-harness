@@ -185,6 +185,10 @@ class ToolRegistry:
             if path is not None and (stamp := self._stamp(path)):
                 self._read_state[str(path)] = stamp  # after our own write we know the content too
 
+    def forget_instructions(self) -> None:
+        """The result that carried a folder's AGENTS.md was cleared or compacted: the next touch there attaches it again."""
+        self._instructions_seen.clear()
+
     def _cap_output(self, result: ToolResult, name: str = "") -> None:
         """One tool result must never be able to eat the context: keep the head
         and the tail (errors and summaries usually live at the end)."""
