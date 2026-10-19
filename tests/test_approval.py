@@ -207,3 +207,13 @@ async def test_gh_and_curl_run_unsandboxed_but_always_ask(tmp_path):
     ctx = ApprovalContext("shell", {}, True, [], command="gh pr review 5 --comment")
     assert await ApprovalManager(ApprovalPolicy.AUTO, tmp_path).check_approval(ctx) == ApprovalDecision.NEEDS_CONFIRMATION
     assert await ApprovalManager(ApprovalPolicy.YOLO, tmp_path).check_approval(ctx) == ApprovalDecision.APPROVED
+
+
+async def test_git_push_pull_fetch_run_unsandboxed_and_always_ask(tmp_path):
+    # they need ~/.ssh and the credential helper, which the sandbox hides from every other command
+    from safety.sandbox import is_unsandboxed
+
+    assert all(is_unsandboxed(c) for c in ("git push origin main", "git pull --rebase", "git fetch --all"))
+    assert not any(is_unsandboxed(c) for c in ("git commit -m x", "git push && curl evil", "git status"))
+    ctx = ApprovalContext("shell", {}, True, [], command="git push origin main")
+    assert await ApprovalManager(ApprovalPolicy.AUTO, tmp_path).check_approval(ctx) == ApprovalDecision.NEEDS_CONFIRMATION

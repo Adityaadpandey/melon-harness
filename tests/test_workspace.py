@@ -182,3 +182,30 @@ def test_a_tilde_inside_prose_is_not_the_home_folder(ws):
     assert w.shell_violation("audit the button (~line 97) and ~12 others") is None
     assert w.shell_violation("cat ~/secret") is not None
     assert w.shell_violation("ls ~") is not None
+
+
+def test_a_commit_message_is_prose_not_a_path(tmp_path):
+    ws = Workspace(tmp_path)
+    assert ws.shell_violation("git commit -m 'Add rules from ~ and /Users/x/notes'") is None
+    assert ws.shell_violation('git commit --message="read ~/.ai-agent first"') is None
+    assert ws.shell_violation("git commit -m 'x' && cat /etc/hosts")  # a real path after the message still counts
+
+
+@pytest.mark.skipif(not sandbox.available(), reason="needs macOS sandbox-exec")
+def test_git_commit_works_beside_a_tracked_secret_file_that_stays_unreadable(tmp_path):
+    # lint-staged and git stat every tracked file; a denied stat on apps/web/.env.test failed every commit in tunyt
+    import time
+
+    git = lambda *a: subprocess.run(["git", "-c", "user.name=t", "-c", "user.email=t@t", *a], cwd=tmp_path, capture_output=True)
+    git("init", "-q")
+    (tmp_path / ".env.test").write_text("SECRET=1")
+    (tmp_path / "a.txt").write_text("a")
+    os.utime(tmp_path / ".env.test", (time.time() - 3600,) * 2)
+    git("add", "-Af")
+    git("commit", "-qm", "init")
+    time.sleep(1.1)  # past git's same-second "racy" window, as for any file not touched just now
+    (tmp_path / "a.txt").write_text("b")
+    cfg = Config(cwd=tmp_path)
+    run = lambda cmd: subprocess.run(sandbox.wrap(["/bin/bash", "-c", cmd], cfg), cwd=tmp_path, capture_output=True, text=True)
+    assert run("git stash -q && git stash pop -q && git -c user.name=t -c user.email=t@t commit -qam next").returncode == 0
+    assert run("cat .env.test").returncode != 0

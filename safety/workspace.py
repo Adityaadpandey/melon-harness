@@ -25,6 +25,11 @@ _PATH_RE = re.compile(
 )
 
 
+# the quoted message of `git commit -m "..."` (or tag/merge/stash): prose, not paths.
+# "Add autoApprove rules from ~ and the repo" once got a commit blocked as reaching into home.
+_GIT_MESSAGE = re.compile(r"""(\bgit\b[^;&|]*?\s(?:-m|--message)(?:\s+|=))("(?:[^"\\]|\\.)*"|'[^']*')""")
+
+
 def _real(p: str | Path) -> Path:
     return Path(os.path.realpath(os.path.expanduser(str(p))))
 
@@ -55,6 +60,7 @@ class Workspace:
         workspace. Static analysis only: the OS sandbox is the backstop for
         anything built dynamically ($(...), eval, encoded paths)."""
         base = _real(cwd or self.root)
+        command = _GIT_MESSAGE.sub(r"\1''", command)
         for m in _CD_RE.finditer(command):
             # after `cd /` every relative path ("cat etc/passwd") means something else, so a shell
             # may only move inside the workspace or into a temp dir. Plain `cd` and `cd -` count as leaving.

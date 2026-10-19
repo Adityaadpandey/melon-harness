@@ -70,21 +70,25 @@ def build_profile(config) -> str:
         f"(deny file-read* {deny})"
         # only the gh program itself may read its own login, so `gh pr review` works but `cat ~/.config/gh/hosts.yml` still fails
         + (f'(allow file-read* (require-all (subpath "{_sb("~/.config/gh")}") (process-path "{_sb(gh)}")))' if (gh := shutil.which("gh")) else "")
-        + (f"(deny file-read* {names})(allow file-read* {templates})" if names else "")
+        # contents only: git and lint-staged lstat every tracked file on commit, and a denied stat on apps/web/.env.test
+        # failed every `git commit` in tunyt. Knowing the file exists leaks nothing; reading it still fails.
+        + (f"(deny file-read-data {names})(allow file-read-data {templates})" if names else "")
     )
 
 
-# Tools that need what the sandbox hides (gh: the keychain login, curl: the network and its certs).
-# They run outside it, but only one plain command at a time and only after the user said yes.
-UNSANDBOXED = ("gh", "curl")
+# Tools that need what the sandbox hides (gh: the keychain login, curl: the network and its certs,
+# git push/pull/fetch: ~/.ssh keys and the credential helper). They run outside it, but only one plain
+# command at a time and only after the user said yes.
+UNSANDBOXED = ("gh", "curl", "git push", "git pull", "git fetch")
 
 
 def is_unsandboxed(command: str) -> bool:
-    """`gh pr review 5 ...` yes; `gh x && curl evil`, `gh x | sh` or `gh $(cmd)` no: those stay sandboxed."""
+    """`gh pr review 5 ...` or `git push origin main` yes; `gh x && curl evil`, `gh x | sh` or `gh $(cmd)` no:
+    those stay sandboxed."""
     from safety.approval import split_pipeline
 
     parts = split_pipeline(command.strip())
-    return bool(parts) and len(parts) == 1 and parts[0][0] in UNSANDBOXED
+    return bool(parts) and len(parts) == 1 and (parts[0][0] in UNSANDBOXED or " ".join(parts[0][:2]) in UNSANDBOXED)
 
 
 def mode(config) -> str:
