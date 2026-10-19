@@ -207,8 +207,8 @@ class CLI:
         model = (sess.client.last_model if sess and sess.client.last_model else self.config.model_name)
         parts.append(model)
         if sess:
-            used = sess.context_manager._latest_usage.total_tokens
-            window = sess.client.registry.get(self.config.model_name).context_length
+            used = sess.context_manager.context_used()
+            window = sess.context_manager.context_window
             if used:
                 parts.append(f"ctx {context_bar(100 * used / window, 12)}  {used / 1000:.0f}k/{window / 1000:.0f}k")
             u = summarize_usage(sess.tracer.events, self.config.pricing)
@@ -530,7 +530,7 @@ class CLI:
             self.tui.show_help()
         elif cmd_name == "/compact":
             cm = self.agent.session.context_manager
-            before = cm._latest_usage.total_tokens or cm.estimated_tokens()
+            before = cm.context_used()
             self.tui.start_turn("Compacting")
             ok = await self.agent._compact()
             self.tui.end_turn()
@@ -607,6 +607,11 @@ class CLI:
         elif command == "/clear":
             self.agent.session.context_manager.clear()
             self.agent.session.loop_detector.clear()
+            self.tui.reset()
+            if getattr(self, "screen", None):
+                self.screen.clear()
+            else:
+                console.print("\033[2J\033[3J\033[H", end="", markup=False, highlight=False)
             console.print("[success]Conversation cleared [/success]")
         elif command == "/config":
             console.print("\n[bold]Current Configuration[/bold]")
@@ -699,7 +704,7 @@ class CLI:
             console.print(out or "[dim]No unstaged changes[/dim]", markup=False, highlight=False)
         elif cmd_name == "/context":
             cm = self.agent.session.context_manager
-            used, limit = cm._latest_usage.prompt_tokens, int(cm._limit())
+            used, limit = cm.context_used(), int(cm._limit())
             cleared = sum(1 for m in cm._messages if m.pruned_at)
             console.print(f"\n[bold]Context[/bold]  {used:,} / {limit:,} tokens before compaction ({used * 100 // max(limit, 1)}%), window {cm.context_window:,}")
             by_role: dict[str, int] = {}

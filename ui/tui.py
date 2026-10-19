@@ -411,6 +411,13 @@ class TUI:
         self.commands: list[tuple[str, bool]] = []
         self.touched: dict[str, float] = {}  # "kind:name" -> when it last changed, so the panel can glow
 
+    def reset(self) -> None:
+        """/clear: forget everything shown for the old conversation."""
+        self.todos, self.commands, self.last_reply = [], [], ""
+        self.agents.clear(), self.agent_log.clear(), self.results.clear()
+        self.read_files.clear(), self.written.clear(), self.touched.clear()
+        self._buf, self._first_block = "", True
+
     # -- live region -----------------------------------------------------
     def _live_ok(self) -> bool:
         return not self.fullscreen and self.console.is_terminal and not getattr(self.console, "record", False)

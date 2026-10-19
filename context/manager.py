@@ -148,6 +148,11 @@ class ContextManager:
         only honest number: the last usage on record is the summarizer's own call. Tool schemas are not counted."""
         return count_tokens(self._system_prompt or "", self._model_name) + sum(m.token_count or 0 for m in self._messages)
 
+    def context_used(self) -> int:
+        """Tokens the next prompt carries: what the provider last reported, or the estimate when nothing is on record
+        (a fresh or cleared session)."""
+        return self._latest_usage.total_tokens or self.estimated_tokens()
+
     def needs_compression(self) -> bool:
         return self._latest_usage.total_tokens > self._limit()
 
@@ -343,3 +348,5 @@ class ContextManager:
         self.summary = None
         self.files_read.clear()
         self.files_modified.clear()
+        self._latest_usage = TokenUsage()  # the old prompt size would keep showing in the footer
+        self.last_prune = {}

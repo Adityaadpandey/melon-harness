@@ -196,6 +196,13 @@ class Screen:
         ])
         self.sink.on_write = self._poke
 
+    def clear(self) -> None:
+        """/clear: wipe the transcript and everything cached from it."""
+        self.sink.text, self.sink.nl = "", 0
+        self.sink.gen += 1
+        self._cache = (-1, [], 0, [])
+        self.sel, self.anchor, self._dragging, self._edge = None, None, False, 0
+
     # -- layout helpers ------------------------------------------------
     def _side_on(self, cols: int) -> bool:
         t = self.tui
