@@ -237,6 +237,9 @@ List specific completed actions, including file paths, symbols, behavior changes
 ## CURRENT STATE
 Describe the current working-tree state, relevant files, existing user changes, current branch if known, and whether changes are committed. Never guess repository state.
 
+## FILES AND CODE
+Each file read or changed that still matters: its path, why it matters, and what changed. Copy the code the next session needs verbatim (a changed function, a signature, the exact lines of a fix) rather than describing it; a short snippet beats a paragraph.
+
 ## IN-PROGRESS WORK
 Describe any partial edits, unfinished investigation, commands currently running, or unresolved failures. If none, write "None."
 
