@@ -187,7 +187,7 @@ def test_pruning_waits_until_the_context_is_half_full(tmp_path):
         cm.add_assistant_message("", [{"id": f"c{i}", "type": "function", "function": {"name": "grep", "arguments": "{}"}}])
         cm.add_tool_result(f"c{i}", "word " * 20_000)
     agent.session = type("S", (), {"context_manager": cm, "tool_registry": type("R", (), {"get": lambda self, n: type("Rd", (), {"forget": lambda self, p: None})(), "forget_instructions": lambda self: None})(), "tracer": type("T", (), {"emit": lambda *a, **k: None})()})()
-    cm.set_latest_usage(TokenUsage(30_000, 10, 30_010))  # under prune_at_tokens: left alone
+    cm.set_latest_usage(TokenUsage(90_000, 10, 90_010))  # under prune_at_tokens: left alone
     agent._prune()
     assert not any(m.pruned_at for m in cm._messages)
     cm.set_latest_usage(TokenUsage(150_000, 10, 150_010))
