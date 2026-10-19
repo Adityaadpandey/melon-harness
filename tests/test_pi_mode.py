@@ -41,6 +41,7 @@ def test_pi_read_cuts_at_2000_lines_and_says_where_to_continue():
 
 def test_pi_prompt_is_small_and_lists_only_the_tools_given(tmp_path):
     from prompts.system import get_system_prompt
+    from hooks.hook_system import HookSystem
     from tools.registry import create_default_registry
 
     cfg = Config(cwd=tmp_path)
@@ -97,3 +98,17 @@ def test_machine_wide_skills_are_listed_by_name_and_the_project_s_own_keep_their
     mine, theirs = tmp_path / "skills" / "motion" / "SKILL.md", tmp_path.parent / "elsewhere" / "figma" / "SKILL.md"
     rows = _skill_rows([Skill("motion", "Audit the animations", "", path=mine), Skill("figma", "Work in Figma files", "", path=theirs)], (tmp_path,))
     assert "motion/SKILL.md: Audit the animations" in rows and "figma/SKILL.md" in rows and "Work in Figma" not in rows
+
+
+async def test_pi_mode_attaches_folder_rules_even_after_a_long_read(tmp_path):
+    from hooks.hook_system import HookSystem
+    from tools.registry import create_default_registry
+
+    (tmp_path / "web").mkdir()
+    (tmp_path / "web" / "AGENTS.md").write_text("WEB RULE: ask before restyling")
+    (tmp_path / "web" / "big.ts").write_text("\n".join(f"line {i}" for i in range(5000)))
+    cfg = Config(cwd=tmp_path)
+    reg = create_default_registry(cfg)
+    res = await reg.invoke("read_file", {"path": "web/big.ts"}, tmp_path, HookSystem(cfg))
+    assert "line 1999" in res.output and "line 2001" not in res.output  # the read itself was cut
+    assert "WEB RULE" in res.output

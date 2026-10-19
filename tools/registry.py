@@ -107,12 +107,13 @@ class ToolRegistry:
             elif name in REUSABLE and result.success and call_id:
                 self._answered[key] = (call_id, self._writes)
         self._note_file_state(name, params, cwd, result)
-        if name in {"read_file", "edit", "write_file"} and result.success and not self.config.pi_mode and (path := self._target(params, cwd)):
+        self._cap_output(result, name)
+        # after the cap, so a 2000-line read can't cut the folder's rules off its tail
+        if name in {"read_file", "edit", "write_file"} and result.success and (path := self._target(params, cwd)):
             from agent.instructions import for_path
 
             if extra := for_path(self.config.cwd, path, self._instructions_seen):
                 result.output = f"{result.output}\n\n{extra}"
-        self._cap_output(result, name)
         if self.tracer:
             self.tracer.emit(
                 "tool_call", tool=name, ok=result.success,
