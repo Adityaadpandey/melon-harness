@@ -1011,7 +1011,18 @@ def main(
         if result is None or (cli.last_report or {}).get("status") in bad:
             sys.exit(1)
     else:
-        asyncio.run(cli.run_interactive())
+        # a terminal tab names the running program, which is python; set a title the way Claude Code does,
+        # e.g. "✦ mew · tunyt" (✦ is the prompt glyph, like Claude Code's ✳). The old title is pushed first and popped on exit, so the tab gets its own back.
+        titled = sys.stdout.isatty()
+        if titled:
+            sys.stdout.write(f"\033[22;0t\033]0;✦ mew · {Path(config.cwd).name}\007")
+            sys.stdout.flush()
+        try:
+            asyncio.run(cli.run_interactive())
+        finally:
+            if titled:
+                sys.stdout.write("\033]0;\007\033[23;0t")
+                sys.stdout.flush()
 
 
 if __name__ == "__main__":
