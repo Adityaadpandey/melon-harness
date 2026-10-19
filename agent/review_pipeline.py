@@ -19,6 +19,7 @@ from agent import review_memory, review_target
 from agent.review import _git, build_diff, review_context
 
 MAX_GROUPS = 3
+SPLIT_FILES = 30  # a clipped diff with this many files or fewer stays with one reviewer, who reads the rest with `git diff`
 MAX_VERIFIED = 24  # claims checked per review; past it a finding stays unchecked and is reported as unverified
 VERIFY_BATCH = 6  # claims one verifier reads at a time, so each gets real turns instead of a share of one budget
 SEVERITY_ORDER = {"CRITICAL": 0, "HIGH": 1, "MEDIUM": 2, "LOW": 3}
@@ -152,12 +153,6 @@ CONF is how sure you are the defect is real AND will be hit in practice: 0 a fal
 has no other caller: callers are outside the diff, and the next one gets the wrong answer. Judge it as a senior engineer would.
 CONFIRMED means you read the code that proves it. REJECTED means the code contradicts it or already handles it (say where).
 UNCLEAR means you could not decide with the files available. Nothing else."""
-
-
-def split_lenses(context: str) -> list[tuple[str, str]]:
-    """A big change is cut into areas and every area gets behaviour + approach, plus the rules audit when the repo has rules
-    (the UI guard, "ask before restyling" and friends only get checked if some reviewer is told to check them)."""
-    return [*LENSES[:2], CONTRACT_LENS, *([LENSES[3]] if "PROJECT RULES" in context else [])]
 
 
 def one_reviewer(context: str, security: bool) -> tuple[str, str]:
@@ -663,13 +658,15 @@ async def _run_review(config, request: str, target) -> AsyncGenerator[tuple[str,
     if not files and not moves:
         return
     whole = await build_diff(cwd, files, rev)
-    groups = [("the whole change", files)] if "[diff clipped]" not in whole else split_clipped(files)
+    # a diff past the 40k prompt cap is still one reviewer's job (it reads the rest with `git diff`); only a really wide change
+    # (30+ files) is cut into areas, and then each area gets one all-angle reviewer, not four
+    groups = split_clipped(files) if "[diff clipped]" in whole and len(files) > SPLIT_FILES else [("the whole change", files)]
     if target:
         for note in target.notes:
             yield "notice", f"WARNING scope: {note}"
         if target.commits:
             yield "notice", "Commits covered: " + "; ".join(target.commits[:6]) + (f"; ... ({len(target.commits)} in all)" if len(target.commits) > 6 else "")
-    yield "notice", f"Reviewing {len(files)} changed file(s)" + (f" in {label}" if target else "") + (f" and {len(moves)} moved unchanged" if moves else "") + (f" with {len(groups)} reviewers in parallel" if len(groups) > 1 else "")
+    yield "notice", f"Reviewing {len(files)} changed file(s)" + (f" in {label}" if target else "") + (f" and {len(moves)} moved unchanged" if moves else "")
     role = config.review_pipeline_role
     stayed = await left_behind(cwd, moves)
     _spent_log.clear()
@@ -687,10 +684,11 @@ async def _run_review(config, request: str, target) -> AsyncGenerator[tuple[str,
                + "; ".join(f"{c.command}={'ok' if c.ok else 'FAILED'}" for c in checks) + "\n\n") if checks else ""
     context = checked + review_memory.render(cwd) + review_context(config, request, files)
     context = context + "\n\n" if context else ""
-    lenses = pick_lenses(config, whole, files, context) if len(groups) == 1 else split_lenses(context)
+    lenses = pick_lenses(config, whole, files, context) if len(groups) == 1 else [one_reviewer(context, bool(SECURITY_HINT.search(" ".join(files) + "\n" + whole)))]
     clipped = "[diff clipped]" in whole  # a split diff already multiplies the reviewers
-    if len(lenses) > 1:
-        yield "notice", f"Each reviewer takes one angle: {', '.join(n for n, _ in lenses)}" + (" (rules and playbooks loaded)" if "PROJECT RULES" in context or "PLAYBOOKS" in context else "")
+    if len(groups) * len(lenses) > 1:
+        angles = ", ".join("every angle" if n == "review" else n for n, _ in lenses)
+        yield "notice", f"{len(groups) * len(lenses)} reviewers in parallel" + (f", one per part ({len(groups)} parts)" if len(groups) > 1 else f": {angles}") + (" (rules and playbooks loaded)" if "PROJECT RULES" in context or "PLAYBOOKS" in context else "")
     backend = " through Claude Code" if config.review_backend == "claude-code" else ""
     if backend:
         yield "notice", "Reviewers run as Claude Code sessions (read-only)"
