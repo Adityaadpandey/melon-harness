@@ -888,10 +888,15 @@ class Agent:
         cm.apply_compaction(summary, cut, get_data_dir() / "transcripts" / f"{self.session.session_id}.jsonl")
         self._restore_files(recent)
         self._remind_todos()
-        cm.set_latest_usage(usage)
-        cm.add_usage(usage)
+        # the summarizer's usage is the size of the summary request, not of the context now: /context showed 19,947
+        # after compacting 53k. Estimate the real size until the next model call reports it.
+        after = cm.estimated_tokens()
+        cm.set_latest_usage(TokenUsage(prompt_tokens=after, total_tokens=after))
+        if usage:
+            cm.add_usage(usage)
         await self.session.hook_system.fire(HookTrigger.POST_COMPACT, tokens_before=before, summary=summary)
-        self.session.tracer.emit("compaction", cut=cut, tokens_before=before, summary_tokens=usage.completion_tokens if usage else None)
+        self.session.tracer.emit("compaction", cut=cut, tokens_before=before, tokens_after=after,
+                                 summary_tokens=usage.completion_tokens if usage else None)
         return True
 
     def _is_parallel_safe(self, tool_call: ToolCall) -> bool:

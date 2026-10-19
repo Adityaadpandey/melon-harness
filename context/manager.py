@@ -103,10 +103,8 @@ class ContextManager:
         item = MessageItem(
             role="assistant",
             content=content or "",
-            token_count=count_tokens(
-                content or "",
-                self._model_name,
-            ),
+            # the call arguments count too: an edit or write_file carrying 5k of code is not a 0-token message
+            token_count=count_tokens((content or "") + (json.dumps(tool_calls) if tool_calls else ""), self._model_name),
             tool_calls=tool_calls or [],
         )
 
@@ -144,6 +142,11 @@ class ContextManager:
         # a 1M window doesn't mean 800k tokens of history is a good idea:
         # quality drops and every turn resends it, so cap with compact_at_tokens
         return min(self.context_window * 0.8, self.config.compact_at_tokens)
+
+    def estimated_tokens(self) -> int:
+        """What the next prompt will roughly weigh, before the provider says. Right after a compaction this is the
+        only honest number: the last usage on record is the summarizer's own call. Tool schemas are not counted."""
+        return count_tokens(self._system_prompt or "", self._model_name) + sum(m.token_count or 0 for m in self._messages)
 
     def needs_compression(self) -> bool:
         return self._latest_usage.total_tokens > self._limit()

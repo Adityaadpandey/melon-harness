@@ -265,3 +265,21 @@ def test_recent_files_are_newest_first_and_skip_what_the_tail_still_has(tmp_path
     cm = cm_with_history(tmp_path, n_pairs=4)  # reads f0..f3, four messages per pair
     assert cm.recent_files(12) == ["f2.py", "f1.py", "f0.py"]  # f3 sits in the kept tail
     assert cm.recent_files(16, limit=2) == ["f3.py", "f2.py"]
+
+
+async def test_after_a_compaction_the_context_size_is_the_new_history_not_the_summary_call(tmp_path):
+    # the summary request itself weighed 20k; reporting that as the context size made /context lie after /compact
+    cfg = Config(cwd=tmp_path, approval=ApprovalPolicy.AUTO, auto_verify=False, keep_recent_tokens=10)
+    async with Agent(cfg) as a:
+        async def fake_compress(cm):
+            return "FOLDED", TokenUsage(19_947, 2_519, 22_466), len(cm._messages)
+
+        a.session.chat_compactor.compress = fake_compress
+        a.session.client = ScriptedClient([call("write_file", {"path": "a.ts", "content": "x = 1\n" * 2000}), text("done")])
+        [e async for e in a.run("first")]
+        cm = a.session.context_manager
+        write = next(m for m in cm._messages if m.tool_calls)
+        assert write.token_count > 1000  # the call's arguments are counted, not just its (empty) text
+        assert await a._compact()
+        assert cm._latest_usage.total_tokens == cm.estimated_tokens() != 22_466
+        assert cm.total_usage.completion_tokens >= 2_519  # the summary call is still billed
