@@ -356,9 +356,11 @@ class Agent:
             if checks:
                 task.transition(TaskStatus.VERIFYING, f"{len(checks)} check(s)")
                 yield AgentEvent.notice(f"Verifying: {' && '.join(c for c, _ in checks)}")
-                results = []
-                for cmd, sub in checks:
-                    results.append(await run_check(cmd, self.config.cwd / sub, self.config))
+                results = await self._unless_steered(asyncio.gather(*(run_check(cmd, self.config.cwd / sub, self.config) for cmd, sub in checks)))
+                if results is None:
+                    async for ev in self._back_to_work(task):
+                        yield ev
+                    continue
                 task.verification = [r.to_dict() for r in results]
                 failures = [r for r in results if not r.ok]
 
@@ -387,11 +389,17 @@ class Agent:
                 reviews += 1
                 yield AgentEvent.notice("Independent review of the diff...")
                 t_review = time.monotonic()
-                res = await review_changes(self.config, message, task.changed_files, task.verification, final_response or "", **({"fixing": sent_back} if sent_back else {}))
-                if self.config.second_reviewer and res.verdict in ("PASS", "ISSUES"):
+                res = await self._unless_steered(review_changes(self.config, message, task.changed_files, task.verification, final_response or "", **({"fixing": sent_back} if sent_back else {})))
+                if res and self.config.second_reviewer and res.verdict in ("PASS", "ISSUES"):
                     yield AgentEvent.notice("Second reviewer looking for what the first missed...")
-                    second = await review_changes(self.config, message, task.changed_files, task.verification, final_response or "", prior=res.findings or "VERDICT: PASS", role="review2")
-                    res = merge_reviews(res, second)
+                    second = await self._unless_steered(review_changes(self.config, message, task.changed_files, task.verification, final_response or "", prior=res.findings or "VERDICT: PASS", role="review2"))
+                    res = second and merge_reviews(res, second)
+                if res is None:
+                    self._review_sec += time.monotonic() - t_review
+                    reviews -= 1  # this review was of a diff that is about to change; the final one still gets its turn
+                    async for ev in self._back_to_work(task):
+                        yield ev
+                    continue
                 if self._fix_run and not task.expired():
                     yield AgentEvent.notice("A fresh verifier is trying to prove the fix works (it runs the checks and the findings' triggers in a copy)")
                     fv = await verify_fix(self.config, self.config.review_pipeline_role, self.config.cwd, self._fix_brief, final_response or "", task.changed_files,
@@ -457,6 +465,29 @@ class Agent:
             "review_sec": round(self._review_sec, 1),
         }
         yield AgentEvent.agent_end(final_response, report=report)
+
+    async def _unless_steered(self, work: Awaitable):
+        """Runs a check or a review, but drops it the moment the user types a steering note, so the note is worked on
+        now instead of after a minutes-long typecheck. Example: "the white buttons are still broken" lands mid-review;
+        that review was of a diff about to change, so it stops and the final diff is checked once the note is done.
+        Returns None when dropped."""
+        job = asyncio.ensure_future(work)
+        while not job.done():
+            if self.steering:
+                job.cancel()
+                await asyncio.gather(job, return_exceptions=True)
+                return None
+            await asyncio.wait({job}, timeout=0.25)
+        return job.result()
+
+    async def _back_to_work(self, task: TaskState) -> AsyncGenerator[AgentEvent, None]:
+        if task.status == TaskStatus.VERIFYING:
+            task.transition(TaskStatus.RUNNING, "user steered")
+        yield AgentEvent.notice("Checks paused for your note; the whole diff is checked once it is done")
+        while self.steering:
+            note = self.steering.pop(0)
+            self.session.context_manager.add_user_message(f"[the user added, while you were working:] {note}")
+            yield AgentEvent.notice(f"steering received: {note[:80]}")
 
     async def _agentic_loop(self, task: TaskState) -> AsyncGenerator[AgentEvent, None]:
         if self._pipelined and self._read_only:

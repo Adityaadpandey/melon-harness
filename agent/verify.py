@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import hashlib
 import json
 import os
@@ -191,6 +192,11 @@ async def run_check(command: str, cwd: Path, config) -> CheckResult:
         out, _ = await asyncio.wait_for(proc.communicate(), config.verify_timeout_sec)
         text = out.decode("utf-8", "replace")
         return CheckResult(command, proc.returncode == 0, proc.returncode, loop.time() - t, text[-OUTPUT_TAIL:])
+    except asyncio.CancelledError:
+        # the user steered mid-check: a typecheck of the old diff is not worth finishing, and must not linger
+        with contextlib.suppress(ProcessLookupError):
+            os.killpg(os.getpgid(proc.pid), signal.SIGKILL)
+        raise
     except asyncio.TimeoutError:
         os.killpg(os.getpgid(proc.pid), signal.SIGKILL)
         await proc.wait()

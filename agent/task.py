@@ -39,6 +39,7 @@ _ALLOWED = {
         TaskStatus.FAILED,
     },
     TaskStatus.VERIFYING: {
+        TaskStatus.RUNNING,  # the user steered mid-check: back to work, the final diff is checked later
         TaskStatus.VERIFIED,
         TaskStatus.REPAIRING,
         TaskStatus.VERIFICATION_FAILED,

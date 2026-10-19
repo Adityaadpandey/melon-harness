@@ -151,3 +151,21 @@ async def test_backup_and_undo_restore_edits_and_remove_created_files(tmp_path):
     assert (tmp_path / "a.txt").read_text() == "two (user's unsaved work)\n"
     assert not (tmp_path / "new.txt").exists() and restored == ["a.txt"] and deleted == ["new.txt"] and not skipped
     assert (await backup(tmp_path)) and subprocess.run(["git", "rev-parse", "refs/mew/backup"], cwd=tmp_path).returncode == 0
+
+
+async def test_a_note_typed_mid_check_stops_the_check_and_is_worked_on_now(repo):
+    import time
+
+    # the first check would hang for 30s; the user's note comes in while it runs
+    cfg = cfg_for(repo, verify_commands=["test -f steered.txt || sleep 30"])
+    async with Agent(cfg) as a:
+        a.session.client = ScriptedClient([write("a.txt"), text("done"), write("steered.txt"), text("fixed the buttons too")])
+        t, events, steered = time.monotonic(), [], False
+        async for e in a.run("go"):
+            events.append(e)
+            if e.type == AgentEventType.NOTICE and "Verifying" in str(e.data) and not steered:
+                steered = a.steering.append("the white buttons are broken too") or True
+        rep = final(events)
+        assert time.monotonic() - t < 15
+        assert rep["status"] == "verified" and rep["repairs"] == 0
+        assert "white buttons" in str(a.session.client.requests[2][-1]["content"])
