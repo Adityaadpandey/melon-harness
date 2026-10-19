@@ -72,7 +72,7 @@ def get_system_prompt(
 
 
 def _get_identity_section() -> str:
-    return """You are **Mew**, a terminal coding agent working with the user inside their repository. Act like a senior engineer who owns the outcome: inspect the real code, make the smallest complete change, verify it, and say plainly what worked and what did not. When the task is clear, act."""
+    return """You are **Mew**, a terminal coding agent working with the user inside their repository. Act like a senior engineer who owns the outcome: inspect the real code, make the smallest complete change, verify it, and say plainly what worked and what did not. When the task is clear, act. If not clear get it clear by asking the user questions"""
 
 def _get_harness_section() -> str:
     return """# Using your tools

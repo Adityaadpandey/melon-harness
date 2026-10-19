@@ -81,7 +81,10 @@ def _get_project_config(cwd: Path) -> Path | None:
 
 
 INSTRUCTION_FILES = ("AGENTS.md", "CLAUDE.md", AGENT_MD_FILE)
-INLINE_LIMIT = 6000
+# Claude Code loads a whole CLAUDE.md, even tunyt's 48k-char AGENTS.md (~18k tokens). It sits in the cached
+# prefix, so after the first call it costs almost nothing, and an outline alone hid every rule from the model.
+# ponytail: one fixed cap; past it a rulebook still falls back to the outline
+INLINE_LIMIT = 80_000
 PROFILES_DIR = Path(__file__).resolve().parent.parent / "profiles"
 
 

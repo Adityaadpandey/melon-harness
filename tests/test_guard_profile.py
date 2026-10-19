@@ -67,7 +67,7 @@ def test_verify_rules_select_by_changed_path_and_expand_files(tmp_path):
 
 def test_large_instruction_files_become_an_outline(tmp_path):
     (tmp_path / ".git").mkdir()
-    (tmp_path / "AGENTS.md").write_text("# Rules\n" + "filler line\n" * 800 + "## Server\nmore\n")
+    (tmp_path / "AGENTS.md").write_text("# Rules\n" + "filler line\n" * 8000 + "## Server\nmore\n")
     out = _instructions_for(tmp_path)
     assert "line 1: # Rules" in out and "## Server" in out and "filler" not in out
 
@@ -119,6 +119,13 @@ def test_user_global_and_sibling_instruction_files_are_all_read(tmp_path):
 def test_long_rulebook_keeps_commit_rules_and_follows_imports(tmp_path):
     (tmp_path / ".git").mkdir()
     (tmp_path / "RULES.md").write_text("Commit messages never carry a sign-off line, ever.\n")
-    (tmp_path / "CLAUDE.md").write_text("# Rules\n@RULES.md\n" + "filler line\n" * 800 + "Always ask before writing a spec.\n")
+    (tmp_path / "CLAUDE.md").write_text("# Rules\n@RULES.md\n" + "filler line\n" * 8000 + "Always ask before writing a spec.\n")
     out = _instructions_for(tmp_path, home=tmp_path / "nohome")
     assert "too long to inline" in out and "never carry a sign-off" in out and "ask before writing a spec" in out
+
+
+def test_a_big_agents_md_like_tunyts_goes_in_whole(tmp_path):
+    (tmp_path / ".git").mkdir()
+    (tmp_path / "AGENTS.md").write_text("# Rules\n" + "Never run SQL against prod.\n" * 1700 + "LAST RULE\n")  # ~48k chars
+    out = _instructions_for(tmp_path, home=tmp_path / "nohome")
+    assert "too long to inline" not in out and "LAST RULE" in out
