@@ -30,7 +30,7 @@ class GitTool(Tool):
     name = "git"
     description = (
         "Read-only git history for finding what changed and why: status, diff, log, show, blame, find_change. "
-        "Needs no approval. Changing history (add/commit/checkout/reset) is not available here."
+        "Needs no approval. To add, commit, switch branches, push or pull, run git in the shell tool (`git commit -m ...`)."
     )
     kind = ToolKind.READ
     schema = GitParams
