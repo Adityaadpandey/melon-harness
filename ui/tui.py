@@ -692,9 +692,11 @@ class TUI:
         self.console.print(Panel(body, title=Text(f" {r['label']} ", style=f"bold {FG}"), title_align="left", border_style="border", box=box.ROUNDED))
 
     def turn_summary(self, elapsed: float, usage: dict | None, report: dict | None) -> None:
-        out = Text.assemble(("  ✦ ", ACCENT), (f"{elapsed:.0f}s", f"bold {FG}"))
-        if self.quiet and usage and usage.get("calls"):
-            out.append(f"  ·  {usage['calls']} call{'s' if usage['calls'] != 1 else ''}  ·  {usage['prompt_tokens'] / 1000:.0f}k in, {usage['cache_hit_pct']:.0f}% cached", style=MUTED)
+        took = f"{int(elapsed) // 60}m {int(elapsed) % 60}s" if elapsed >= 60 else f"{elapsed:.0f}s"
+        out = Text.assemble(("  ✦ ", ACCENT), ("Worked for ", MUTED), (took, f"bold {FG}"))
+        if self.quiet and usage and usage.get("calls"):  # like Claude Code: time and output tokens; /cost has the rest
+            tok = usage["completion_tokens"]
+            out.append(f"  ·  ↓ {tok / 1000:.1f}k tokens" if tok >= 1000 else f"  ·  ↓ {tok} tokens", style=MUTED)
             if usage.get("est_cost_usd") is not None:
                 out.append(f"  ·  ${usage['est_cost_usd']}", style=AMBER)
         elif usage and usage.get("calls"):
