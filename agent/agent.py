@@ -802,7 +802,7 @@ class Agent:
         if before > self.config.idle_compact_at_tokens and await self._compact():
             yield AgentEvent.notice(f"Cache had expired: compacted {before // 1000}k of context before the first call")
 
-    FILE_CHARS, FILES_CHARS = 20_000, 60_000  # ~5k tokens a file, ~15k in all, the shape of Claude Code's post-compact budget
+    FILE_CHARS, FILES_CHARS = 40_000, 150_000  # ~10k tokens a file, ~37k in all: a bit past Claude Code's post-compact budget
 
     def _restore_files(self, paths: list[str]) -> None:
         """Put the current text of the files the model was just working in back after a compaction.
@@ -843,9 +843,9 @@ class Agent:
         cm = self.session.context_manager
         # Clearing results early only hurts: the model re-reads what it just lost (and any subagent report
         # or AGENTS.md read goes with them), and the rewrite throws away the provider's cache. Claude Code
-        # waits until the context is genuinely filling up; so do we (half of the compaction limit), unless
+        # waits until the context is genuinely filling up; so do we (three quarters of the compaction limit), unless
         # the cache has gone cold anyway and the rewrite is free.
-        if not force and cm._latest_usage.total_tokens < min(0.5 * cm._limit(), self.config.prune_at_tokens):
+        if not force and cm._latest_usage.total_tokens < min(0.75 * cm._limit(), self.config.prune_at_tokens):
             return
         if cm.prune_tool_outputs():
             if remind:

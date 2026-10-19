@@ -84,11 +84,11 @@ INSTRUCTION_FILES = ("AGENTS.md", "CLAUDE.md", AGENT_MD_FILE)
 # Claude Code loads a whole CLAUDE.md, even tunyt's 48k-char AGENTS.md (~18k tokens). It sits in the cached
 # prefix, so after the first call it costs almost nothing, and an outline alone hid every rule from the model.
 # ponytail: one fixed cap; past it a rulebook still falls back to the outline
-INLINE_LIMIT = 80_000
+INLINE_LIMIT = 90_000
 PROFILES_DIR = Path(__file__).resolve().parent.parent / "profiles"
 
 
-def _outline(text: str, max_lines: int = 45) -> str:
+def _outline(text: str, max_lines: int = 100) -> str:
     rows = [
         f"  line {i}: {line.strip()}"
         for i, line in enumerate(text.splitlines(), 1)

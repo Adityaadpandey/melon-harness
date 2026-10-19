@@ -212,10 +212,10 @@ class Config(BaseModel):
     compact_at_tokens: int = 200_000  # compact earlier than the model window
     read_call_budget: int = 12  # tool rounds (a turn of parallel calls counts once) a read-only request (review, explain) may use before it must answer; 0 = no cap
     write_call_budget: int = 100  # tool rounds a request that changes files may use before it must stop and report; 0 = no cap
-    prune_at_tokens: int = 100_000  # clear old tool results once the prompt passes this (or half the compaction limit, if lower); at 40k a 190-turn tunyt run lived at ~46k and kept re-reading what it had just lost
+    prune_at_tokens: int = 180_000  # clear old tool results once the prompt passes this (or 3/4 of the compaction limit, if lower); at 40k a 190-turn tunyt run lived at ~46k and kept re-reading what it had just lost
     cache_ttl_seconds: int = 300  # a pause longer than this means the provider's prompt cache has expired
-    idle_compact_at_tokens: int = 40_000  # after such a pause, summarise history above this size before the first call
-    keep_recent_tokens: int = 20_000  # tail kept verbatim when compacting
+    idle_compact_at_tokens: int = 150_000  # after such a pause, summarise history above this size before the first call
+    keep_recent_tokens: int = 40_000  # tail kept verbatim when compacting
 
     allowed_tools: list[str] | None = Field(
         None,

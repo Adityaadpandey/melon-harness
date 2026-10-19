@@ -176,7 +176,7 @@ def test_cleared_result_names_the_call_that_made_it(tmp_path):
     assert "read_file" in first and "src/a0.py" in first  # the model knows what to re-run
 
 
-def test_pruning_waits_until_the_context_is_half_full(tmp_path):
+def test_pruning_waits_until_the_context_is_three_quarters_full(tmp_path):
     from client.response import TokenUsage
 
     agent = Agent.__new__(Agent)
@@ -190,7 +190,7 @@ def test_pruning_waits_until_the_context_is_half_full(tmp_path):
     cm.set_latest_usage(TokenUsage(90_000, 10, 90_010))  # under prune_at_tokens: left alone
     agent._prune()
     assert not any(m.pruned_at for m in cm._messages)
-    cm.set_latest_usage(TokenUsage(150_000, 10, 150_010))
+    cm.set_latest_usage(TokenUsage(200_000, 10, 200_010))
     agent._prune()
     assert any(m.pruned_at for m in cm._messages)
 
