@@ -773,7 +773,7 @@ class CLI:
             learned = Learned(self.config.cwd)
             if cmd_name == "/learn":
                 ok = bool(cmd_args) and learned.add_lesson(cmd_args)
-                console.print("[success]Learned. It applies from the next session (the prompt is fixed for this one).[/success]" if ok else "[dim]Usage: /learn <a rule, at least a few words>[/dim]")
+                console.print("[success]Learned, and saved to AGENTS.md. It applies from the next session (the prompt is fixed for this one).[/success]" if ok else "[dim]Usage: /learn <a rule, at least a few words>[/dim]")
             elif cmd_name == "/forget":
                 gone = learned.forget(int(cmd_args)) if cmd_args.strip().isdigit() else None
                 console.print(f"[success]Forgot: {gone}[/success]" if gone else "[dim]Usage: /forget <number from /lessons>[/dim]")

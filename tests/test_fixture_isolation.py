@@ -1,3 +1,4 @@
+from pathlib import Path
 """Three small repos with different stacks, used to prove one project's facts, memory and
 files never leak into another's session."""
 import asyncio
@@ -34,8 +35,8 @@ def test_learned_lessons_stay_in_their_repo(repos, tmp_path):
     Learned(repos["webapp"], base).add_lesson("always run vitest before finishing a change", "user")
     for other in ("service", "gocli"):
         c = Config(cwd=str(repos[other]))
-        assert "vitest" not in Learned(c.cwd, base).prompt_section()
-    assert "vitest" in Learned(repos["webapp"], base).prompt_section()
+        assert not (Path(c.cwd) / "AGENTS.md").is_file() or "vitest" not in (Path(c.cwd) / "AGENTS.md").read_text()
+    assert "vitest" in (repos["webapp"] / "AGENTS.md").read_text()
 
 
 def test_prompt_names_only_the_active_workspace(repos):

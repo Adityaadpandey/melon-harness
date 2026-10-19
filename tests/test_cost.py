@@ -210,11 +210,13 @@ def test_learned_lessons_and_edit_history_shape_prompt_and_search(tmp_path):
     assert not L.add_lesson("too short")  # fewer than four words is not a rule
     L.record_run("Fix the blank line in the event description when no section exists", ["src/about.tsx", "src/gone.tsx"])
     L2 = Learned(repo, base)  # a fresh process reads it back
-    assert "Never edit generated files" in L2.prompt_section()
+    assert "Never edit generated files" in (repo / "AGENTS.md").read_text()  # the lesson lands in AGENTS.md, which the prompt already carries
+    assert L2.prompt_section() == ""  # so it is not shown twice
     boost = L2.prior("event description blank line bug")
     assert boost == {"src/about.tsx": boost["src/about.tsx"]} and boost["src/about.tsx"] > 0.25  # deleted files are never recorded
     assert L2.prior("payment webhook retry") == {}
-    assert L2.forget(1).startswith("Never edit") and L2.prompt_section() == ""
+    assert L2.forget(1).startswith("Never edit") and "Never edit" not in (repo / "AGENTS.md").read_text()
+    assert L2.learn_from("always use pnpm in this repo") and not L2.learn_from("fix the blank line bug")  # a standing rule is learned by itself
 
 
 async def test_changed_file_is_answered_with_a_diff_not_the_whole_file(tmp_path):
