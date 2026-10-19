@@ -265,7 +265,7 @@ class CLI:
 
             while True:
                 try:
-                    user_input = (await inputs.read()).strip()
+                    user_input = (await inputs.read()).strip().removeprefix("▍").strip()  # a line copied from the terminal still carries the prompt glyph: "▍ /learn x" is the command /learn x
                     if not user_input:
                         continue
                     if user_input.startswith(("/", "!")):
