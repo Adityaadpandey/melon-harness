@@ -266,3 +266,21 @@ def test_copy_skips_rail_and_border():
 
     body = lambda i: Screen._body(Fake(), i)
     assert [" ◆ hello world"[slice(*body(0))], " ▎ second line"[slice(*body(1))], "│ boxed text   │"[slice(*body(2))]] == ["hello world", "second line", "boxed text"]
+
+
+async def test_a_question_cancelled_mid_wait_is_forgotten_so_enter_does_not_crash():
+    # Ctrl+C while "What should I do instead?" waited left a cancelled future behind; the next Enter called
+    # set_result on it and prompt_toolkit died with "Exception invalid state"
+    from prompt_toolkit.layout import Window
+    from pathlib import Path
+    from ui.prompt import InputSession
+
+    with create_pipe_input() as inp:
+        s = InputSession(Path("."), [], lambda: [], lambda: "", None, input=inp, output=DummyOutput(), body=Window())
+        for wait in (s.line(), s.choose(3)):
+            task = asyncio.create_task(wait)
+            await asyncio.sleep(0)
+            task.cancel()
+            with pytest.raises(asyncio.CancelledError):
+                await task
+        assert s.line_future is None and s.choice is None

@@ -367,12 +367,22 @@ class InputSession:
         fut = asyncio.get_running_loop().create_future()
         self.choice = (n, fut)
         self.app.invalidate()
-        return await fut
+        try:
+            return await fut
+        finally:
+            if self.choice and self.choice[1] is fut:
+                self.choice = None  # cancelled (Ctrl+C mid-question): the next key must not answer a dead future
 
     async def line(self) -> str:
         """Full-screen: the next line typed, as the answer to a question."""
-        self.line_future = asyncio.get_running_loop().create_future()
-        return await self.line_future
+        fut = self.line_future = asyncio.get_running_loop().create_future()
+        try:
+            return await fut
+        finally:
+            # the turn was cancelled while waiting: forget the question, or the next Enter calls set_result on a
+            # cancelled future and prompt_toolkit dies with "Exception invalid state"
+            if self.line_future is fut:
+                self.line_future = None
 
     async def read(self) -> str:
         if not self.fullscreen:
