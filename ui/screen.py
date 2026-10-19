@@ -136,6 +136,8 @@ class Screen:
         self._gen, self._done_len, self._done, self._done_flat = 0, 0, [], []  # finished lines already parsed, and how much text they cover
         self.sel: tuple[tuple[int, int], tuple[int, int]] | None = None  # (line, column) pairs, anchor then head
         self._dragging = False
+        self._side_seen = False  # the side panel stays hidden until the agent reads, writes, runs or delegates something
+        self._edge = 0  # while dragging: 1 = pointer at/above the top (scroll back), -1 = at/below the bottom, 0 = inside
         self._click = (0.0, None, 0)  # when, where and how many times the last press repeated
         self._copied_at = -99.0
         self.anchor: int | None = None  # line kept in view while scrolled back; None follows new output
@@ -177,15 +179,15 @@ class Screen:
         # the Window keeps the cursor line visible, so parking the cursor on the last line follows
         # the output and parking it higher up holds the view still while new lines arrive below
         self.main = Window(_Pane(self._transcript, self.scroll, self._cursor, self._mouse_main), wrap_lines=False, height=Dimension(weight=1))
-        self.status = Window(_Pane(self._status, self.scroll, on_mouse=self._mouse_elsewhere), height=lambda: Dimension.exact(self._status_render()[1]))
+        self.status = Window(_Pane(self._status, self.scroll, on_mouse=lambda ev: self._mouse_beyond(ev, -1)), height=lambda: Dimension.exact(self._status_render()[1]))
         self.sections = [Window(_Pane(lambda k=k: self._section(k), self.scroll, on_mouse=self._mouse_elsewhere), wrap_lines=False, style=f"bg:{BG_PANEL}", height=Dimension(weight=1)) for k in ("agents", "read", "write", "cmd")]
         rule = lambda: Window(height=1, char="─", style=f"fg:{RULE} bg:{BG_PANEL}")
         side = VSplit([
             Window(width=1, char="│", style=f"fg:{RULE}"),
             HSplit([self.sections[0], rule(), self.sections[1], rule(), self.sections[2], rule(), self.sections[3]], width=SIDE_WIDTH, style=f"bg:{BG_PANEL}"),
         ])
-        wide = Condition(lambda: _size()[0] >= MIN_COLUMNS)
-        header = Window(_Pane(self._header, self.scroll), height=1, style=f"bg:{BG_BOX}")
+        wide = Condition(lambda: self._side_on(_size()[0]))
+        header = Window(_Pane(self._header, self.scroll, on_mouse=lambda ev: self._mouse_beyond(ev, 1)), height=1, style=f"bg:{BG_BOX}")
         margin = Window(width=MARGIN)
         self.body = HSplit([
             header,
@@ -195,8 +197,13 @@ class Screen:
         self.sink.on_write = self._poke
 
     # -- layout helpers ------------------------------------------------
+    def _side_on(self, cols: int) -> bool:
+        t = self.tui
+        self._side_seen = self._side_seen or bool(t.read_files or t.written or t.commands or t.agents or t.agent_log)
+        return cols >= MIN_COLUMNS and self._side_seen
+
     def _main_width(self, cols: int) -> int:
-        return max(40, cols - MARGIN - (SIDE_WIDTH + 1 if cols >= MIN_COLUMNS else 0) - 1)
+        return max(40, cols - MARGIN - (SIDE_WIDTH + 1 if self._side_on(cols) else 0) - 1)
 
     def _main_rows(self) -> int:
         info = self.main.render_info
@@ -313,8 +320,12 @@ class Screen:
         elif t == MouseEventType.MOUSE_MOVE and self._dragging and self.sel:
             self.sel = (self.sel[0], pos)
             self._last_move = time.monotonic()
+            info = self.main.render_info
+            if info:  # parked on the first or last visible row: _transcript keeps scrolling and growing the selection
+                rel = pos[0] - info.vertical_scroll
+                self._edge = 1 if rel <= 0 else -1 if rel >= info.window_height - 1 else 0
         elif t == MouseEventType.MOUSE_UP and self._dragging:
-            self._dragging = False
+            self._dragging, self._edge = False, 0
             if self.sel and self.sel[0] == self.sel[1]:
                 self.sel = None  # a plain click selects nothing
             else:
@@ -326,10 +337,17 @@ class Screen:
     def _mouse_elsewhere(self, ev):
         """A drag that ends over the side panel or input box still finishes and copies."""
         if self._dragging and ev.event_type == MouseEventType.MOUSE_UP:
-            self._dragging = False
+            self._dragging, self._edge = False, 0
             self._copy()
             return None
         return NotImplemented
+
+    def _mouse_beyond(self, ev, edge: int):
+        """The pointer left the transcript while dragging: above it (header) scrolls back, below it (status/input) scrolls forward."""
+        if self._dragging and ev.event_type == MouseEventType.MOUSE_MOVE:
+            self._edge, self._last_move = edge, time.monotonic()
+            return None
+        return self._mouse_elsewhere(ev)
 
     def _copy(self) -> None:
         text = self._selected_text()
@@ -371,7 +389,13 @@ class Screen:
     # -- panes ---------------------------------------------------------
     def _transcript(self):
         self.console.width = self._main_width(_size()[0])  # follows terminal resizes
-        if self._dragging and time.monotonic() - self._last_move > 0.8 and self.sel and self.sel[0] != self.sel[1]:
+        if self._dragging and self._edge and self.sel:  # holding the pointer at an edge: keep scrolling and stretch the selection with it
+            self.scroll(2 * self._edge)
+            info = self.main.render_info
+            if info:
+                row = info.vertical_scroll if self._edge > 0 else info.vertical_scroll + info.window_height - 1
+                self.sel = (self.sel[0], (max(0, row), 0 if self._edge > 0 else 10**6))
+        elif self._dragging and time.monotonic() - self._last_move > 0.8 and self.sel and self.sel[0] != self.sel[1]:
             self._dragging = False  # the release went somewhere we never heard about: finish anyway
             self._copy()
         if not self.sel:
