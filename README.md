@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="docs/banner.svg" alt="mew: the coding agent that proves its work" width="100%">
+  <img src="docs/banner.svg" alt="melon: the coding agent that proves its work" width="100%">
 </p>
 
 <p align="center">
@@ -11,7 +11,7 @@
 
 <p align="center">
   <a href="#quick-start">Quick start</a> ·
-  <a href="#mew-in-numbers">Numbers</a> ·
+  <a href="#melon-in-numbers">Numbers</a> ·
   <a href="#architecture">Architecture</a> ·
   <a href="#design-decisions">Design decisions</a> ·
   <a href="#reviews-and-fixing-what-they-find">Reviews</a> ·
@@ -19,26 +19,26 @@
   <a href="#not-there-yet">Not there yet</a>
 </p>
 
-# mew
+# melon
 
 **The coding agent that proves its work.**
 
-Most agents tell you they are done. mew shows you: the checks that passed, a second model's review of the real diff, and every
+Most agents tell you they are done. melon shows you: the checks that passed, a second model's review of the real diff, and every
 file reference in the answer checked against your tree. Underneath sits one rule: **every token and every tool call should earn its place.**
 
-mew is a terminal harness for Claude, GPT/Codex, DeepSeek and anything else behind an OpenAI-style API. It is fast on big repos
+melon is a terminal harness for Claude, GPT/Codex, DeepSeek and anything else behind an OpenAI-style API. It is fast on big repos
 because it finds code before it reads it, cheap because it never sends the same thing twice, and safe because its guardrails live
 in code, not in a prompt asking the model to behave.
 
 <p align="center">
-  <img src="docs/screenshot.png" alt="mew working on a real repo: side panel, token breakdown, verification and review" width="100%">
+  <img src="docs/screenshot.png" alt="melon working on a real repo: side panel, token breakdown, verification and review" width="100%">
 </p>
 
-A real session, not a mock-up: the request was judged hard and routed to the strong model, that provider hit a rate limit and mew
+A real session, not a mock-up: the request was judged hard and routed to the strong model, that provider hit a rate limit and melon
 said so and failed over, the cost report shows 85% of input cached, and the result is `verified` with a plain note that the passing
 checks do not exercise the changed behaviour.
 
-## mew in numbers
+## melon in numbers
 
 Measured from this repo, not rounded up. Where a figure is an estimate, it says so.
 
@@ -74,13 +74,13 @@ measure your own reviewer on your own bugs.
 
 ## Contents
 
-1. [mew in numbers](#mew-in-numbers)
+1. [melon in numbers](#melon-in-numbers)
 2. [The idea in one picture](#the-idea-in-one-picture)
 3. [Quick start](#quick-start)
 4. [Architecture](#architecture)
 5. [Life of a request](#life-of-a-request)
 6. [Design decisions](#design-decisions) (the part worth reading)
-7. [Context: how mew stays cheap](#context-how-mew-stays-cheap)
+7. [Context: how melon stays cheap](#context-how-melon-stays-cheap)
 8. [Finding code without reading everything](#finding-code-without-reading-everything)
 9. [Correctness: verify, review, ground](#correctness-verify-review-ground)
 10. [Reviews, and fixing what they find](#reviews-and-fixing-what-they-find)
@@ -96,9 +96,9 @@ measure your own reviewer on your own bugs.
 
 ## The idea in one picture
 
-Most harnesses make the model do the hard parts and then hope. mew moves the hard parts into code the model cannot skip.
+Most harnesses make the model do the hard parts and then hope. melon moves the hard parts into code the model cannot skip.
 
-| Problem every agent has | What most do | What mew does |
+| Problem every agent has | What most do | What melon does |
 |---|---|---|
 | Finding the right file | grep around, read a lot | BM25 `search`, `outline`, symbol reads, a read-only **scout** |
 | Re-reading files | send the whole file again | per-file map of lines already seen; a changed file comes back as a **diff** |
@@ -125,7 +125,7 @@ No key needed.
 
 ## Architecture
 
-mew is a handful of layers with one rule between them: **everything the model can do goes through one door, and everything the
+melon is a handful of layers with one rule between them: **everything the model can do goes through one door, and everything the
 harness decides is written to a trace.**
 
 ```mermaid
@@ -252,11 +252,11 @@ The final status is always one of `verified | unverified | verification_failed |
 
 ## Design decisions
 
-The choices that shaped mew, with the reason behind each. Several started as a mistake that showed up in a real session.
+The choices that shaped melon, with the reason behind each. Several started as a mistake that showed up in a real session.
 
 ### 1. Enforce in code, ask in the prompt only for taste
 
-A prompt that says "never read `.env`" is a request. mew puts rules where the model cannot talk its way past them:
+A prompt that says "never read `.env`" is a request. melon puts rules where the model cannot talk its way past them:
 `ToolRegistry.invoke` is the only way to run a tool, and the guard, workspace confinement and approval checks sit in front of
 every call, for the main agent, sub-agents and parallel workers alike.
 *Trade-off:* more code to maintain than a paragraph in a prompt, but a jailbroken or confused model still can't leave the folder.
@@ -301,13 +301,13 @@ far into an answer. Nothing falls over silently, and nothing ends in "the model 
 
 ### 8. Only remember what cannot be invented
 
-Memory stores what *you* told mew and what *verified* runs changed. It does not store the model's opinions about your repo,
+Memory stores what *you* told melon and what *verified* runs changed. It does not store the model's opinions about your repo,
 because those are exactly what drifts and compounds. Lessons are plain text in your `AGENTS.md`, so you can read, edit and commit
 them.
 
 ### 9. Pi mode is the default: fewer rails, simpler agent
 
-mew started with many guards: call caps, aggressive clearing of old results, a scout before every task. Measured against a simple
+melon started with many guards: call caps, aggressive clearing of old results, a scout before every task. Measured against a simple
 agent (seven plain tools, a tiny prompt, files read whole), the guards often cost more than they saved. So **pi mode** is on by
 default, copied from how the [pi](https://github.com/badlogic/pi-mono) coding agent works: a small tool set, no call caps, results
 cleared only near the window, compaction only close to the limit. `--no-pi` brings back the guarded setup (scout, reference check,
@@ -331,10 +331,10 @@ The answer states the review scope (working tree, last 3 commits, PR #42), lists
 says when passing checks don't exercise the change, and labels guesses as `[guess]`. A harness that proves its work has to be
 equally clear about where it couldn't.
 
-## Context: how mew stays cheap
+## Context: how melon stays cheap
 
 The cheapest token is the one never sent. Input tokens dominate cost because every call re-sends the whole conversation, so most of
-mew's savings come from keeping that prefix small and stable.
+melon's savings come from keeping that prefix small and stable.
 
 ```mermaid
 flowchart LR
@@ -355,7 +355,7 @@ flowchart LR
 
 - **Tiny system prompt.** About 0.7k tokens (it was ~3k). Always-on skills add about 450 more.
 - **Prompt caching that actually hits.** Claude calls cache the system prompt and the conversation prefix. The Codex backend only
-  caches when `session_id` and `prompt_cache_key` are sent, so mew sends both. A model that isn't caching triggers a warning, and
+  caches when `session_id` and `prompt_cache_key` are sent, so melon sends both. A model that isn't caching triggers a warning, and
   `/cost` says why a miss happened (idle gap, model changed, prefix changed).
 - **Incremental reads.** Only new lines, or a diff since the last copy the model saw.
 - **Output caps and archive.** Over-broad `grep` collapses into a summary; every result is capped; the full text is recallable.
@@ -440,7 +440,7 @@ numbered advice. Fix runs can't make their first edit until the advisor has been
 
 ## Reviews and fixing what they find
 
-Ask "review my changes", "review my last 3 commits", "review this branch" or "review PR #42" and mew runs a full pipeline modeled
+Ask "review my changes", "review my last 3 commits", "review this branch" or "review PR #42" and melon runs a full pipeline modeled
 on how a careful human team reviews.
 
 ```mermaid
@@ -539,7 +539,7 @@ Plus:
 - **Approvals show a diff**, and what you approve is exactly what gets written: preview and write share one planner. Choices are
   yes / yes and don't ask again / no, and tell me what to do differently (your reply goes to the model).
 - **Atomic writes** for files and sessions.
-- **`/undo`:** before each request mew records the working tree as a commit object (`refs/mew/backup`, nothing touches your index or
+- **`/undo`:** before each request melon records the working tree as a commit object (`refs/mew/backup`, nothing touches your index or
   stash). `/undo` restores what the last request changed and removes files it created. Untracked files that existed before are never
   deleted.
 
@@ -583,7 +583,7 @@ flowchart LR
 
 ## Memory and learning
 
-Per repo, stored outside it. mew keeps only what cannot be invented: what *you* told it, and what *verified* runs changed.
+Per repo, stored outside it. melon keeps only what cannot be invented: what *you* told it, and what *verified* runs changed.
 
 ```mermaid
 flowchart TB
