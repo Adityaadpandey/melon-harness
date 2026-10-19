@@ -129,6 +129,11 @@ class Agent:
             yield AgentEvent.notice(f"Working in {self.config.cwd} (the repo this request is about)")
         yield AgentEvent.agent_start(message)
         self._unsent = message
+        try:
+            if Learned(self.config.cwd).learn_from(message):
+                yield AgentEvent.notice("Learned that rule: saved to AGENTS.md (/lessons lists it, /forget removes it)")
+        except Exception:
+            pass  # learning is a bonus
         matched = match_skills(self.session.skills, message)
         # a playbook already in the conversation is named, not pasted again (the code-review one is ~1.5k tokens a request)
         playbooks = [p for p in matched if p.name not in self._playbooks_sent]
