@@ -29,6 +29,9 @@ class UseSkillTool(Tool):
         if not skill:
             return ToolResult.error_result(f"Unknown skill '{p.name}'. Available: {', '.join(skills) or 'none'}")
         if not p.section:
+            # a folder skill points at its own files ("see references/forms.md"); without the folder the model guesses paths
+            if skill.path and skill.path.name == "SKILL.md":
+                return ToolResult.success_result(f"Base directory for this skill: {skill.path.parent}\n\n{skill.body}")
             return ToolResult.success_result(skill.body)
 
         if not skill.canonical:

@@ -388,7 +388,7 @@ def _has_sources(cwd, at_least: int) -> bool:
 
 def _target_label(name: str, params: dict) -> str:
     """Short label for what a call looked at, for the token cost breakdown."""
-    for key in ("symbol", "path", "pattern", "query", "command", "op", "goal"):
+    for key in ("symbol", "path", "pattern", "query", "command", "op", "goal", "name"):  # name: which skill use_skill loaded
         v = params.get(key)
         if isinstance(v, str) and v:
             base = params.get("path") if key in ("symbol", "pattern") and isinstance(params.get("path"), str) else None
