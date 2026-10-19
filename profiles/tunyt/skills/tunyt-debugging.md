@@ -21,7 +21,7 @@ Discipline, in order. These are not optional:
 | HTTP 4xx/5xx from API | server-http | find the `requestId`/log line; error body is sanitized by design | "Server-HTTP lane" |
 | Response OK but async effect missing (email, notification, AI draft, refund) | worker | is the worker process up? `pnpm dev` alone does NOT run jobs; check queue + kill-switch (10 respawns/min) | "Worker lane" |
 | Everything slow at once, unrelated tables stall equally | database | instance saturation, not one slow query: ask user for `pg_stat_statements` | "Database lane" |
-| Web page broken/hydration/build | web | `rm -rf apps/web/.next` after branch switch; `pnpm typecheck` checks app AND `src/sw` | "Web lane" |
+| Web page broken/blank/won't load/hydration/build | web | repro at runtime first: `curl -sIL --max-redirs 5 http://localhost:3000/<path>` (redirect loop? 500?), read the `pnpm dev` log, then grep `apps/web/next.config.*` and `src/proxy.ts`/middleware for redirects of that path. `rm -rf apps/web/.next` after branch switch; `pnpm typecheck` checks app AND `src/sw` | "Web lane" |
 | CRM redirected to /login | crm | cookie + proxy | "CRM lane" |
 | Container down / 502 | infra | `docker service ls/ps` | "Infra lane" |
 | Green deploy, prod broken | post-deploy | nginx change? migration not run? worker crash-looping while API healthy? | "Post-deploy lane" |
