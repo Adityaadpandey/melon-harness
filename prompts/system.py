@@ -246,6 +246,12 @@ List only tasks still required to satisfy the original request. Include checks t
 ## NEXT STEP
 Give the single immediate action the next session should take first. Be concrete and avoid restarting completed investigation without a reason.
 
+## USER MESSAGES
+List every message the user wrote (not tool results, not harness notices like budget checks or playbooks), oldest first. Copy lists, file:line references, URLs and constraints verbatim; a pasted list of 10 issues keeps all 10. Short chatter ("pls cont") can be one line.
+
+## ERRORS AND FIXES
+Each error or reviewer finding hit so far, what caused it, and how it was fixed or why it was left. Include user corrections ("that page still does not load").
+
 ## KEY CONTEXT
 Preserve constraints, user choices, relevant discoveries, test commands and results, failed approaches, safety/permission boundaries, and assumptions that remain uncertain.
 
