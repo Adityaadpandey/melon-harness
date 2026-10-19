@@ -115,6 +115,38 @@ def _house_rules(text: str, limit: int = 1500) -> str:
     return "\n".join(hits)[:limit]
 
 
+TASTE_HEAD = re.compile(r"^# Taste \(Continuously Learned.*?\n|^\[cmd\]:.*\n|^See \[[^\]]*\](\([^)]*\))?\s*\n", re.M)
+
+
+def taste_files(d: Path) -> list[Path]:
+    """Command Code's learned preferences in a folder: .commandcode/taste/taste.md plus one per topic
+    (design/taste.md, ui/taste.md, ...). The top file only links to the topic ones, so all are read."""
+    t = d / ".commandcode" / "taste"
+    return [f for f in [t / "taste.md", *sorted(t.glob("*/taste.md"))] if f.is_file()]
+
+
+def taste_text(f: Path) -> str:
+    """A taste file minus the boilerplate header and the "See [design/taste.md]" pointers."""
+    try:
+        return TASTE_HEAD.sub("", f.read_text(encoding="utf-8", errors="replace")).strip()
+    except OSError:
+        return ""
+
+
+def _taste_for(dirs: list[Path], home: Path) -> str | None:
+    """Taste from the repo folders, then the user's global ones (Command Code's and mew's own).
+    It is learned, not written down, so it ranks below AGENTS.md / CLAUDE.md and the user's request."""
+    blocks = []
+    for d in [*dirs, home, home / ".mew"]:
+        for f in taste_files(d):
+            if text := taste_text(f):
+                blocks.append(f"### {f}\n{text}")
+    if not blocks:
+        return None
+    return ("## Learned taste (remembered preferences, each with a confidence; follow them by default, but the "
+            "user's request and the instruction files above win when they disagree)\n\n" + "\n\n".join(blocks))
+
+
 def _instructions_for(cwd: Path, home: Path | None = None) -> str | None:
     """AGENTS.md / CLAUDE.md from cwd up to the repo root, closest first, then the
     user's own ~/.claude/CLAUDE.md (their commit style, comment style, preferences).
@@ -133,7 +165,9 @@ def _instructions_for(cwd: Path, home: Path | None = None) -> str | None:
         dirs.append(d)
         if (d / ".git").exists():
             break
-    dirs.append((home or Path.home()) / ".claude")
+    repo_dirs = dirs[::-1]  # outermost first, so a subfolder's taste comes after the repo's
+    home = home or Path.home()
+    dirs.append(home / ".claude")
     for d in dirs:
         for name in INSTRUCTION_FILES:
             f = d / name
@@ -153,6 +187,8 @@ def _instructions_for(cwd: Path, home: Path | None = None) -> str | None:
                     "(offset/limit) BEFORE editing. Section map:\n" + _outline(text)
                     + "\nRules that always apply (commits, comments, specs, plans):\n" + _house_rules(text)
                 )
+    if taste := _taste_for(repo_dirs, home):
+        blocks.append(taste)
     return "\n\n".join(blocks) or None
 
 
