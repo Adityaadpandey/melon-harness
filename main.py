@@ -17,6 +17,7 @@ from agent.session import Session
 from config.config import ApprovalPolicy, Config
 from config.loader import load_config
 from config.loader import get_data_dir, load_last_model, save_last_model
+from utils.text import count_tokens
 from ui.prompt import COMMANDS, InputSession, expand_mentions
 from ui.tui import TUI, context_bar, get_console
 from utils.cost import summarize_usage
@@ -528,10 +529,19 @@ class CLI:
         elif command == "/help":
             self.tui.show_help()
         elif cmd_name == "/compact":
+            cm = self.agent.session.context_manager
+            before = cm._latest_usage.total_tokens or cm.estimated_tokens()
             self.tui.start_turn("Compacting")
             ok = await self.agent._compact()
             self.tui.end_turn()
-            console.print("[success]Context compacted[/success]" if ok else "[dim]Nothing to compact yet[/dim]")
+            if not ok:
+                console.print("[dim]Nothing to compact yet[/dim]")
+            else:
+                self._autosave()  # otherwise quitting now and resuming brings the whole uncompacted history back
+                sid = self.agent.session.session_id
+                console.print(f"[success]Context compacted: {before:,} -> ~{cm._latest_usage.total_tokens:,} tokens[/success]")
+                console.print(f"[dim]Summary: first message of {get_data_dir() / 'sessions' / (sid + '.json')}\n"
+                              f"Replaced messages: {get_data_dir() / 'transcripts' / (sid + '.jsonl')}[/dim]", highlight=False)
         elif cmd_name == "/cost":
             u = summarize_usage(self.agent.session.tracer.events, self.config.pricing)
             w = u["cache_waste"]
@@ -692,9 +702,13 @@ class CLI:
             used, limit = cm._latest_usage.prompt_tokens, int(cm._limit())
             cleared = sum(1 for m in cm._messages if m.pruned_at)
             console.print(f"\n[bold]Context[/bold]  {used:,} / {limit:,} tokens before compaction ({used * 100 // max(limit, 1)}%), window {cm.context_window:,}")
-            console.print(f"   system prompt  {len(cm._system_prompt):,} chars")
-            console.print(f"   messages       {cm.message_count} ({cleared} old tool results cleared)")
-            console.print(f"   summary        {'yes, ' + str(len(cm.summary)) + ' chars' if cm.summary else 'none yet'}")
+            by_role: dict[str, int] = {}
+            for m in cm._messages:
+                by_role[m.role] = by_role.get(m.role, 0) + (m.token_count or 0)
+            console.print(f"   system prompt  ~{count_tokens(cm._system_prompt, cm._model_name):,} tokens")
+            console.print(f"   summary        {'~' + format(count_tokens(cm.summary, cm._model_name), ',') + ' tokens' if cm.summary else 'none yet'}")
+            console.print(f"   messages       {cm.message_count}: user ~{by_role.get('user', 0):,}, assistant ~{by_role.get('assistant', 0):,}, "
+                          f"tool results ~{by_role.get('tool', 0):,} tokens ({cleared} old results cleared)")
         elif cmd_name == "/hooks":
             hooks = self.agent.session.hook_system.hooks
             if not hooks:
