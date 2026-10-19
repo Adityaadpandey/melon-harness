@@ -211,7 +211,7 @@ class Config(BaseModel):
     max_seconds: float = 1800  # wall-clock budget for one user request
     compact_at_tokens: int = 200_000  # compact earlier than the model window
     read_call_budget: int = 12  # tool rounds (a turn of parallel calls counts once) a read-only request (review, explain) may use before it must answer; 0 = no cap
-    write_call_budget: int = 60  # tool rounds a request that changes files may use before it must stop and report; 0 = no cap
+    write_call_budget: int = 100  # tool rounds a request that changes files may use before it must stop and report; 0 = no cap
     prune_at_tokens: int = 40_000  # clear old tool results once the prompt passes this (or half the compaction limit, if lower)
     cache_ttl_seconds: int = 300  # a pause longer than this means the provider's prompt cache has expired
     idle_compact_at_tokens: int = 40_000  # after such a pause, summarise history above this size before the first call
