@@ -87,3 +87,24 @@ def test_rulebook_skips_mews_own_section(tmp_path):
     book = rulebook(tmp_path)
     assert "Never read .env" in book and "Ask before UI changes" in book and "Use for any 500" in book
     assert "old lesson under review" not in book
+
+
+def test_apply_writes_the_reviewed_dry_run_without_a_model(tmp_path, monkeypatch):
+    import agent.learn_import as li
+    from agent.learn import Learned
+
+    repo, base = tmp_path / "shop", tmp_path / "data"
+    repo.mkdir()
+    monkeypatch.setattr(li, "Learned", lambda root: Learned(root, base))
+    L = Learned(repo, base)
+    L.add_lesson("this lesson is noise and goes")
+    L.add_lesson("this lesson is fine and stays")
+    saved = L.path.with_suffix(".deep.json")
+    saved.write_text(json.dumps({"drop": ["this lesson is noise and goes"], "add": ["Quote bracketed Next.js paths in shell commands"],
+                                 "why": {}, "candidates": []}))
+    monkeypatch.setattr(li, "deep", lambda *a, **k: (_ for _ in ()).throw(AssertionError("no model call on apply")))
+    li.main(["--repo", str(repo), "--projects", str(tmp_path / "none"), "--history", str(tmp_path / "none.jsonl"), "--deep", "--apply"])
+    assert Learned(repo, base).lessons() == ["this lesson is fine and stays", "Quote bracketed Next.js paths in shell commands"]
+    agents = (repo / "AGENTS.md").read_text()
+    assert "noise" not in agents and "- Quote bracketed Next.js paths" in agents
+    assert not saved.exists()  # used up, so the next run starts fresh

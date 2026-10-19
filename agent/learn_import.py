@@ -24,7 +24,8 @@ saved before that turned out to be noise or repeat the rulebook.
 
     python -m agent.learn_import --repo ~/Devlopment/tunyt                   # quick dry run
     python -m agent.learn_import --repo ~/Devlopment/tunyt --deep            # deep dry run: prints adds and drops
-    python -m agent.learn_import --repo ~/Devlopment/tunyt --deep --apply    # writes them
+    python -m agent.learn_import --repo ~/Devlopment/tunyt --deep --reweigh  # same candidates, new verdict (cheap)
+    python -m agent.learn_import --repo ~/Devlopment/tunyt --deep --apply    # writes the verdict you just reviewed
 """
 from __future__ import annotations
 
@@ -293,17 +294,22 @@ from working with this developer. You get:
   * CURRENT: the numbered lessons in the section now
   * CANDIDATES: rules mined from hundreds of the developer's past sessions, with evidence
 Decide the final section:
-  * drop a CURRENT lesson that the RULEBOOK already says (even in other words), that is vague, that is a fragment
-    or an error message rather than a rule, or that a better candidate replaces
+  * drop a CURRENT lesson that the RULEBOOK already says (even in other words, and above all anything the
+    Absolute Rules cover), that is vague, that is a fragment or an error message rather than a rule, or that a
+    better candidate replaces. Keeping a duplicate of the rulebook is a mistake: the agent reads both.
   * add a CANDIDATE only if the RULEBOOK does not already say it, it is supported by real evidence, and it will
     still be true next month. Merge candidates that say the same thing. Prefer rules with concrete commands/paths.
+  * a lesson is about how an agent should WORK in this repo (asking, scope, verifying, committing, commands,
+    gotchas). How a product feature should behave ("the event AI asks one question at a time") is a product
+    requirement for that feature's spec, not a lesson: leave it out.
   * never add anything that contradicts the RULEBOOK
 The section may hold at most {cap} lessons after your changes. Each new lesson is one plain English line, max 30 words.
 Return JSON {{"drop": [<CURRENT numbers>], "add": ["<lesson>", ...], "why": {{"<lesson or number>": "<few words>"}}}}.
 Nothing else."""
 
 
-async def deep(tasks: list[dict], hooks: Counter, repo: Path, learned: Learned) -> dict:
+async def deep(tasks: list[dict], hooks: Counter, repo: Path, learned: Learned, found: list[dict] | None = None) -> dict:
+    """Mine candidates from every task (skipped when `found` is handed in from a saved run), then weigh them."""
     from client.llm_client import LLMClient
     from config.loader import load_config
 
@@ -316,13 +322,14 @@ async def deep(tasks: list[dict], hooks: Counter, repo: Path, learned: Learned) 
 
     async def mine(i: int, text: str) -> list[dict]:
         async with gate:
-            found = _json(await ask(MAP_PROMPT.format(n=12), text, repo, client), "[", "]")
-            print(f"  chunk {i + 1}/{len(parts)}: {len(found)} candidates")
-            return [c for c in found if isinstance(c, dict) and c.get("rule")]
+            got = _json(await ask(MAP_PROMPT.format(n=12), text, repo, client), "[", "]")
+            print(f"  chunk {i + 1}/{len(parts)}: {len(got)} candidates")
+            return [c for c in got if isinstance(c, dict) and c.get("rule")]
 
     try:
-        print(f"mining {len(parts)} chunks ({sum(map(len, parts)) // 4} tokens)")
-        found = [c for got in await asyncio.gather(*(mine(i, p) for i, p in enumerate(parts))) for c in got]
+        if found is None:
+            print(f"mining {len(parts)} chunks ({sum(map(len, parts)) // 4} tokens)")
+            found = [c for got in await asyncio.gather(*(mine(i, p) for i, p in enumerate(parts))) for c in got]
         current = learned.lessons()
         user = "\n\n".join([
             "RULEBOOK:\n" + rulebook(repo),
@@ -336,7 +343,7 @@ async def deep(tasks: list[dict], hooks: Counter, repo: Path, learned: Learned) 
     drop = sorted({n for n in verdict.get("drop", []) if isinstance(n, int) and 1 <= n <= len(current)})
     room = MAX_LESSONS - (len(current) - len(drop))
     add = [a for a in verdict.get("add", []) if isinstance(a, str)][:max(room, 0)]
-    return {"drop": [current[n - 1] for n in drop], "add": add, "why": verdict.get("why", {})}
+    return {"drop": [current[n - 1] for n in drop], "add": add, "why": verdict.get("why", {}), "candidates": found}
 
 
 def main(argv: list[str] | None = None) -> None:
@@ -347,6 +354,7 @@ def main(argv: list[str] | None = None) -> None:
     ap.add_argument("--apply", action="store_true", help="write to mew's store and AGENTS.md (default: dry run)")
     ap.add_argument("--no-lessons", action="store_true", help="edit history only, skip the model calls")
     ap.add_argument("--deep", action="store_true", help="read every session's story and check lessons against the rulebook")
+    ap.add_argument("--reweigh", action="store_true", help="with --deep: reuse the saved candidates, redo only the final verdict")
     args = ap.parse_args(argv)
     repo = args.repo.expanduser().resolve()
 
@@ -368,16 +376,33 @@ def main(argv: list[str] | None = None) -> None:
         return
 
     if args.deep:
-        result = asyncio.run(deep(old + tasks, hooks, repo, learned))  # oldest first
+        # the dry run is saved next to mew's store, so --apply writes exactly what you reviewed (no new model call)
+        # and --reweigh redoes only the last, cheap step on the same candidates
+        saved_path = learned.path.with_suffix(".deep.json")
+        try:
+            saved = json.loads(saved_path.read_text())
+        except (OSError, ValueError):
+            saved = None
+        if args.apply and saved and not args.reweigh:
+            result = saved
+            print(f"applying the dry run saved in {saved_path}")
+        else:
+            reuse = saved["candidates"] if args.reweigh and saved else None
+            result = asyncio.run(deep(old + tasks, hooks, repo, learned, reuse))  # oldest first
+            saved_path.write_text(json.dumps(result, indent=1))
         for text in result["drop"]:
             print(f"- {text[:160]}")
         for text in result["add"]:
             print(f"+ {text}")
         if args.apply:
             for text in result["drop"]:
-                learned.forget(learned.lessons().index(text) + 1)
+                if text in learned.lessons():
+                    learned.forget(learned.lessons().index(text) + 1)
             added = sum(learned.add_lesson(text, "claude-code") for text in result["add"])
+            saved_path.unlink(missing_ok=True)  # used up: the next run looks at the lessons fresh
             print(f"dropped {len(result['drop'])}, added {added}: {len(learned.lessons())} lessons now")
+        else:
+            print(f"{len(result['candidates'])} candidates and this verdict saved to {saved_path}")
     else:
         rules = _json(asyncio.run(ask(LESSON_PROMPT.format(n=MAX_NEW_LESSONS), evidence(tasks, hooks, learned.lessons()), repo)), "[", "]")
         for r in [r for r in rules if isinstance(r, str)][:MAX_NEW_LESSONS]:
