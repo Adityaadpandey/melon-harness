@@ -143,7 +143,7 @@ async def test_pruning_forgets_only_the_files_it_cleared(tmp_path):
     big = "\n".join(f"line {i} " + "word " * 20 for i in range(300))
     for n in "ab":
         (tmp_path / f"{n}.txt").write_text(big)
-    cfg = Config(pi_mode=False, cwd=tmp_path, approval=ApprovalPolicy.AUTO, auto_verify=False)
+    cfg = Config(pi_mode=False, cwd=tmp_path, approval=ApprovalPolicy.AUTO, auto_verify=False, tool_output_max_chars=16_000)
     async with Agent(cfg) as agent:
         reg, cm = agent.session.tool_registry, agent.session.context_manager
         cm.PRUNE_PROTECT_TOKENS, cm.PRUNE_MINIMUM_TOKENS = 5000, 1  # room for one read: the older one is pruned
@@ -181,12 +181,13 @@ def test_pruning_waits_until_the_context_is_half_full(tmp_path):
 
     agent = Agent.__new__(Agent)
     cfg = Config(cwd=tmp_path)
+    agent.config = cfg
     cm = ContextManager(cfg, None, [])
     for i in range(8):
         cm.add_assistant_message("", [{"id": f"c{i}", "type": "function", "function": {"name": "grep", "arguments": "{}"}}])
         cm.add_tool_result(f"c{i}", "word " * 20_000)
     agent.session = type("S", (), {"context_manager": cm, "tool_registry": type("R", (), {"get": lambda self, n: type("Rd", (), {"forget": lambda self, p: None})()})(), "tracer": type("T", (), {"emit": lambda *a, **k: None})()})()
-    cm.set_latest_usage(TokenUsage(50_000, 10, 50_010))  # the 53k-token prune from the saved session
+    cm.set_latest_usage(TokenUsage(30_000, 10, 30_010))  # under prune_at_tokens: left alone
     agent._prune()
     assert not any(m.pruned_at for m in cm._messages)
     cm.set_latest_usage(TokenUsage(150_000, 10, 150_010))
