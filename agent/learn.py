@@ -20,7 +20,7 @@ from utils.rank import tokenize
 MAX_LESSONS = 30
 MAX_EDITS = 200
 PROMPT_CHARS = 1500
-MIN_OVERLAP = 0.25  # share of the request's words a past request must have in common
+MIN_OVERLAP = 0.5  # share of the search query's words a past request must have in common
 HEADING = "## Learned by mew"
 # a standing rule said in passing: "always use pnpm here", "never touch the migrations", "from now on run the linter"
 RULE = re.compile(r"^(?:(?:please|also|and|btw|note that|remember(?: that)?)[ ,]+)*(?:always|never|from now on|going forward|don'?t ever|do not ever)\b", re.I)
@@ -123,9 +123,9 @@ class Learned:
     # edit history ---------------------------------------------------------------
     def record_run(self, request: str, changed: list[str]) -> None:
         """Call only for runs that ended verified; `changed` are repo-relative paths."""
-        terms = sorted(set(tokenize(request)))[:40]
+        terms = list(dict.fromkeys(tokenize(request)))[:40]  # first-said words carry the subject of a long brief
         files = [f for f in changed if (self.root / f).is_file()][:8]
-        if len(terms) < 3 or not files:
+        if len(terms) < 3 or not files or any(e["terms"] == terms and e["files"] == files for e in self.data["edits"]):
             return
         self.data["edits"].append({"terms": terms, "files": files, "ts": int(time.time())})
         self.data["edits"] = self.data["edits"][-MAX_EDITS:]
@@ -139,7 +139,8 @@ class Learned:
         boosts: dict[str, float] = {}
         for e in self.data["edits"]:
             t = set(e["terms"])
-            overlap = len(q & t) / len(q | t)
+            # share of the query's words, not of both: a 40-word brief would otherwise drown a 5-word search
+            overlap = len(q & t) / len(q)
             if overlap >= MIN_OVERLAP:
                 for f in e["files"]:
                     boosts[f] = min(1.0, boosts.get(f, 0.0) + overlap)

@@ -215,6 +215,10 @@ def test_learned_lessons_and_edit_history_shape_prompt_and_search(tmp_path):
     boost = L2.prior("event description blank line bug")
     assert boost == {"src/about.tsx": boost["src/about.tsx"]} and boost["src/about.tsx"] > 0.25  # deleted files are never recorded
     assert L2.prior("payment webhook retry") == {}
+    brief = "ok so the offline ticket needs to work at the counter, " + " ".join(f"word{i}" for i in range(60))
+    L2.record_run(brief, ["src/about.tsx"])
+    L2.record_run(brief, ["src/about.tsx"])  # importing the same session twice adds nothing
+    assert len(L2.data["edits"]) == 2 and L2.prior("offline ticket counter")  # a long brief still matches a short search
     assert L2.forget(1).startswith("Never edit") and "Never edit" not in (repo / "AGENTS.md").read_text()
     assert L2.learn_from("always use pnpm in this repo") and not L2.learn_from("fix the blank line bug")  # a standing rule is learned by itself
 
