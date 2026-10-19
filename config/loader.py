@@ -183,7 +183,7 @@ def _merge_dicts(base: dict[str, Any], override: dict[str, Any]) -> dict[str, An
     return result
 
 
-def load_config(cwd: Path | None, trust_project: bool = False) -> Config:
+def load_config(cwd: Path | None, trust_project: bool = False, pi_mode: bool | None = None) -> Config:
     cwd = cwd or Path.cwd()
     # Only the harness's own .env (where API_KEY lives). The target repo's .env
     # is never opened: it holds that project's secrets, and loading it would
@@ -218,6 +218,8 @@ def load_config(cwd: Path | None, trust_project: bool = False) -> Config:
 
     if "cwd" not in config_dict:
         config_dict["cwd"] = cwd
+    if pi_mode is not None:  # --pi / --no-pi beat every config file; set here so pi's defaults fill in (or don't) to match
+        config_dict["pi_mode"] = pi_mode
 
     profile = _load_profile(config_dict.get("profile"), cwd)
     profile_text = None

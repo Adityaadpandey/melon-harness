@@ -30,3 +30,11 @@ def test_compaction_leaves_the_cacheable_prefix_alone(tmp_path):
     assert cm.get_messages()[0] == before
     names = [t.name for t in create_default_registry(cfg).get_tools()]
     assert names == [t.name for t in create_default_registry(cfg).get_tools()]
+
+
+def test_no_pi_flag_turns_pi_off_with_its_defaults(tmp_path):
+    from config.loader import load_config
+
+    on, off = load_config(tmp_path), load_config(tmp_path, pi_mode=False)
+    assert on.pi_mode and on.tool_output_max_chars == 51_200
+    assert not off.pi_mode and off.tool_output_max_chars == 8_000 and off.allowed_tools is None

@@ -898,6 +898,7 @@ class CLI:
 @click.option("--challenge", "challenge_mode", is_flag=True, help="Have a second model argue against risky requests first (always on interactively)")
 @click.option("--effort", type=click.Choice(["low", "medium", "high"]), help="Reasoning effort (Codex models)")
 @click.option("--model", "-m", help="Model id (overrides config)")
+@click.option("--pi/--no-pi", "pi_mode", default=None, help="Pi mode on or off for this run (overrides pi_mode in config)")
 @click.option(
     "--approval",
     type=click.Choice([p.value for p in ApprovalPolicy]),
@@ -919,16 +920,17 @@ def main(
     challenge_mode: bool,
     effort: str | None,
     model: str | None,
+    pi_mode: bool | None,
     approval: str | None,
 ):
     try:
-        config = load_config(cwd=cwd, trust_project=trust_project)
+        config = load_config(cwd=cwd, trust_project=trust_project, pi_mode=pi_mode)
         if config.ignored_project_keys:
             if sys.stdin.isatty() and sys.stdout.isatty() and not prompt:
                 console.print(f"[warning]This project's .ai-agent/config.toml sets: {', '.join(config.ignored_project_keys)}[/warning]")
                 console.print("[dim]These can run commands or relax approvals. They are ignored unless you trust the file.[/dim]")
                 if input("Trust it? [y/N] ").strip().lower() in {"y", "yes"}:
-                    config = load_config(cwd=cwd, trust_project=True)
+                    config = load_config(cwd=cwd, trust_project=True, pi_mode=pi_mode)
             else:
                 console.print(f"[warning]Ignoring untrusted project settings: {', '.join(config.ignored_project_keys)} (use --trust to enable)[/warning]")
     except Exception as e:
