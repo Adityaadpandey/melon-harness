@@ -243,3 +243,25 @@ async def test_folder_rules_come_back_after_a_compaction(tmp_path):
         [e async for e in a.run("second")]
         results = [m.content for m in a.session.context_manager._messages if m.role == "tool"]
         assert "WEB RULE" in results[-1]
+
+
+async def test_files_worked_in_come_back_after_a_compaction_as_they_are_on_disk(tmp_path):
+    (tmp_path / "a.ts").write_text("old text")
+    cfg = Config(cwd=tmp_path, approval=ApprovalPolicy.AUTO, auto_verify=False, keep_recent_tokens=10)
+    async with Agent(cfg) as a:
+        async def fake_compress(cm):
+            return "FOLDED", TokenUsage(1, 1, 2), len(cm._messages)
+
+        a.session.chat_compactor.compress = fake_compress
+        a.session.client = ScriptedClient([call("read_file", {"path": "a.ts"}), text("done")])
+        [e async for e in a.run("first")]
+        (tmp_path / "a.ts").write_text("NEW TEXT")  # edited since it was read
+        assert await a._compact()
+        last = a.session.context_manager._messages[-1].content
+        assert "## a.ts\nNEW TEXT" in last and "old text" not in last
+
+
+def test_recent_files_are_newest_first_and_skip_what_the_tail_still_has(tmp_path):
+    cm = cm_with_history(tmp_path, n_pairs=4)  # reads f0..f3, four messages per pair
+    assert cm.recent_files(12) == ["f2.py", "f1.py", "f0.py"]  # f3 sits in the kept tail
+    assert cm.recent_files(16, limit=2) == ["f3.py", "f2.py"]

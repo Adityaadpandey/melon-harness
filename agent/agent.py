@@ -795,6 +795,30 @@ class Agent:
         if before > self.config.idle_compact_at_tokens and await self._compact():
             yield AgentEvent.notice(f"Cache had expired: compacted {before // 1000}k of context before the first call")
 
+    FILE_CHARS, FILES_CHARS = 20_000, 60_000  # ~5k tokens a file, ~15k in all, the shape of Claude Code's post-compact budget
+
+    def _restore_files(self, paths: list[str]) -> None:
+        """Put the current text of the files the model was just working in back after a compaction.
+        Read from disk now, so an edit made before the compaction shows as it is, not as it was first read."""
+        parts, room = [], self.FILES_CHARS
+        for rel in paths:
+            path = resolve_path(self.config.cwd, rel)
+            try:
+                text = path.read_text(encoding="utf-8")
+            except (OSError, UnicodeDecodeError):
+                continue  # deleted, a folder, or binary: the summary still names it
+            if room <= 0:
+                break
+            cap = min(self.FILE_CHARS, room)
+            body = text if len(text) <= cap else text[:cap] + f"\n[cut at {cap} of {len(text)} chars; read_file with offset for the rest]"
+            room -= len(body)
+            parts.append(f"## {rel}\n{body}")
+        if parts:
+            self.session.context_manager.add_user_message(
+                "Files you were working in before the compaction, as they are on disk now (no need to read them again):\n\n"
+                + "\n\n".join(parts)
+            )
+
     def _remind_todos(self) -> None:
         """Old results get cleared and history gets folded, but the task list is small and still the plan:
         put it back after a clear so the agent does not rediscover what is left to do."""
@@ -835,9 +859,11 @@ class Agent:
         summary, usage, cut = await self.session.chat_compactor.compress(cm)
         if not summary:
             return False
+        recent = cm.recent_files(cut)
         self.session.tool_registry.epoch += 1  # earlier reads are no longer in context
         self.session.tool_registry.forget_instructions()  # and neither are the folder rules that came with them
         cm.apply_compaction(summary, cut, get_data_dir() / "transcripts" / f"{self.session.session_id}.jsonl")
+        self._restore_files(recent)
         self._remind_todos()
         cm.set_latest_usage(usage)
         cm.add_usage(usage)

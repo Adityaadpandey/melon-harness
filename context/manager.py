@@ -189,6 +189,31 @@ class ContextManager:
                 elif name in {"edit", "write_file"}:
                     self.files_modified.add(path)
 
+    def recent_files(self, cut: int, limit: int = 5) -> list[str]:
+        """Files read or edited in the part about to be compacted, newest first, skipping any the kept tail
+        touches again (their text is still there). Claude Code puts these back after a compaction so the
+        model does not re-read the five files it was just working in."""
+        def paths(items: list[MessageItem]) -> list[str]:
+            out = []
+            for m in items:
+                for tc in m.tool_calls:
+                    if tc["function"]["name"] not in {"read_file", "edit", "write_file"}:
+                        continue
+                    try:
+                        path = json.loads(tc["function"]["arguments"]).get("path")
+                    except (ValueError, KeyError, TypeError, AttributeError):
+                        continue
+                    if isinstance(path, str):
+                        out.append(path)
+            return out
+
+        in_tail = set(paths(self._messages[cut:]))
+        picked: list[str] = []
+        for path in reversed(paths(self._messages[:cut])):
+            if path not in in_tail and path not in picked:
+                picked.append(path)
+        return picked[:limit]
+
     def apply_compaction(self, summary: str, cut: int, transcript: Path | None = None) -> None:
         """Replace messages[:cut] with the summary and keep the recent tail verbatim,
         so the model still sees exactly what it just did instead of a retelling.
