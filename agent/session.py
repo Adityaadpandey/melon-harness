@@ -21,7 +21,7 @@ from utils.trace import Tracer
 class Session:
     def __init__(self, config: Config):
         self.config = config
-        self.session_id = str(uuid.uuid4())
+        self._session_id = str(uuid.uuid4())
         self.tracer = Tracer(
             self.session_id, get_data_dir() / "traces" if config.trace else None
         )
@@ -57,6 +57,20 @@ class Session:
         self.updated_at = datetime.now()
 
         self.turn_count = 0
+
+    @property
+    def session_id(self) -> str:
+        return self._session_id
+
+    @session_id.setter
+    def session_id(self, value: str) -> None:
+        """Resume swaps in the saved id: the trace and the archived results follow it, so one session's
+        data stays in one place (traces/<id>.jsonl, results/<id>/) instead of under a throwaway id."""
+        self._session_id = value
+        self.tracer.session_id = value
+        if self.tracer.path is not None:
+            self.tracer.path = self.tracer.path.with_name(f"{value}.jsonl")
+        self.tool_registry.archive.move_to(get_data_dir() / "results" / value)
 
     async def initialize(self) -> None:
         await self.client.initialize()

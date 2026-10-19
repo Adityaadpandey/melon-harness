@@ -83,3 +83,13 @@ def test_compaction_that_overflows_drops_the_oldest_messages_and_asks_again(tmp_
 
     summary, _, cut = asyncio_run(ChatCompactor(TooLongOnce()).compress(cm))
     assert summary == "SUMMARY" and cut > 0 and sizes[1] < sizes[0]
+
+
+def test_resumed_archive_keeps_old_ids_and_never_overwrites_them(tmp_path):
+    from utils.archive import ResultStore
+    old = ResultStore(tmp_path / "s1")
+    old.put("first"), old.put("second")
+    fresh = ResultStore(tmp_path / "throwaway")
+    fresh.move_to(tmp_path / "s1")
+    assert fresh.get("r2") == "second"  # a cleared result from before the resume is still recallable
+    assert fresh.put("third") == "r3" and fresh.get("r1") == "first"

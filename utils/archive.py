@@ -29,6 +29,13 @@ class ResultStore:
                 pass
         return rid
 
+    def move_to(self, directory: Path) -> None:
+        """A resumed session keeps writing into its own folder, where the old ids still resolve.
+        New ids continue after the highest one there, so r7 from before the resume is never overwritten."""
+        self._dir = directory
+        old = [int(p.stem[1:]) for p in directory.glob("r*.txt") if p.stem[1:].isdigit()]
+        self._n = max([self._n, *old])
+
     def get(self, rid: str) -> str | None:
         if rid in self._mem:
             return self._mem[rid]
