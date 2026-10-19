@@ -6,6 +6,7 @@ task-specific detail left to tool schemas and skills."""
 from datetime import datetime
 import os
 import platform
+import re
 import sys
 from pathlib import Path
 
@@ -133,7 +134,7 @@ def _get_security_section() -> str:
 
 def _get_skills_section(skills: list) -> str:
     rows = "\n".join(
-        f"- **{skill.name}**: {skill.description}"
+        f"- **{skill.name}**: {_when(skill.description)}"
         for skill in skills
         if getattr(skill, "name", None) and getattr(skill, "description", None)
     )
@@ -287,17 +288,31 @@ _PI_SNIPPETS = {
 }
 
 
-def _skill_rows(skills: list, local: tuple[Path, ...] = ()) -> str:
+def _when(desc: str, cap: int = 110) -> str:
+    """The part of a skill's description that says when to reach for it, short enough to list 100 skills.
+    Example: "Build animations in React Native and Expo, making the decisions... Use when the user mentions
+    Reanimated, gestures..." -> "Use when the user mentions Reanimated, gestures..."
+    Listing machine-wide skills by bare name meant the model opened superpowers or plugin skills 0 times in
+    853 real tasks: a name like "systematic-debugging" alone does not say "use me on any test failure"."""
+    d = " ".join(desc.split()).strip("* ")
+    m = re.search(r"\b(?:use|load|invoke|run)\s+(?:this\s+|it\s+)?(?:skill\s+)?(?:when|whenever|first|for|before|after|alongside)\b", d, re.I)
+    if m and m.start() > 0:
+        d = d[m.start():]
+    elif "." in d[:cap]:
+        d = d.split(". ", 1)[0]
+    return d if len(d) <= cap else d[:cap - 3].rsplit(" ", 1)[0] + "..."
+
+
+def _skill_rows(skills: list) -> str:
     """Skills grouped by folder, so a long plugin path is written once instead of once per skill.
     Example:  ~/.claude/plugins/.../superpowers/6.1.1/skills/
-                - brainstorming/SKILL.md: Use before any creative work
-    Skills of this project (under `local`) keep their description; the machine-wide ones (plugins, ~/.claude,
-    ~/.pi: often 100 of them, 12k chars on every call) are listed by name, the model reads the file for more."""
+                - brainstorming/SKILL.md: use this before any creative work - creating features...
+    Every skill says when to use it (about 13k chars for 100 skills, cached after the first call), the way
+    Claude Code lists them."""
     home, groups = str(Path.home()), {}
     for k in skills:
         base = k.path.parent.parent if k.path.name == "SKILL.md" else k.path.parent
-        desc = k.description if len(k.description) <= 90 else k.description[:87].rsplit(" ", 1)[0] + "..."
-        row = f"- {k.path.relative_to(base)}" + (f": {desc}" if any(k.path.is_relative_to(r) for r in local) else "")
+        row = f"- {k.path.relative_to(base)}" + (f": {_when(k.description)}" if k.description else "")
         groups.setdefault(str(base).replace(home, "~", 1), []).append(row)
     return "\n".join(f"{base}/\n" + "\n".join(rows) for base, rows in groups.items())
 
@@ -349,6 +364,6 @@ def _pi_prompt(config: Config, tools: list[Tool] | None, skills: list | None) ->
         prompt += (
             "\n\nThe following skills provide specialized instructions for specific tasks.\n"
             "Use the read_file tool to load a skill's file when the task matches its description.\n\n"
-            f"<available_skills>\n{_skill_rows(listed, (Path(config.cwd).resolve(), Path(__file__).resolve().parent.parent))}\n</available_skills>"
+            f"<available_skills>\n{_skill_rows(listed)}\n</available_skills>"
         )
     return prompt + f"\nCurrent working directory: {config.cwd}"

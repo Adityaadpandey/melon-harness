@@ -91,13 +91,16 @@ def test_write_file_ends_a_new_file_with_a_newline_but_leaves_a_no_newline_file_
     assert (tmp_path / "b.txt").read_text() == "new"
 
 
-def test_machine_wide_skills_are_listed_by_name_and_the_project_s_own_keep_their_description(tmp_path):
+def test_every_skill_is_listed_with_when_to_use_it(tmp_path):
     from agent.skills import Skill
     from prompts.system import _skill_rows
 
-    mine, theirs = tmp_path / "skills" / "motion" / "SKILL.md", tmp_path.parent / "elsewhere" / "figma" / "SKILL.md"
-    rows = _skill_rows([Skill("motion", "Audit the animations", "", path=mine), Skill("figma", "Work in Figma files", "", path=theirs)], (tmp_path,))
-    assert "motion/SKILL.md: Audit the animations" in rows and "figma/SKILL.md" in rows and "Work in Figma" not in rows
+    figma = tmp_path / "elsewhere" / "figma" / "SKILL.md"
+    debug = tmp_path / "elsewhere" / "systematic-debugging" / "SKILL.md"
+    long = "Build animations in React Native and Expo, making every decision about springs and timing along the way. Use when the user mentions Reanimated or gestures"
+    rows = _skill_rows([Skill("figma", "Work in Figma files", "", path=figma), Skill("systematic-debugging", long, "", path=debug)])
+    assert "figma/SKILL.md: Work in Figma files" in rows
+    assert "systematic-debugging/SKILL.md: Use when the user mentions Reanimated or gestures" in rows  # the trigger, not the preamble
 
 
 async def test_pi_mode_attaches_folder_rules_even_after_a_long_read(tmp_path):

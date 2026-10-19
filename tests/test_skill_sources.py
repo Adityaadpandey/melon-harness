@@ -46,7 +46,7 @@ def test_pi_prompt_inlines_always_on_skills_and_lists_the_rest_once_per_folder(h
     c = Config(cwd=home / "repo")
     prompt = get_system_prompt(c, None, create_default_registry(c).get_tools(), load_skills(c))
     assert "the least that fully works" in prompt  # ponytail applies on every request, no read needed
-    assert "~/.claude/skills/\n- review/SKILL.md" in prompt and "Review a diff" not in prompt  # machine-wide skills are listed by name only
+    assert "~/.claude/skills/\n- review/SKILL.md: Review a diff" in prompt  # machine-wide skills say when to use them too
     assert prompt.count("/acme/1.0/skills/") == 1 and "- tidy/SKILL.md" in prompt
 
 
