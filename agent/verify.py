@@ -63,22 +63,7 @@ def changed_since(before: dict[str, str] | None, after: dict[str, str] | None) -
     )
 
 
-def detect_verify_commands(cwd: Path) -> list[str]:
-    """Conservative auto-detection. JS/TS and anything needing services is left
-    to explicit config: guessing `npm test` can hit databases or the network."""
-    if (cwd / "go.mod").exists():
-        return ["go test ./..."]
-    if (cwd / "Cargo.toml").exists():
-        return ["cargo test"]
-    has_py_tests = (cwd / "tests").is_dir() or any(cwd.glob("test_*.py"))
-    if has_py_tests or (cwd / "pytest.ini").exists():
-        return ["python3 -m pytest -q -x"]
-    return []
-
-
 JS_SUFFIX = {".ts", ".tsx", ".js", ".jsx", ".mjs", ".cjs"}
-TYPECHECK_SCRIPTS = ("typecheck", "type-check", "check-types", "tsc")
-UNSAFE_SCRIPT = re.compile(r"--fix|--write|\bbuild\b|\bdeploy\b|\bpublish\b|\bmigrate\b|\bdb:|\bprisma\b")
 
 
 def _package_runner(cwd: Path, pkg_dir: Path) -> str:
@@ -91,32 +76,51 @@ def _package_runner(cwd: Path, pkg_dir: Path) -> str:
     return "npm"
 
 
-def detect_js_checks(cwd: Path, changed: list[str]) -> list[tuple[str, str]]:
-    """The typecheck script of each package a changed .ts/.tsx/.js file belongs to, e.g. `pnpm run check-types` in apps/web.
-    Only a script named like a typecheck and free of --fix, build, deploy or database words runs, and only when the
-    packages are installed: a type error is the most common silent break and costs no services. Tests stay opt-in."""
-    cwd = cwd.resolve()
-    found: dict[Path, tuple[str, str]] = {}
-    for f in changed:
-        if Path(f).suffix not in JS_SUFFIX:
-            continue
+def _py_tests(cwd: Path, f: str) -> list[str]:
+    """The test file for a changed module: itself if it is one, else test_<name>.py next to it or under tests/."""
+    p = Path(f)
+    if p.name.startswith("test_") or p.stem.endswith("_test"):
+        return [f]
+    found = [p.parent / f"test_{p.name}"] + (sorted((cwd / "tests").rglob(f"test_{p.name}")) if (cwd / "tests").is_dir() else [])
+    return sorted({(t.relative_to(cwd) if t.is_absolute() else t).as_posix() for t in found if (cwd / t).is_file()})
+
+
+def _eslint(cwd: Path, files: list[str]) -> list[tuple[str, str]]:
+    """eslint on just the changed files, per package, errors only. Nothing when eslint is not installed."""
+    by_pkg: dict[Path, list[str]] = {}
+    for f in files:
         d = (cwd / f).parent
-        while True:
-            pkg = d / "package.json"
-            if pkg.is_file():
-                try:
-                    scripts = json.loads(pkg.read_text(encoding="utf-8")).get("scripts") or {}
-                except (OSError, ValueError):
-                    scripts = {}
-                name = next((n for n in TYPECHECK_SCRIPTS if isinstance(scripts.get(n), str) and not UNSAFE_SCRIPT.search(scripts[n])), None)
-                if name and any((x / "node_modules").is_dir() for x in (d, cwd)):
-                    found[d] = (f"{_package_runner(cwd, d)} run {name}", d.relative_to(cwd).as_posix() or ".")
-                if name or d == cwd:
-                    break
-            if d == cwd or cwd not in d.parents:
-                break
+        while not (d / "package.json").is_file() and d != cwd and cwd in d.parents:
             d = d.parent
-    return list(found.values())
+        by_pkg.setdefault(d, []).append(os.path.relpath(cwd / f, d))
+    out = []
+    for d, rel in by_pkg.items():
+        if any((x / "node_modules" / ".bin" / "eslint").exists() for x in (d, cwd)):
+            out.append((f"{_package_runner(cwd, d)} exec eslint --quiet " + " ".join(shlex.quote(r) for r in rel),
+                        d.relative_to(cwd).as_posix() or "."))
+    return out
+
+
+def detect_checks(cwd: Path, changed: list[str]) -> list[tuple[str, str]]:
+    """One quick check of the files this run changed, never a build, the whole suite or a project-wide typecheck:
+    the user asked for that, those ran for minutes per request (and up to 3 times with repairs).
+    Example: a.py and web/x.tsx changed -> `pytest -q -x tests/test_a.py` and `pnpm exec eslint --quiet src/x.tsx` in web.
+    The wider checks are the user's to run; the model names them in its final answer."""
+    cwd = cwd.resolve()
+    live = [f for f in changed if (cwd / f).is_file()]
+    checks: list[tuple[str, str]] = []
+    py = [f for f in live if f.endswith(".py")]
+    if py:
+        tests = sorted({t for f in py for t in _py_tests(cwd, f)})
+        checks.append(("python3 -m pytest -q -x " + " ".join(map(shlex.quote, tests)) if tests
+                       else "python3 -m py_compile " + " ".join(map(shlex.quote, py)), "."))
+    go = sorted({"./" + Path(f).parent.as_posix() for f in live if f.endswith(".go")})
+    if go and (cwd / "go.mod").exists():
+        checks.append(("go vet " + " ".join(go), "."))
+    if any(f.endswith(".rs") for f in live) and (cwd / "Cargo.toml").exists():
+        checks.append(("cargo check -q", "."))  # rust cannot check a single file; check is still far short of a test run
+    checks += _eslint(cwd, [f for f in live if Path(f).suffix in JS_SUFFIX])
+    return checks
 
 
 def related_tests(root: Path, rule, hits: list[str]) -> list[str]:
@@ -154,7 +158,7 @@ def select_checks(config, changed: list[str]) -> list[tuple[str, str]]:
             if item not in checks:
                 checks.append(item)
     if not checks and config.auto_verify:
-        checks = [(c, ".") for c in detect_verify_commands(config.cwd)] + detect_js_checks(config.cwd, changed)
+        checks = detect_checks(config.cwd, changed)
     return checks
 
 
