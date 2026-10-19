@@ -1,7 +1,7 @@
 ---
 name: performance
 description: Measure first; fix the real bottleneck; prove the gain
-triggers: slow, latency, performance, optimize, optimise, optimization, optimisation, speed up, n+1, memory leak, throughput, profile, profiling, benchmark, bottleneck, lag, laggy, re-render, bundle size
+triggers: slow, latency, performance, battery, cpu usage, cpu, energy, power usage, polling, wakeups, optimize, optimise, optimization, optimisation, speed up, n+1, memory leak, throughput, profile, profiling, benchmark, bottleneck, lag, laggy, re-render, bundle size
 ---
 # Performance
 Measure before changing anything and name the metric you expect to move (request time, query count, memory, render count, bundle KB). Without a number you are guessing; if you cannot measure, say "estimated" and why.
