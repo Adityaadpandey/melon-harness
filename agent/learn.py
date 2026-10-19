@@ -22,17 +22,28 @@ MAX_EDITS = 200
 PROMPT_CHARS = 1500
 MIN_OVERLAP = 0.5  # share of the search query's words a past request must have in common
 HEADING = "## Learned by mew"
-# a standing rule said in passing: "always use pnpm here", "never touch the migrations", "from now on run the linter"
+# the user turning mew around: "no, not this", "actually use the other one", "I meant the header", "instead do X"
+CORRECTION = re.compile(
+    r"^(?:(?:ok|okay|well|hmm|wait|but)[ ,]+)*(?:no+\b|nope|nah|not (?:this|that|like (?:this|that))|wrong|actually|instead|i meant|i mean|that'?s not|that is not|"
+    r"don'?t do (?:this|that)|stop doing|rather|use .{1,40} (?:instead|not|rather))", re.I)
+# a standing rule said outright: "always use pnpm here", "from now on run the linter"
 RULE = re.compile(r"^(?:(?:please|also|and|btw|note that|remember(?: that)?)[ ,]+)*(?:always|never|from now on|going forward|don'?t ever|do not ever)\b", re.I)
 
 
-def rule_in(message: str) -> str:
-    """The standing rule a message states, or "" ("always use pnpm here" -> itself; "fix the bug" -> "").
-    Only a message that opens with the rule counts, and a question never does, so a casual line is not saved."""
+def rule_in(message: str, before: str = "") -> str:
+    """The lesson a message carries, or "". A correction keeps what it was correcting, so the rule reads in context:
+      before="add a dark mode toggle", "no, not a toggle, a system-theme switch"
+        -> 'When asked "add a dark mode toggle", the user redirected: no, not a toggle, a system-theme switch'
+    Questions and long messages never count, so a casual line is not saved."""
     text = " ".join(message.split())
-    if len(text) > 300 or text.endswith("?") or not RULE.match(text):
+    if len(text) > 300 or text.endswith("?"):
         return ""
-    return text
+    if RULE.match(text):
+        return text
+    if CORRECTION.match(text) and len(text.split()) >= 3:
+        ask = " ".join(before.split())[:120]
+        return f'When asked "{ask}", the user redirected: {text}' if ask else f"The user redirected: {text}"
+    return ""
 
 
 class Learned:
@@ -67,9 +78,10 @@ class Learned:
         self._save()
         return True
 
-    def learn_from(self, message: str) -> bool:
-        """Auto-learn: a message that states a standing rule becomes a lesson without a /learn."""
-        rule = rule_in(message)
+    def learn_from(self, message: str, before: str = "") -> bool:
+        """Auto-learn: a correction ("no, not this") or a stated rule becomes a lesson without a /learn.
+        `before` is the user's previous request, the thing being corrected."""
+        rule = rule_in(message, before)
         return bool(rule) and self.add_lesson(rule, "auto")
 
     def _to_agents_md(self, text: str) -> bool:

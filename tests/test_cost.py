@@ -221,6 +221,8 @@ def test_learned_lessons_and_edit_history_shape_prompt_and_search(tmp_path):
     assert len(L2.data["edits"]) == 2 and L2.prior("offline ticket counter")  # a long brief still matches a short search
     assert L2.forget(1).startswith("Never edit") and "Never edit" not in (repo / "AGENTS.md").read_text()
     assert L2.learn_from("always use pnpm in this repo") and not L2.learn_from("fix the blank line bug")  # a standing rule is learned by itself
+    assert L2.learn_from("no, not a toggle, a system-theme switch", "add a dark mode toggle") and 'add a dark mode toggle' in L2.lessons()[-1]  # a redirect keeps what it corrected
+    assert not L2.learn_from("no")  # too short to be a lesson
 
 
 async def test_changed_file_is_answered_with_a_diff_not_the_whole_file(tmp_path):

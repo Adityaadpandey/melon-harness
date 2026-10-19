@@ -10,7 +10,7 @@ from agent.brevity import HOLD_CHARS, LONG_ANSWER_WORDS, interim_line
 from agent.events import AgentEvent, AgentEventType
 from agent.root import pick_root
 from agent.grounding import REWRITE_PROMPT, correction_prompt, has_file_code, shows_second_thoughts, verify_references, wants_change
-from agent.learn import Learned
+from agent.learn import CORRECTION, Learned
 from agent import review_fix
 from agent.review_pipeline import run_review_pipeline
 from agent.review import ReviewResult, merge_reviews, review_changes
@@ -104,6 +104,7 @@ class Agent:
         self._scout_error = ""
         self._no_approver = False
         self._playbooks_sent: set[str] = set()  # names whose text is in the conversation; cleared on compaction
+        self._last_request = ""  # the user's previous request: what a "no, not this" is correcting
         self._unsent = ""  # the request while the review pipeline, scout or challenger runs, before it is in the history
 
     def on_interrupt(self) -> None:
@@ -130,10 +131,12 @@ class Agent:
         yield AgentEvent.agent_start(message)
         self._unsent = message
         try:
-            if Learned(self.config.cwd).learn_from(message):
-                yield AgentEvent.notice("Learned that rule: saved to AGENTS.md (/lessons lists it, /forget removes it)")
+            if Learned(self.config.cwd).learn_from(message, self._last_request):
+                yield AgentEvent.notice("Learned from that: saved to AGENTS.md (/lessons lists it, /forget removes it)")
         except Exception:
             pass  # learning is a bonus
+        if not CORRECTION.match(message.strip()):
+            self._last_request = message  # a correction is not itself something to be corrected later
         matched = match_skills(self.session.skills, message)
         # a playbook already in the conversation is named, not pasted again (the code-review one is ~1.5k tokens a request)
         playbooks = [p for p in matched if p.name not in self._playbooks_sent]
