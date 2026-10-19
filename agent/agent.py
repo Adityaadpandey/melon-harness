@@ -739,7 +739,9 @@ class Agent:
         if not res.success:
             self._scout_error = (res.error or "unknown error").splitlines()[0]
             return ""
-        return (res.output or "")[:6000]
+        out = (res.output or "")[:6000]
+        self.session.tracer.emit("scout_done", report=out)  # the only copy until the session is saved; needed to trace a wrong path back
+        return out
 
     async def _wrap_up(self, task: TaskState, notice: str, why: str) -> AsyncGenerator[AgentEvent, None]:
         """Out of budget or turns: one last tool-free call, so the work done so far
