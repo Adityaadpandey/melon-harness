@@ -228,7 +228,7 @@ class CLI:
 
     async def run_interactive(self) -> str | None:
         screen = None
-        if sys.stdout.isatty() and sys.stdin.isatty() and not os.environ.get("MEW_PLAIN"):  # MEW_PLAIN=1: plain scrolling terminal
+        if sys.stdout.isatty() and sys.stdin.isatty() and os.environ.get("MEW_FULLSCREEN"):  # plain scrolling terminal by default, so native select/scrollback work; MEW_FULLSCREEN=1 for the panel layout
             from ui.screen import Screen
 
             screen = Screen(self.tui, console, lambda: f"{self.config.model_name}  ·  {str(self.config.cwd).replace(str(Path.home()), '~')}")

@@ -223,7 +223,8 @@ Approval modes: `on-request` (default), `auto-edit`, `auto`, `never`, `yolo`.
 
 ## Interactive UI
 
-A full-screen terminal UI with its own look, not a clone.
+A terminal UI with its own look, not a clone. It runs in the normal scrolling terminal, so your terminal's own selection,
+scrollback and cmd+F work across the whole conversation. `MEW_FULLSCREEN=1` switches to the full-screen layout described below.
 
 - Scrollable conversation, a side panel for files read / written (with lines added and removed) / commands run, a todo checklist,
   an agents panel, and a live status line with phase, elapsed time and tokens.
@@ -233,7 +234,7 @@ A full-screen terminal UI with its own look, not a clone.
   agent, not the app**.
 - Mouse selection (drag, double-click word, triple-click line) copies to the system clipboard and via OSC 52, with `/copy` and
   F2 native-select fallbacks.
-- Queued messages say they are queued. `MEW_PLAIN=1` keeps the classic line layout.
+- Queued messages say they are queued. `MEW_PLAIN` is no longer needed: the plain layout is the default.
 - **Resume anything.** Every turn autosaves. Exit prints `mew --resume <id>` and `mew --continue`. `/sessions` lists them,
   `/resume [id]` switches.
 
