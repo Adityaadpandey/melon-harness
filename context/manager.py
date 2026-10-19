@@ -1,5 +1,6 @@
 from datetime import datetime
 import json
+from pathlib import Path
 from typing import Any
 from client.response import TokenUsage
 from config.config import Config
@@ -188,10 +189,23 @@ class ContextManager:
                 elif name in {"edit", "write_file"}:
                     self.files_modified.add(path)
 
-    def apply_compaction(self, summary: str, cut: int) -> None:
+    def apply_compaction(self, summary: str, cut: int, transcript: Path | None = None) -> None:
         """Replace messages[:cut] with the summary and keep the recent tail verbatim,
-        so the model still sees exactly what it just did instead of a retelling."""
+        so the model still sees exactly what it just did instead of a retelling.
+        With `transcript`, the replaced messages are appended there first (one JSON per line), so nothing
+        is gone for good: the summary names the file and the model can grep it for an exact error or diff."""
         self._track_files(self._messages[:cut])
+        saved = ""
+        if transcript is not None:
+            try:
+                transcript.parent.mkdir(parents=True, exist_ok=True)
+                with transcript.open("a") as fp:
+                    for m in self.history_for_summary(cut):
+                        fp.write(json.dumps(m) + "\n")
+                saved = (f" If you need exact details from before compaction (a code snippet, an error, a list the "
+                         f"user pasted), grep or read the full transcript at {transcript}.")
+            except OSError:
+                pass  # a full disk must never fail a compaction
         files = ""
         if self.files_modified:
             files += f"\n\nFiles modified so far: {', '.join(sorted(self.files_modified))}"
@@ -210,7 +224,7 @@ class ContextManager:
         content = (
             f"{self.COMPACT_HEAD}\n\n"
             "Older messages were replaced by this summary to save context. Actions listed as "
-            "completed are done; do not repeat them. The most recent messages follow unchanged.\n\n"
+            f"completed are done; do not repeat them. The most recent messages follow unchanged.{saved}\n\n"
             f"{self.summary}"
         )
         head = MessageItem(role="user", content=content, token_count=count_tokens(content, self._model_name))

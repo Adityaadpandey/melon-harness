@@ -31,6 +31,7 @@ from agent.verify import (
 )
 from client.response import StreamEvent, StreamEventType, TokenUsage, ToolCall, ToolResultMessage
 from config.config import Config, HookTrigger
+from config.loader import get_data_dir
 from prompts.system import create_loop_breaker_prompt
 from tools.base import ToolConfirmation, ToolKind, ToolResult
 from tools.builtin.shell import finished_jobs, kill_jobs
@@ -829,7 +830,7 @@ class Agent:
         if not summary:
             return False
         self.session.tool_registry.epoch += 1  # earlier reads are no longer in context
-        cm.apply_compaction(summary, cut)
+        cm.apply_compaction(summary, cut, get_data_dir() / "transcripts" / f"{self.session.session_id}.jsonl")
         self._remind_todos()
         cm.set_latest_usage(usage)
         cm.add_usage(usage)

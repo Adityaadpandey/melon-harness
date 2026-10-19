@@ -205,3 +205,21 @@ def test_summarizer_sees_the_whole_user_message_and_todo_plan():
     ])
     assert "10. bug number 10" in text  # was cut at 1500 chars, losing items 6-10
     assert "step 11" in text  # was cut at 500 chars, losing the plan after step 4
+
+
+def test_compacted_messages_are_saved_and_the_summary_points_at_them(tmp_path):
+    cm = cm_with_history(tmp_path)
+    log = tmp_path / "t" / "s.jsonl"
+    cut = cm.find_cut(600)
+    cm.apply_compaction("SUMMARY", cut, log)
+    saved = [json.loads(line) for line in log.read_text().splitlines()]
+    assert saved[0]["content"].startswith("task 0") and len(saved) == cut
+    assert str(log) in cm._messages[0].content
+    # a resumed session still pulls the summary back out with the pointer in the intro
+    cm2 = ContextManager(Config(pi_mode=False, cwd=tmp_path), None, [])
+    cm2.add_user_message(cm._messages[0].content)
+    assert cm2.summary.startswith("SUMMARY")
+    # the second compaction appends only new messages, not the summary head
+    cm.add_user_message("more " + "m" * 2000)
+    cm.apply_compaction("SECOND", cm.find_cut(300), log)
+    assert not any(json.loads(l)["content"].startswith("# Earlier") for l in log.read_text().splitlines())
