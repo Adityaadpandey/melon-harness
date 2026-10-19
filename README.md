@@ -72,6 +72,19 @@ and the 22% figure come from it; the 85% figure is from the live provider usage 
 The planted-bug review bench is tiny (a handful of cases, two saved runs), so no recall number is claimed. It is there so you can
 measure your own reviewer on your own bugs.
 
+### Measured along the way
+
+Each of these is a real before/after taken from the commit that fixed it.
+
+| What | Before | After |
+|---|---|---|
+| Prompt token budget per task | 1.5M | 300k |
+| Context replay without clearing old results | 3.4x the input tokens | baseline (clearing turned back on) |
+| Redrawing a 3,000-line transcript | ~109ms per streamed write | ~3ms |
+| System prompt | ~1,990 tokens | ~1,140, then held under a cap |
+| Sub-agent in a review spawning its own challenger | 80k tokens, 4 minutes | none, with a 150s limit per sub-agent |
+| Search index of a large repo | 13.7s cold | 1.2s warm |
+
 ## Contents
 
 1. [melon in numbers](#melon-in-numbers)
@@ -675,11 +688,12 @@ A full-screen terminal UI with its own look, not a clone.
   where the default is the plain terminal.
 - **Resume anything.** Every turn autosaves. Exit prints `mew --resume <id>` and `mew --continue`. `/sessions` lists them.
 
-Commands: `/help /clear /compact /context /cost /model /effort /approval /skills /expand /config /stats /tools /mcp /save /sessions
-/resume /checkpoint /restore /undo /jobs /copy /learn /lessons /forget /exit`, plus your own (below).
+Commands: `/help /clear /compact /context /cost /model /effort /approval /plan /diff /agents /hooks /verbose /more /skills /expand
+/config /stats /tools /mcp /save /sessions /resume /checkpoint /restore /undo /rewind /jobs /copy /learn /lessons /forget /exit`, plus your own (below).
 
 ## Extending: MCP, hooks, commands
 
+- **Automation:** `--json` prints agent events as JSON lines for CI and scripts; `--rpc` reads JSON commands (`prompt`, `steer`, `abort`, `get_state`) on stdin and streams events on stdout, for editors.
 - **MCP:** stdio and HTTP/SSE servers; their tools appear beside the built-ins. Gated by project trust.
 - **Hooks:** `before_agent`, `after_agent`, `before_tool`, `after_tool`, `on_error`, `pre_compact`, `post_compact`, `session_start`,
   `stop` (exit 2 sends stderr back and keeps the agent working), `subagent_stop`. Gated by project trust.
@@ -710,9 +724,8 @@ data dir (`traces/`).
 Said plainly, so you know what you are getting:
 
 - No image input (pasting a screenshot).
-- No structured JSON output for CI.
 - The OS sandbox is macOS only; on Linux you get the confined tools and shell path checks, not the kernel layer.
-- No rewind to an earlier message (`/undo` reverts the last request), no LSP diagnostics, no IDE extension.
+- `/rewind` restores files to before one of the last 20 file-changing requests, but it does not rewind the conversation to an earlier message. No LSP diagnostics, no IDE extension.
 - Several results above are tuned on one real repo; treat the defaults as measured there, not universal.
 
 ### On "better than the others"
