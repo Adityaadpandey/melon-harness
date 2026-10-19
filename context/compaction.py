@@ -3,6 +3,7 @@ from client.llm_client import LLMClient
 from client.response import StreamEventType, TokenUsage
 from context.manager import ContextManager
 from prompts.system import get_compression_prompt
+from utils.precompact import pre_compact
 
 
 class ChatCompactor:
@@ -21,7 +22,7 @@ class ChatCompactor:
 
             if role == "tool":
                 tool_id = msg.get("tool_call_id", "unknown")
-
+                content = pre_compact(content)  # drop progress bars and repeated lines so the 2000 chars hold real output
                 truncated = content[:2000] if len(content) > 2000 else content
                 if len(content) > 2000:
                     truncated += "\n... [tool output truncated]"
@@ -41,16 +42,19 @@ class ChatCompactor:
                         name = func.get("name", "unknown")
                         args = func.get("arguments", "{}")
 
-                        if len(args) > 500:
-                            args = args[:500]
+                        # todos/notes args carry the plan itself; 500 chars cut a 12-step list after step 4
+                        if len(args) > 2000:
+                            args = args[:2000]
                         tool_details.append(f"  - {name}({args})")
 
                     output.append("Assistant called tools:\n" + "\n".join(tool_details))
             else:
-                truncated = content[:1500] if len(content) > 1500 else content
-                if len(content) > 1500:
-                    truncated += "\n... [message truncated]"
-                output.append(f"User:\n{truncated}")
+                # user messages go in whole: they are the task. Cutting them at 1500 chars once lost
+                # items 6-10 of a pasted 10-bug list, and the agent had to ask the user to paste it again.
+                # ponytail: a 20k cap still guards against a pasted log eating the summary request
+                if len(content) > 20_000:
+                    content = content[:20_000] + "\n... [message truncated]"
+                output.append(f"User:\n{content}")
 
         return "\n\n---\n\n".join(output)
 

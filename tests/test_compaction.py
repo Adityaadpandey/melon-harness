@@ -193,3 +193,15 @@ def test_pruning_waits_until_the_context_is_half_full(tmp_path):
     cm.set_latest_usage(TokenUsage(150_000, 10, 150_010))
     agent._prune()
     assert any(m.pruned_at for m in cm._messages)
+
+
+def test_summarizer_sees_the_whole_user_message_and_todo_plan():
+    from context.compaction import ChatCompactor
+    bugs = "\n".join(f"{i}. bug number {i} " + "z" * 300 for i in range(1, 11))
+    todos = json.dumps({"op": "set", "items": [f"step {i} " + "w" * 150 for i in range(12)]})
+    text = ChatCompactor(None)._format_history_for_compaction([
+        {"role": "user", "content": bugs},
+        {"role": "assistant", "content": "", "tool_calls": [{"function": {"name": "todos", "arguments": todos}}]},
+    ])
+    assert "10. bug number 10" in text  # was cut at 1500 chars, losing items 6-10
+    assert "step 11" in text  # was cut at 500 chars, losing the plan after step 4
