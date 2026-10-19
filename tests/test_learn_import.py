@@ -1,6 +1,6 @@
 import json
 
-from agent.learn_import import collect, evidence, project_dirs
+from agent.learn_import import chunks, collect, episodes, evidence, history_tasks, project_dirs, rulebook, story
 
 
 def _rec(type_, content, **extra):
@@ -35,7 +35,8 @@ def test_rewards_files_and_hooks(tmp_path):
     (folder / "s.jsonl").write_text("\n".join(lines))
 
     assert project_dirs(repo, projects) == [folder]
-    tasks, hooks = collect(repo, projects)
+    tasks, hooks, seen = collect(repo, projects)
+    assert seen == {"s"}
     assert [t["reward"] for t in tasks] == [-1, 1, -1]
     assert tasks[0]["files"] == ["web/booking.tsx"]
     assert tasks[1]["files"] == ["admin/booking.tsx"]
@@ -44,3 +45,45 @@ def test_rewards_files_and_hooks(tmp_path):
     text = evidence(tasks, hooks, ["use pnpm"])
     assert "(1x) lint first" in text and "Already known:\n- use pnpm" in text
     assert "Replies right after the agent got it wrong:\n- no that's the wrong page" in text
+
+
+def test_deleted_sessions_come_back_from_prompt_history(tmp_path):
+    repo = tmp_path / "shop"
+    history = tmp_path / "history.jsonl"
+    rows = [
+        {"display": "add coupons to checkout", "timestamp": 1, "project": str(repo), "sessionId": "old"},
+        {"display": "no, coupons go on the cart page", "timestamp": 2, "project": str(repo / "apps/web"), "sessionId": "old"},
+        {"display": "/clear", "timestamp": 3, "project": str(repo), "sessionId": "old"},  # a slash command is not a task
+        {"display": "kept transcript", "timestamp": 4, "project": str(repo), "sessionId": "s"},  # transcript still on disk
+        {"display": "other repo", "timestamp": 5, "project": str(repo) + "x", "sessionId": "x"},
+    ]
+    history.write_text("\n".join(json.dumps(r) for r in rows))
+    tasks = history_tasks(repo, history, skip={"s"})
+    assert [(t["request"], t["reward"]) for t in tasks] == [("add coupons to checkout", -1), ("no, coupons go on the cart page", 0)]
+    assert "YOU NEXT: no, coupons go on the cart page" in story(tasks[0])  # a punished task shows what you said next
+
+
+def test_story_names_failed_commands_and_chunks_split(tmp_path):
+    repo = tmp_path / "shop"
+    lines = [
+        _rec("user", "run the server tests"),
+        _rec("assistant", [{"type": "tool_use", "id": "b1", "name": "Bash", "input": {"command": "npx vitest run"}}]),
+        _rec("user", [{"type": "tool_result", "tool_use_id": "b1", "is_error": True, "content": "vitest: command not found"}]),
+        _rec("assistant", [{"type": "text", "text": "vitest is missing, switching to pnpm test"}]),
+        _rec("user", "never use vitest here, it's playwright only"),
+    ]
+    tasks, _ = episodes(lines, repo)
+    s = story(tasks[0])
+    assert "failed: npx vitest run -> vitest: command not found" in s and "CLAUDE: vitest is missing" in s
+    assert len(chunks(tasks * 50, size=500)) > 1 and all(len(c) <= 1000 for c in chunks(tasks * 50, size=500))
+
+
+def test_rulebook_skips_mews_own_section(tmp_path):
+    (tmp_path / "apps/web").mkdir(parents=True)
+    (tmp_path / "AGENTS.md").write_text("# Rules\nNever read .env\n\n## Learned by mew\n- old lesson under review\n")
+    (tmp_path / "apps/web/AGENTS.md").write_text("Ask before UI changes")
+    (tmp_path / ".claude/skills/debug").mkdir(parents=True)
+    (tmp_path / ".claude/skills/debug/SKILL.md").write_text("---\nname: debug\ndescription: Use for any 500\n---\n")
+    book = rulebook(tmp_path)
+    assert "Never read .env" in book and "Ask before UI changes" in book and "Use for any 500" in book
+    assert "old lesson under review" not in book
