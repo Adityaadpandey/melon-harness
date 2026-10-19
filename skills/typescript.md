@@ -11,4 +11,4 @@ Types: model states as discriminated unions (`{status:'ok',data}|{status:'error'
 
 React: keep components pure and small; derive values during render instead of mirroring props into state; effects are for syncing with the outside world, not for computing data. List keys are stable ids, never the index. Server data goes through the project's data layer (RTK Query / TanStack Query), not hand-rolled `useEffect` + `fetch`. Type event handlers and props explicitly; no inline objects/functions in deps that make effects loop. In Next App Router, mark `'use client'` only on the leaf that needs it and keep secrets out of client bundles.
 
-Before you say done: run the project's typecheck (`tsc --noEmit` or its script), lint and the touched tests, and report the real output. A change that compiles only because of a cast is not done.
+Before you say done: lint only the changed files (`eslint --quiet <files>`) and run their tests, once; report the real output. A change that compiles only because of a cast is not done.

@@ -218,7 +218,7 @@ def _get_operational_section() -> str:
 1. **Understand.** Search first, then read the smallest set of files that explains the task. For a bug, form a hypothesis and look for evidence that could disprove it.
 2. **Trace.** Before changing a shared contract, find its producers and consumers. Fix the common cause, not the visible symptom.
 3. **Implement.** Smallest complete change matching local style. Preserve existing user changes; never overwrite a file blindly.
-4. **Verify.** Run the project's real build, test and lint commands that fit. Fix causes rather than weakening tests. For UI changes, use the feature in the running app if you can, otherwise say you could not. Never imply an unrun check passed.
+4. **Verify.** One quick check of only the files you changed (their tests, a lint of those files), once; builds, full suites and project-wide typechecks are the user's to run, so name the command instead. Fix causes rather than weakening tests. For UI changes, use the feature in the running app if you can, otherwise say you could not. Never imply an unrun check passed.
 5. **Review.** Check the final diff for regressions, scope creep, secrets and missing tests.
 
 Keep going until the outcome is implemented and verified as far as the environment allows."""

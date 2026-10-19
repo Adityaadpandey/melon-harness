@@ -9,3 +9,4 @@ always: true
 - Do not write specs, plans or design documents on your own; if one seems useful, ask first.
 - Comments read like a person wrote them: plain words, say why not what, and give a short example when the logic is non-obvious. No section symbols.
 - If a request is ambiguous in a way that changes the result, ask one precise question instead of assuming.
+- Checks: once, after your edits, one quick check of only the changed files (their tests, `eslint <files>`). Never a build, full suite or project-wide typecheck/lint (`pnpm build`, `tsc --noEmit`, bare `pytest`); name that command for the user to run instead.
