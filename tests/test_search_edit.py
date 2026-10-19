@@ -249,3 +249,19 @@ async def test_git_patch_keeps_paths_with_spaces_as_separate_files(tmp_path):
     (tmp_path / "b.txt").write_text("changed\n")
     res = await GitTool(Config(cwd=tmp_path)).execute(ToolInvocation(params={"op": "patch"}, cwd=tmp_path))
     assert res.output.count("diff --git") == 2
+
+
+def test_a_report_s_missing_paths_are_flagged_with_the_real_file_of_that_name(tmp_path):
+    from utils.search import check_paths
+
+    (tmp_path / "apps/server/src/services/event").mkdir(parents=True)
+    (tmp_path / "apps/server/src/services/event/event-read.service.ts").write_text("x")
+    (tmp_path / "apps/web/src/app/(detail)/[id]").mkdir(parents=True)
+    (tmp_path / "apps/web/src/app/(detail)/[id]/Page.tsx").write_text("x")
+    report = ("Start at apps/web/src/app/(detail)/[id]/Page.tsx:12, then apps/server/src/services/event-read.service.ts "
+              "and apps/web/src/info/Rows.tsx. Docs: https://example.com/a/b.js")
+    notes = check_paths(tmp_path, report)
+    assert "apps/server/src/services/event-read.service.ts: not on disk; files with that name: apps/server/src/services/event/event-read.service.ts" in notes
+    assert "apps/web/src/info/Rows.tsx: not on disk; locate it" in notes
+    assert "Page.tsx" not in notes and "example.com" not in notes
+    assert check_paths(tmp_path, "all good: apps/web/src/app/(detail)/[id]/Page.tsx") == ""

@@ -132,3 +132,25 @@ def similar_paths(root: Path, missing: Path, forbidden: list[str] | None = None,
         return " Don't guess paths: locate it with glob or grep files_only first."
     shown = ", ".join(str(f.relative_to(root)) if f.is_relative_to(root) else str(f) for f in same[:limit])
     return f" Files with that name: {shown}"
+
+
+# a repo path with at least one folder and an extension: apps/web/src/app/(event-detail)/[id]/Page.tsx, src/a.py:12
+_PATH = re.compile(r"(?<![\w/.:])(/?(?:[\w.()\[\]@-]+/)+[\w.()\[\]@-]+\.[A-Za-z]{1,5})\b")
+
+
+def check_paths(root: Path, text: str, forbidden: list[str] | None = None) -> str:
+    """Notes on paths a sub-agent report names that are not on disk, with the real file of that name.
+    A scout once reported apps/server/src/services/event-read.service.ts (it lives under services/event/) and a web
+    EventInfoRows.tsx that only exists in apps/mobile; the main agent read both as written and lost a round."""
+    missing = sorted({p for p in _PATH.findall(text) if not (Path(p) if p.startswith("/") else root / p).exists()})
+    if not missing:
+        return ""
+    try:
+        files = list_files(root, forbidden)
+    except Exception:
+        files = []
+    rows = []
+    for p in missing[:10]:
+        same = [str(f.relative_to(root)) if f.is_relative_to(root) else str(f) for f in files if f.name == Path(p).name][:3]
+        rows.append(f"- {p}: not on disk" + (f"; files with that name: {', '.join(same)}" if same else "; locate it with glob before reading"))
+    return "Paths in this report that do not exist (checked by the harness; do not read them as written):\n" + "\n".join(rows)

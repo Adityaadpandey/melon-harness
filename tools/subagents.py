@@ -147,6 +147,12 @@ class SubagentTool(Tool):
             await HookSystem(self.config).fire(HookTrigger.SUBAGENT_STOP, agent=self.definition.name, ok=str(not error).lower())
         except Exception:
             pass  # a broken hook must not lose the sub-agent's answer
+        if final_response and not error:
+            from utils.search import check_paths
+
+            # off the loop: listing a big repo for same-name files takes ~2.5s on tunyt
+            if notes := await asyncio.to_thread(check_paths, Path(invocation.cwd), final_response, self.config.forbidden_paths):
+                final_response = f"{notes}\n\n{final_response}"  # first, so a caller that cuts the report keeps them
         if final_response and len(final_response) > MAX_REPORT_CHARS:
             final_response = final_response[:MAX_REPORT_CHARS] + "\n... [report cut; ask for a narrower answer]"
         result = f"""Sub-agent '{self.definition.name}' completed. 
