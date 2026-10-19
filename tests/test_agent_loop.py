@@ -608,3 +608,23 @@ async def test_a_request_interrupted_during_the_review_is_kept_for_pls_cont(cfg,
         assert len(kept) == 1 and kept[0].startswith("review the last two commits") and "Interrupted by the user" in kept[0]
         agent.on_interrupt()  # a second Ctrl+C does not add it twice
         assert sum(m.role == "user" for m in agent.session.context_manager._messages) == 1
+
+
+async def test_review_with_one_single_agent_skips_the_parallel_reviewers(cfg, monkeypatch):
+    import agent.agent as agent_mod
+    from agent.routing_policy import ONE_AGENT
+
+    for asked in ("pls review the last two commits with one single agent", "review it with a single reviewer", "review without the pipeline"):
+        assert ONE_AGENT.search(asked), asked
+    assert not ONE_AGENT.search("review the last two commits")
+
+    async def no_pipeline(config, request):
+        raise AssertionError("the pipeline ran although one agent was asked for")
+        yield
+
+    monkeypatch.setattr(agent_mod, "run_review_pipeline", no_pipeline)
+    async with Agent(cfg) as agent:
+        agent.config.review_pipeline = True
+        agent.session.client = ScriptedClient([text("No issues found.")])
+        events = await run(agent, "pls review the last two commits with one single agent")
+        assert any("one agent, as asked" in str(e.data) for e in events)

@@ -15,7 +15,7 @@ from agent import review_fix
 from agent.review_pipeline import run_review_pipeline
 from agent.review import ReviewResult, merge_reviews, review_changes
 from agent.review_fix_verify import verify_fix
-from agent.routing_policy import EFFORT, REVIEWY, classify, length_hint
+from agent.routing_policy import EFFORT, ONE_AGENT, REVIEWY, classify, length_hint
 from agent.scope import SWEEP, SWEEP_CHECKPOINT, is_broad, unfinished
 from agent.session import Session
 from agent.skills import match_skills
@@ -157,7 +157,10 @@ class Agent:
                 self._fix_run, self._fix_brief = True, review_fix.short(picked)
                 message_for_model += "\n\n---\n" + review_fix.brief(picked)
                 yield AgentEvent.notice(f"Fixing {len(picked)} finding(s) from the last review: advisor first, then the fix, then an independent check")
-        if self.config.review_pipeline and self.config.model_role == "default" and REVIEWY.search(message):
+        alone = REVIEWY.search(message) and ONE_AGENT.search(message)
+        if alone:
+            yield AgentEvent.notice("Reviewing with one agent, as asked: no parallel reviewers")
+        if self.config.review_pipeline and self.config.model_role == "default" and REVIEWY.search(message) and not alone:
             results = ""
             async for kind, value in run_review_pipeline(self.config, message):
                 if kind == "notice":

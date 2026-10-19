@@ -44,6 +44,9 @@ def classify(request: str) -> tuple[str, str]:
 EFFORT = {"fast": "low", "default": None, "strong": "high"}
 
 REVIEWY = re.compile(r"\b(review|audit|critique)\b", re.I)
+# "review it with one single agent", "a single reviewer", "without the pipeline": the main agent reviews it itself, nothing fans out
+ONE_AGENT = re.compile(r"\b(?:(?:one|1|a)\s+)?single[- ](?:agent|reviewer)s?\b|\b(?:one|1)\s+(?:agent|reviewer)\b|"
+                       r"\b(?:no|without)\s+(?:the\s+)?(?:sub-?agents?|pipeline|fan-?out|parallel reviewers)\b", re.I)
 EXPLAINY = re.compile(r"\b(explain|walk me through|how does|what does|summari[sz]e)\b", re.I)
 
 
