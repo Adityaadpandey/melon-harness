@@ -103,6 +103,7 @@ class Agent:
         self._root_hint: Path | None = None  # the repo the last request worked in, when mew starts above it
         self._scout_error = ""
         self._no_approver = False
+        self._playbooks_sent: set[str] = set()  # names whose text is in the conversation; cleared on compaction
 
     def _adopt_root(self, root: Path | None) -> bool:
         """Work from the repo itself. The folder mew started in stays reachable for other repos next to it."""
@@ -117,7 +118,11 @@ class Agent:
         if self._adopt_root(pick_root(self.config.cwd, message, self._root_hint)):
             yield AgentEvent.notice(f"Working in {self.config.cwd} (the repo this request is about)")
         yield AgentEvent.agent_start(message)
-        playbooks = match_skills(self.session.skills, message)
+        matched = match_skills(self.session.skills, message)
+        # a playbook already in the conversation is named, not pasted again (the code-review one is ~1.5k tokens a request)
+        playbooks = [p for p in matched if p.name not in self._playbooks_sent]
+        again = [p.name for p in matched if p.name in self._playbooks_sent]
+        self._playbooks_sent.update(p.name for p in playbooks)
         if playbooks:
             yield AgentEvent.notice("Loaded playbooks: " + ", ".join(p.name for p in playbooks))
             self.session.tracer.emit("skills_loaded", skills=[p.name for p in playbooks])
@@ -127,6 +132,8 @@ class Agent:
             message_for_model = f"{message}\n\n---\nPlaybooks selected for this request (follow them; they are already below, so do not read their files again{reference}):\n\n{loaded}"
         else:
             message_for_model = message
+        if again:
+            message_for_model += f"\n\n[Playbooks given earlier in this conversation still apply: {', '.join(again)}.]"
         if self._long_answer:
             message_for_model += f"\n\n[Reminder: your last final answer ran {self._long_answer} words. Keep this one to the final-answer limit (120 words, 6 bullets) unless the user asked for detail.]"
             self._long_answer = 0
@@ -862,6 +869,7 @@ class Agent:
         recent = cm.recent_files(cut)
         self.session.tool_registry.epoch += 1  # earlier reads are no longer in context
         self.session.tool_registry.forget_instructions()  # and neither are the folder rules that came with them
+        self._playbooks_sent.clear()  # the summary does not carry playbook text: send it again next time
         cm.apply_compaction(summary, cut, get_data_dir() / "transcripts" / f"{self.session.session_id}.jsonl")
         self._restore_files(recent)
         self._remind_todos()

@@ -275,3 +275,24 @@ async def test_the_fix_is_reviewed_once_and_what_it_still_finds_is_shown_not_loo
         evs = [e async for e in a.run("go")]
         assert len(calls) == 2 and "missing guard" in calls[1]["fixing"] and "fixing" not in calls[0]
         assert any("still found problems" in str(e.data) for e in evs)
+
+
+async def test_a_playbook_is_pasted_once_then_named(tmp_path):
+    from agent.agent import Agent
+    from config.config import ApprovalPolicy, Config
+    from tests.fakes import ScriptedClient, text
+
+    async with Agent(Config(cwd=tmp_path, approval=ApprovalPolicy.AUTO, auto_verify=False)) as a:
+        a.session.skills = [type("K", (), {"name": "code-review", "body": "PLAYBOOK BODY", "triggers": [], "description": ""})()]
+        import agent.agent as mod
+        mod_match = mod.match_skills
+        mod.match_skills = lambda skills, msg: skills
+        try:
+            for ask in ("review this", "review again"):
+                a.session.client = ScriptedClient([text("ok")])
+                [e async for e in a.run(ask)]
+        finally:
+            mod.match_skills = mod_match
+        users = [m.content for m in a.session.context_manager._messages if m.role == "user"]
+        assert "PLAYBOOK BODY" in users[0] and "PLAYBOOK BODY" not in users[1]
+        assert "still apply: code-review" in users[1]
