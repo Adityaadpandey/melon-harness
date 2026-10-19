@@ -104,6 +104,16 @@ class Agent:
         self._scout_error = ""
         self._no_approver = False
         self._playbooks_sent: set[str] = set()  # names whose text is in the conversation; cleared on compaction
+        self._unsent = ""  # the request while the review pipeline, scout or challenger runs, before it is in the history
+
+    def on_interrupt(self) -> None:
+        """Ctrl+C. A request cut off while the review pipeline was still running never reached the history, so the next
+        "pls cont" found nothing to continue. Keep it, marked as interrupted, so the model can pick it back up."""
+        cm = self.session.context_manager
+        if self._unsent:
+            cm.add_user_message(self._unsent + "\n\n[Interrupted by the user before you answered (the review, scout or challenger was still running). Nothing was changed.]")
+            self._unsent = ""
+        cm.repair_orphans()  # providers reject unanswered tool calls
 
     def _adopt_root(self, root: Path | None) -> bool:
         """Work from the repo itself. The folder mew started in stays reachable for other repos next to it."""
@@ -118,6 +128,7 @@ class Agent:
         if self._adopt_root(pick_root(self.config.cwd, message, self._root_hint)):
             yield AgentEvent.notice(f"Working in {self.config.cwd} (the repo this request is about)")
         yield AgentEvent.agent_start(message)
+        self._unsent = message
         matched = match_skills(self.session.skills, message)
         # a playbook already in the conversation is named, not pasted again (the code-review one is ~1.5k tokens a request)
         playbooks = [p for p in matched if p.name not in self._playbooks_sent]
@@ -208,6 +219,7 @@ class Agent:
             message_for_model += f"\n\n[{SWEEP}]"
         self._sweep_pushed = 0
         self.session.context_manager.add_user_message(message_for_model)
+        self._unsent = ""
 
         self._escalated = False
         self._budget_hit = False

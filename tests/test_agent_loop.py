@@ -586,3 +586,25 @@ async def test_text_before_a_tool_call_is_shown_as_one_line_but_a_final_answer_i
         shown = "".join(e.data.get("content", "") for e in events if e.type == AgentEventType.TEXT_DELTA)
         assert shown == "Working notes:Fixed it.\n- a.txt:1  done"
         assert any(m.get("content") == notes for m in sc.requests[1] if m["role"] == "assistant")  # history keeps the full notes
+
+
+async def test_a_request_interrupted_during_the_review_is_kept_for_pls_cont(cfg, monkeypatch):
+    import agent.agent as agent_mod
+
+    async def slow_review(config, request):
+        yield "notice", "Reviewing 9 changed file(s)"
+        await asyncio.sleep(60)
+
+    monkeypatch.setattr(agent_mod, "run_review_pipeline", slow_review)
+    async with Agent(cfg) as agent:
+        agent.config.review_pipeline = True
+        task = asyncio.create_task(run(agent, "review the last two commits"))
+        await asyncio.sleep(0.05)
+        task.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await task
+        agent.on_interrupt()
+        kept = [m.content for m in agent.session.context_manager._messages if m.role == "user"]
+        assert len(kept) == 1 and kept[0].startswith("review the last two commits") and "Interrupted by the user" in kept[0]
+        agent.on_interrupt()  # a second Ctrl+C does not add it twice
+        assert sum(m.role == "user" for m in agent.session.context_manager._messages) == 1

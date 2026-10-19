@@ -90,7 +90,7 @@ class CLI:
                     async for event in agent.run(message):
                         emit({"type": event.type.value, **event.data})
                 except asyncio.CancelledError:
-                    agent.session.context_manager.repair_orphans()
+                    agent.on_interrupt()
                     emit({"type": "aborted"})
 
             async for line in lines():
@@ -319,7 +319,7 @@ class CLI:
         except asyncio.CancelledError:
             self.tui.end_turn()
             console.print("\n[warning]Interrupted[/warning]")
-            self.agent.session.context_manager.repair_orphans()  # providers reject unanswered tool calls
+            self.agent.on_interrupt()
         except Exception as e:  # a bug in one turn must not end the session or lose the chat
             self.tui.end_turn()
             console.print(f"\n[error]This request crashed ({type(e).__name__}: {e}). Your session is saved; carry on or /exit.[/error]")
