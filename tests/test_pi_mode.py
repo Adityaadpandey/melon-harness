@@ -3,7 +3,7 @@ from config.config import Config
 
 def test_pi_mode_gives_the_plain_tools_plus_a_step_list_and_keeps_the_read_call_cap(tmp_path):
     c = Config(cwd=tmp_path)
-    assert c.allowed_tools == ["read_file", "write_file", "edit", "shell", "grep", "glob", "list_dir", "graph", "todos", "advisor", "subagent_codebase_investigator"]
+    assert c.allowed_tools == ["read_file", "write_file", "edit", "shell", "grep", "glob", "list_dir", "graph", "todos", "ask_user", "advisor", "subagent_codebase_investigator"]
     assert c.read_call_budget == 12 and not c.check_references and not c.auto_scout
 
 
@@ -47,7 +47,7 @@ def test_pi_prompt_is_small_and_lists_only_the_tools_given(tmp_path):
     cfg = Config(cwd=tmp_path)
     tools = create_default_registry(cfg).get_tools()
     prompt = get_system_prompt(cfg, "remembered", tools, [])
-    assert len(tools) == 10 and "- shell:" in prompt and "- git:" not in prompt and "remembered" not in prompt
+    assert len(tools) == 11 and "- shell:" in prompt and "- git:" not in prompt and "remembered" not in prompt
 
 
 def test_pi_cap_keeps_the_tail_of_shell_output_and_the_head_of_everything_else(tmp_path):

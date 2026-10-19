@@ -438,7 +438,8 @@ class Screen:
             q, opts = asking
             c.print(Text.assemble((" ? ", f"bold {LAVENDER}"), (q, "bold")))
             for i, opt in enumerate(opts, 1):
-                c.print(Text.assemble((f"   [{i}] ", f"bold {CORAL if i == len(opts) else ACCENT}"), (opt, FG), ("  (enter)" if i == 1 else "", MUTED)))
+                label, _, why = opt.partition(" — ")  # a choice may carry a one-line explanation after the dash
+                c.print(Text.assemble((f"   [{i}] ", f"bold {CORAL if i == len(opts) else ACCENT}"), (label, f"bold {FG}" if why else FG), (f"  {why}" if why else "", MUTED), ("  (enter)" if i == 1 else "", MUTED)))
         out = c.file.getvalue().rstrip("\n") + "\n" + self._scanner(c.width)
         self._status_cache = (time.monotonic(), out, out.count("\n") + 1)
         return out, out.count("\n") + 1

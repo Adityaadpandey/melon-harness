@@ -242,7 +242,7 @@ class Config(BaseModel):
         if not self.pi_mode:
             return self
         pi = {
-            "allowed_tools": ["read_file", "write_file", "edit", "shell"] if self.core_tools_only else ["read_file", "write_file", "edit", "shell", "grep", "glob", "list_dir", "graph", "todos"],  # graph only shows up when graphify-out/graph.json exists
+            "allowed_tools": ["read_file", "write_file", "edit", "shell"] if self.core_tools_only else ["read_file", "write_file", "edit", "shell", "grep", "glob", "list_dir", "graph", "todos", "ask_user"],  # graph only shows up when graphify-out/graph.json exists
             "check_references": False,
             "auto_scout": False,
             "enable_parallel_tasks": False,

@@ -1,4 +1,5 @@
 from tools.builtin.advisor import AdvisorTool
+from tools.builtin.ask_user import AskUserTool
 from tools.builtin.edit_file import EditTool
 from tools.builtin.git import GitTool
 from tools.builtin.glob import GlobTool
@@ -35,6 +36,7 @@ __all__ = [
     "NotesTool",
     "UseSkillTool",
     "AdvisorTool",
+    "AskUserTool",
 ]
 
 
@@ -57,4 +59,5 @@ def get_all_builtin_tools() -> list[type]:
         NotesTool,
         UseSkillTool,
         AdvisorTool,
+        AskUserTool,
     ]

@@ -99,7 +99,7 @@ def get_console() -> Console:
 TITLES = {
     "read_file": "Read", "write_file": "Write", "edit": "Update", "shell": "Bash", "grep": "Search",
     "glob": "Find", "list_dir": "List", "web_search": "Web Search", "web_fetch": "Fetch",
-    "todos": "Todos", "memory": "Memory", "use_skill": "Skill",
+    "todos": "Todos", "ask_user": "Question", "memory": "Memory", "use_skill": "Skill",
 }
 PRIMARY_ARG = {
     "read_file": "path", "write_file": "path", "edit": "path", "shell": "command", "grep": "pattern",

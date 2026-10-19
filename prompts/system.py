@@ -204,7 +204,7 @@ def _get_tool_guidelines_section(tools: list[Tool]) -> str:
 def _get_operational_section() -> str:
     return """# Doing tasks
 
-- Act on clear requests without asking permission for ordinary reads, edits, builds and tests. Ask one focused question only when an unknown changes the result and the repo cannot answer it.
+- Act on clear requests without asking permission for ordinary reads, edits, builds and tests. When an unknown changes the result and the repo cannot answer it, use `ask_user`, never lettered options in prose.
 - Do exactly what was asked: no unrelated refactors, speculative abstractions or new dependencies. Mention unrelated issues instead of fixing them. Follow existing patterns. Three similar lines beat a premature helper. Prefer editing a file to creating one; no docs or READMEs unless asked.
 - Validate only at boundaries (user input, external APIs); no fallbacks for cases that cannot happen.
 - No comments by default. Add one only for a non-obvious WHY (hidden constraint, workaround), never to narrate the code or the current task.
