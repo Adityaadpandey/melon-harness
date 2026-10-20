@@ -65,6 +65,18 @@ async def test_grep_too_broad_lists_files_and_missing_path_suggests_real_one(rep
     assert r.success is False and "src/a.py" in r.error
 
 
+async def test_grep_anchors_match_per_line_in_crlf_files_too(repo):
+    # grep first searches the whole file and skips the line split when nothing matches; for anchored patterns
+    # that shortcut must agree with the per-line search, e.g. `TODO$` on a Windows "TODO\r\n" line
+    (repo / "win.txt").write_bytes(b"first\r\nfix it TODO\r\nlast\r\n")
+    (repo / "unix.txt").write_text("first\nfix it TODO\n")
+    t = GrepTool(Config(cwd=repo))
+    r = await run(t, repo, pattern="TODO$")
+    assert "win.txt:2:fix it TODO" in r.output and "unix.txt:2:fix it TODO" in r.output
+    assert "win.txt:3:last" in (await run(t, repo, pattern="^last")).output
+    assert "unix.txt:2:fix" in (await run(t, repo, pattern=r"\Afix")).output  # \A means line start, as it always did
+
+
 async def test_grep_literal_and_bad_regex(repo):
     t = GrepTool(Config(cwd=repo))
     assert (await run(t, repo, pattern="(", literal=True)).success is True

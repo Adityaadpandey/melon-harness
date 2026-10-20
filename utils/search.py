@@ -9,6 +9,7 @@ from __future__ import annotations
 import fnmatch
 import os
 import re
+import stat
 import subprocess
 from pathlib import Path, PurePosixPath
 
@@ -16,6 +17,7 @@ SECRET_GLOBS = (".env", ".env.*", "*.pem", "*.key", "id_rsa*", "id_ed25519*")
 SKIP_DIRS = {"node_modules", "__pycache__", ".git", ".venv", "venv", "dist", "build", ".next", ".turbo", "target", ".pytest_cache"}
 MAX_FILE_BYTES = 2_000_000
 MAX_LINE_CHARS = 300
+_ODD_BREAKS = re.compile("[\r\x0b\x0c\x1c-\x1e\x85\u2028\u2029]")  # line breaks for splitlines() but not for re's $
 
 
 def _is_secret(name: str) -> bool:
@@ -23,46 +25,50 @@ def _is_secret(name: str) -> bool:
     return any(fnmatch.fnmatch(low, g) for g in SECRET_GLOBS)
 
 
-def _is_binary(path: Path) -> bool:
-    try:
-        with open(path, "rb") as f:
-            return b"\0" in f.read(4096)
-    except OSError:
-        return True
-
-
 def list_files(root: Path, forbidden: list[str] | None = None) -> list[Path]:
     """Every searchable file under root, relative order stable (sorted)."""
     from safety.guard import is_forbidden_path
 
     forbidden = forbidden or []
-    paths: list[Path] = []
+    # plain "a/b/c.ts" strings until the end: on a 23k-file repo, Path objects were most of the cost
+    rels: list[str] = []
     try:
         r = subprocess.run(
             ["git", "ls-files", "-co", "--exclude-standard", "-z"],
             cwd=root, capture_output=True, timeout=20,
         )
         if r.returncode == 0:
-            paths = [root / p for p in r.stdout.decode("utf-8", "replace").split("\0") if p]
+            rels = [p for p in r.stdout.decode("utf-8", "replace").split("\0") if p]
     except (OSError, subprocess.SubprocessError):
         pass
-    if not paths:
+    if not rels:
         for dirpath, dirs, files in os.walk(root):
             dirs[:] = [d for d in dirs if d not in SKIP_DIRS]
-            paths += [Path(dirpath) / f for f in files]
+            rel_dir = os.path.relpath(dirpath, root).replace(os.sep, "/")
+            rels += [f if rel_dir == "." else f"{rel_dir}/{f}" for f in files]
 
+    # names repeat a lot (23k files in a monorepo share a few hundred folder names), so each name is judged once
+    bad: dict[str, bool] = {}
+
+    def blocked(name: str) -> bool:
+        if name not in bad:
+            bad[name] = name in SKIP_DIRS or bool(is_forbidden_path(name, forbidden))
+        return bad[name]
+
+    base = str(root)
     out = []
-    for p in paths:
-        rel = p.relative_to(root)
-        if _is_secret(p.name) or SKIP_DIRS & set(rel.parts[:-1]) or is_forbidden_path(rel, forbidden):
+    for rel in rels:
+        *dirs, name = rel.split("/")
+        if _is_secret(name) or any(blocked(d) for d in dirs) or (forbidden and is_forbidden_path(name, forbidden)):
             continue
         try:
-            if not p.is_file() or p.stat().st_size > MAX_FILE_BYTES:
-                continue
+            st = os.stat(os.path.join(base, rel))
         except OSError:
             continue
-        out.append(p)
-    return sorted(out)
+        if stat.S_ISREG(st.st_mode) and st.st_size <= MAX_FILE_BYTES:
+            out.append(rel)
+    out.sort(key=lambda rel: rel.split("/"))  # the order sorted() gives the Path objects: folder by folder
+    return [root / rel for rel in out]
 
 
 def glob_match(rel: str, pattern: str) -> bool:
@@ -75,7 +81,7 @@ def glob_match(rel: str, pattern: str) -> bool:
 
 def search(
     files: list[Path], root: Path, regex: re.Pattern, *, context: int = 0, limit: int = 100,
-    glob: str | None = None, files_only: bool = False,
+    glob: str | None = None, files_only: bool = False, per_file: list[tuple[str, int]] | None = None,
 ) -> tuple[list[str], int, int]:
     """(output lines, total matches, files with matches). Stops reading once
     `limit` matches are collected but keeps counting so the caller can say how
@@ -83,21 +89,33 @@ def search(
     out: list[str] = []
     total = hit_files = 0
     shown = 0
+    # One search over the whole file first: most files have no match and never get split into lines.
+    # With MULTILINE, ^ and $ hold at "\n" just as they do at each line's ends, but splitlines() also breaks
+    # at "\r" (CRLF files) and a few rarer characters, so in such files a pattern with ^, $ or a lookaround
+    # goes line by line. \A and \Z mean line start/end per line but file start/end here: no shortcut at all.
+    whole = None if re.search(r"\\[AZ]", regex.pattern) else re.compile(regex.pattern, regex.flags | re.MULTILINE)
+    edgy = any(c in regex.pattern for c in ("^", "$", "(?"))
     for f in files:
         rel = f.relative_to(root).as_posix()
         if glob and not glob_match(rel, glob):
             continue
-        if _is_binary(f):
-            continue
         try:
-            lines = f.read_text(encoding="utf-8", errors="replace").splitlines()
+            raw = f.read_bytes()
         except OSError:
             continue
+        if b"\0" in raw[:4096]:  # binary
+            continue
+        text = raw.decode("utf-8", errors="replace")
+        if whole and not whole.search(text) and not (edgy and _ODD_BREAKS.search(text)):
+            continue
+        lines = text.splitlines()
         hits = [i for i, line in enumerate(lines) if regex.search(line)]
         if not hits:
             continue
         hit_files += 1
         total += len(hits)
+        if per_file is not None:  # (path, matches) for every file, even past the limit
+            per_file.append((rel, len(hits)))
         if files_only:
             out.append(f"{rel} ({len(hits)})")
             continue

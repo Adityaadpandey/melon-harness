@@ -52,14 +52,13 @@ class GrepTool(Tool):
 
         root = target if target.is_dir() else target.parent
         files = await asyncio.to_thread(list_files, root, self.config.forbidden_paths) if target.is_dir() else [target]
+        per_file: list[tuple[str, int]] = []
         lines, total, hit_files = await asyncio.to_thread(
-            search, files, root, regex, context=p.context, limit=p.limit, glob=p.glob, files_only=p.files_only
+            search, files, root, regex, context=p.context, limit=p.limit, glob=p.glob, files_only=p.files_only, per_file=per_file
         )
         if not p.files_only and total > p.limit and hit_files > 15:
-            # too broad to read line by line: show where matches live instead
-            lines, total, hit_files = await asyncio.to_thread(
-                search, files, root, regex, context=0, limit=40, glob=p.glob, files_only=True
-            )
+            # too broad to read line by line: show where matches live instead (from the same pass, no second read)
+            lines = [f"{rel} ({n})" for rel, n in per_file]
             lines.append(f"{total} matches across {hit_files} files is too broad to list. Narrow with path/glob or a more specific pattern, then read.")
             return ToolResult.success_result("\n".join(lines), metadata={"matches": total, "files_with_matches": hit_files, "files_searched": len(files)})
         meta = {"matches": total, "files_with_matches": hit_files, "files_searched": len(files)}
