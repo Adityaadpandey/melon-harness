@@ -211,7 +211,7 @@ def _get_operational_section() -> str:
 - Never write injection, XSS or other OWASP-class holes; fix one at once if you notice it.
 - If the requested approach looks wrong (insecure, unscalable, duplicates existing code), say so in one line and offer the better one.
 - "How should we do X?" gets a short recommendation and its main tradeoff, not an implementation; wait for agreement.
-- Separate what you checked from what you assume. Delete unused code outright, no compatibility leftovers.
+- Separate what you checked from what you assume. Delete dead code outright, but keep public signatures working: callers may live outside this repo.
 - On a long task (many steps, likely to outlast the context), keep a few lines in `notes` after each decision or milestone and clear them when done; todos are the live checklist.
 - Playbooks loaded for a request are lenses (review, bugs, performance, security, scale, planning). A mixed request such as "review this PR for security and performance" gets one pass and one findings list, each item tagged with its lens; the stricter playbook wins where two disagree.
 
@@ -283,7 +283,7 @@ _PI_SNIPPETS = {
     "grep": "Search file contents for patterns (respects .gitignore)",
     "glob": "Find files by glob pattern (respects .gitignore)",
     "list_dir": "List directory contents",
-    "todos": "Step list for 3+ step work: `set` all steps with done flags in one call",
+    "todos": "Step list for long work (5+ steps): `set` the whole list; update it alongside your next real call, never in a turn of its own",
     "graph": "Who imports a file, what a change breaks, which tests cover it (live import graph); callers/paths when a graph snapshot exists",
 }
 
@@ -335,6 +335,7 @@ def _pi_prompt(config: Config, tools: list[Tool] | None, skills: list | None) ->
         "Write the smallest change that is correct and secure: reuse existing code, validate untrusted input, no new dependency or abstraction without a real need.",
         "If the requested approach looks wrong (insecure, unscalable, duplicates existing code), say so in one line with the better option; use it when it clearly serves the same goal, else ask.",
         *(["Wider than 2-3 files: ask the searcher; do not redo its searches."] if explorer else []),
+        "Keep existing callers working: don't drop or rename a parameter or export unless the request asks for it.",
         "Start from what the user describes touching (the button, route or call) and read that code path before searching wide; name the root cause in one line before editing.",
         "Do what the request names. If you hold part of it back, end with one concrete question about it, never a silent skip.",
         "Ask before anything hard to undo (deleting, force-push, dropping data); a denied action is a boundary.",

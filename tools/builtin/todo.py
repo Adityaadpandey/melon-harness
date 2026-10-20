@@ -20,9 +20,10 @@ class TodosParams(BaseModel):
 class TodosTool(Tool):
     name = "todos"
     description = (
-        "Live checklist for work with 3+ steps or several requests. Skip it for a single trivial step. "
-        "Prefer `set` with the whole list. Mark a step done the moment it is finished "
-        "(never batch completions), and only mark it done when it really passed: if tests fail or the work is partial, keep it open."
+        "Live checklist for long work: 5+ steps, a sweep over many files, or several requests. Skip it when a few tool calls "
+        "finish the job. Prefer `set` with the whole list, and send each update in the same turn as your next real call "
+        "(an edit, a test run), never in a turn of its own: every turn re-sends the whole conversation. Only mark a step done "
+        "when it really passed: if tests fail or the work is partial, keep it open."
     )
     kind = ToolKind.MEMORY
     schema = TodosParams
