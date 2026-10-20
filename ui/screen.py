@@ -81,9 +81,34 @@ class _Pane(FormattedTextControl):
     """Text that scrolls the transcript when the mouse wheel moves over it."""
 
     def __init__(self, text, on_scroll, cursor=None, on_mouse=None) -> None:
-        super().__init__(text, show_cursor=False, get_cursor_position=cursor)
+        super().__init__(self._grab, show_cursor=False, get_cursor_position=cursor)
+        self._text, self._src = text, None
+        self._last: tuple = (None, None, None)  # (fragments, width and cursor, content)
+        self._wide: tuple = (None, 0)  # (fragments, preferred width)
         self._on_scroll = on_scroll
         self._on_mouse = on_mouse
+
+    def _grab(self):
+        self._src = self._text()
+        return self._src
+
+    # The transcript hands back the very same list until new output lands. prompt_toolkit would still
+    # re-split and hash the whole session on every redraw (~40ms at 20k lines, so a spinner ticking at
+    # 10fps kept a core busy); when the list is the one we laid out last time, reuse that layout.
+    def create_content(self, width, height):
+        self._get_formatted_text_cached()  # runs the text callable once for this render, so _src is current
+        key = (width, self.get_cursor_position() if self.get_cursor_position else None)
+        if self._last[0] is self._src and self._last[1] == key:
+            return self._last[2]
+        content = super().create_content(width, height)
+        self._last = (self._src, key, content)
+        return content
+
+    def preferred_width(self, max_available_width):
+        self._get_formatted_text_cached()
+        if self._wide[0] is not self._src:
+            self._wide = (self._src, super().preferred_width(max_available_width))
+        return self._wide[1]
 
     def mouse_handler(self, mouse_event):
         if mouse_event.event_type == MouseEventType.SCROLL_UP:
