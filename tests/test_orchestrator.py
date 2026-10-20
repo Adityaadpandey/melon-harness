@@ -80,7 +80,7 @@ async def test_independent_workers_run_concurrently_and_merge(repo):
     assert all((repo / f"m{i}.py").exists() for i in range(3))
     # cleanup: no leftover worktrees or worker branches
     assert git(repo, "worktree", "list").count("\n") == 1
-    assert "integration" in git(repo, "branch", "--list", "mew/*") and git(repo, "branch", "--list", "mew/*").count("\n") == 1
+    assert "integration" in git(repo, "branch", "--list", "melon/*") and git(repo, "branch", "--list", "melon/*").count("\n") == 1
 
 
 async def test_same_file_disjoint_hunks_merge_cleanly_and_are_reported(repo):

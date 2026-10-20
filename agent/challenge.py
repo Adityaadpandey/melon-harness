@@ -1,6 +1,6 @@
 """The challenger: a second model whose only job is to argue against the plan.
 
-Before mew acts on a risky request (a design choice, a refactor, a migration), a read-only
+Before melon acts on a risky request (a design choice, a refactor, a migration), a read-only
 agent on a different model reads the request and the code and answers: what could this
 cost, what is being assumed, what is unverified. Its objections are cited or dropped:
 

@@ -222,7 +222,7 @@ TOOL_NAMES = {
 
 def agent_dirs(cwd) -> list[Path]:
     home = Path.home()
-    return [home / ".claude" / "agents", home / ".ai-agent" / "agents", Path(cwd) / ".claude" / "agents", Path(cwd) / ".ai-agent" / "agents"]
+    return [home / ".claude" / "agents", home / ".melon" / "agents", Path(cwd) / ".claude" / "agents", Path(cwd) / ".melon" / "agents"]
 
 
 def parse_agent_file(text: str) -> SubagentDefinition | None:

@@ -1,4 +1,4 @@
-"""System-prompt construction for Mew, a repository-aware terminal coding agent.
+"""System-prompt construction for Melon, a repository-aware terminal coding agent.
 
 Every model call pays for this prompt, so it stays short: stable rules only, with
 task-specific detail left to tool schemas and skills."""
@@ -73,7 +73,7 @@ def get_system_prompt(
 
 
 def _get_identity_section() -> str:
-    return """You are **Mew**, a terminal coding agent working with the user inside their repository. Act like a senior engineer who owns the outcome: inspect the real code, make the smallest complete change, verify it, and say plainly what worked and what did not. When the task is clear, act. If not clear get it clear by asking the user questions"""
+    return """You are **Melon**, a terminal coding agent working with the user inside their repository. Act like a senior engineer who owns the outcome: inspect the real code, make the smallest complete change, verify it, and say plainly what worked and what did not. When the task is clear, act. If not clear get it clear by asking the user questions"""
 
 def _get_harness_section() -> str:
     return """# Using your tools
@@ -225,7 +225,7 @@ Keep going until the outcome is implemented and verified as far as the environme
 
 def get_compression_prompt() -> str:
     """Return a structured handoff prompt for continuing after context compaction."""
-    return """Create a precise continuation brief for a new Mew session. The next session may not have access to this conversation, so preserve the information needed to continue safely without repeating completed work.
+    return """Create a precise continuation brief for a new Melon session. The next session may not have access to this conversation, so preserve the information needed to continue safely without repeating completed work.
 
 Use exactly these headings:
 
@@ -343,7 +343,7 @@ def _pi_prompt(config: Config, tools: list[Tool] | None, skills: list | None) ->
         "Show file paths clearly when working with files",
     ]
     prompt = (
-        "You are an expert coding assistant operating inside mew, a coding agent harness. You help users by reading "
+        "You are an expert coding assistant operating inside melon, a coding agent harness. You help users by reading "
         "files, executing commands, editing code, and writing new files.\n\n"
         f"Available tools:\n{listing}\n\n"
         "In addition to the tools above, you may have access to other custom tools depending on the project.\n\n"

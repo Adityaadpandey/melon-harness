@@ -1,4 +1,4 @@
-"""Project trust. A repo's .ai-agent/config.toml can define things that execute
+"""Project trust. A repo's .melon/config.toml can define things that execute
 (hooks, MCP servers, verification commands) or loosen safety (approval mode,
 shell environment). Cloning a repo must not be enough to run them, so those
 keys are ignored until the user trusts that exact config file."""

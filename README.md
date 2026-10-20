@@ -546,13 +546,13 @@ Plus:
 - `gh` and `curl` run outside the sandbox (they need the keychain login and the network) but only as one plain command, only
   after you approve, even in auto mode. Chained or piped ones stay sandboxed.
 - `web_fetch` refuses localhost, private ranges and cloud metadata at *every* redirect hop (SSRF-safe).
-- **Project trust:** a repo's `.ai-agent/config.toml` cannot enable `hooks`, `mcp_servers`, `verify_commands`, `verify_rules`,
+- **Project trust:** a repo's `.melon/config.toml` cannot enable `hooks`, `mcp_servers`, `verify_commands`, `verify_rules`,
   `approval` or `shell_environment` until you trust that exact file (`--trust`). Editing the file revokes the trust. A cloned repo
   can't quietly turn on code execution.
 - **Approvals show a diff**, and what you approve is exactly what gets written: preview and write share one planner. Choices are
   yes / yes and don't ask again / no, and tell me what to do differently (your reply goes to the model).
 - **Atomic writes** for files and sessions.
-- **`/undo`:** before each request melon records the working tree as a commit object (`refs/mew/backup`, nothing touches your index or
+- **`/undo`:** before each request melon records the working tree as a commit object (`refs/melon/backup`, nothing touches your index or
   stash). `/undo` restores what the last request changed and removes files it created. Untracked files that existed before are never
   deleted.
 
@@ -577,7 +577,7 @@ flowchart LR
 
 - Claude models go through `/messages`, everything else through `/chat/completions`, picked from the live `/models` catalog
   (cached 24h). Codex models use the Responses API over SSE with automatic token refresh.
-- **Role chains** in `.ai-agent/config.toml`:
+- **Role chains** in `.melon/config.toml`:
 
   ```toml
   [routing]
@@ -612,14 +612,14 @@ flowchart TB
     S6 -->|"reward: commit/works +1<br/>interrupt/'no...' -1"| LES
     S6 --> EH
     S5 --> EH["Edit history"]
-    LES --> AG["AGENTS.md<br/>'## Learned by mew'"]
+    LES --> AG["AGENTS.md<br/>'## Learned by melon'"]
     LES --> PROMPT["Next session's prompt<br/>newest first, capped"]
     EH --> SEARCH["search boosts files that<br/>fixed similar requests"]
 ```
 
 - **Lessons.** `/learn <rule>`, a rejection with feedback, a standing rule at the start of a message, or a correction. A model reads
   each reply *next to what it replied to*, so "no, not this" or "yes, like that" becomes a lesson tied to its request, not a
-  phrase-match. It runs as a background call. Lessons are written into the repo's `AGENTS.md` under `## Learned by mew`, so you can
+  phrase-match. It runs as a background call. Lessons are written into the repo's `AGENTS.md` under `## Learned by melon`, so you can
   review and commit them. `/lessons` lists them, `/forget N` removes one (also from `AGENTS.md`).
 - **Edit history.** Each verified run records its request words and the files it changed. A match is the share of the search
   query's words, so a 40-word brief can't drown a 5-word search.
@@ -639,7 +639,7 @@ flowchart TB
 - **Read-only sub-agents** called in the same turn run concurrently under a shared cap (`max_parallel_agents`, default 4) with live
   progress. A sub-agent's report has its paths checked on disk; a missing one is flagged at the top with the real file of that name.
 - **`parallel_tasks`** (guarded mode) fans write-capable workers out into separate **git worktrees**, merges them in dependency
-  order into `mew/<run>/integration`, detects overlap, re-runs real conflicts on top of the merged state, and flags them for review
+  order into `melon/<run>/integration`, detects overlap, re-runs real conflicts on top of the merged state, and flags them for review
   instead of resolving them by guessing. `--parallel` lets the model plan the split; `--graph tasks.json` is explicit.
   It only pays off for genuinely independent work. Measure before relying on it.
 
@@ -664,7 +664,7 @@ flowchart LR
   - Always on: `ponytail` (do the least that fully works), `grounded`, `house-rules`.
   - On match: `debugging`, `code-review`, `security`, `refactor`, `testing`, `performance`, `database`, `api-design`,
     `git-workflow`, `review-pr`, `review-changes`, `review-commits`, `bug-hunt`, `scalability`, `typescript`, `feature-planning`.
-  - Skills are read from `~/.mew/skills` first, then Claude Code's, `agents` and pi's folders. Turn one off with `disabled_skills`.
+  - Skills are read from `~/.melon/skills` first, then Claude Code's, `agents` and pi's folders. Turn one off with `disabled_skills`.
 - **Subagents** are declared in a profile (`[[subagents]]`: name, description, goal_prompt, allowed_tools, role). `role` picks a
   routing chain, so exploration runs cheap and debugging runs strong. Sub-agents start no MCP servers, can't spawn more, and cap
   answers at 6000 chars.
@@ -684,9 +684,9 @@ A full-screen terminal UI with its own look, not a clone.
 - The input box grows with wrapped text, then scrolls. History (Up / Ctrl+R), `/` completion, `@path` attachment, `!cmd` shows
   output to the model (`!!cmd` keeps it private), Shift+Enter for a newline, **Ctrl+C interrupts the agent, not the app**.
 - Mouse selection (drag, double-click word, triple-click line, drag at the edge to scroll) copies to the system clipboard and via OSC 52.
-- Queued messages say they are queued. `MEW_PLAIN=1` keeps the classic line layout; `MEW_FULLSCREEN=1` opts into the panel layout
+- Queued messages say they are queued. `MELON_PLAIN=1` keeps the classic line layout; `MELON_FULLSCREEN=1` opts into the panel layout
   where the default is the plain terminal.
-- **Resume anything.** Every turn autosaves. Exit prints `mew --resume <id>` and `mew --continue`. `/sessions` lists them.
+- **Resume anything.** Every turn autosaves. Exit prints `melon --resume <id>` and `melon --continue`. `/sessions` lists them.
 
 Commands: `/help /clear /compact /context /cost /model /effort /approval /plan /diff /agents /hooks /verbose /more /skills /expand
 /config /stats /tools /mcp /save /sessions /resume /checkpoint /restore /undo /rewind /jobs /copy /learn /lessons /forget /exit`, plus your own (below).
@@ -697,7 +697,7 @@ Commands: `/help /clear /compact /context /cost /model /effort /approval /plan /
 - **MCP:** stdio and HTTP/SSE servers; their tools appear beside the built-ins. Gated by project trust.
 - **Hooks:** `before_agent`, `after_agent`, `before_tool`, `after_tool`, `on_error`, `pre_compact`, `post_compact`, `session_start`,
   `stop` (exit 2 sends stderr back and keeps the agent working), `subagent_stop`. Gated by project trust.
-- **Custom slash commands:** markdown files in `.claude/commands` and `.ai-agent/commands` (repo and home); folders become
+- **Custom slash commands:** markdown files in `.claude/commands` and `.melon/commands` (repo and home); folders become
   `name:sub`, descriptions come from front matter and show in tab completion. Prompt templates support `$1`, `$@`, `${1:-default}`.
 - **Built-in tools:** `read_file`, `write_file`, `edit_file` (multi-edit, fuzzy match, CRLF-preserving), `list_dir`, `glob`, `grep`,
   `search`, `outline`, `git`, `graph`, `shell`, `web_search`, `web_fetch`, `memory`, `notes`, `todo`, `ask_user`, `advisor`,

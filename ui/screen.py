@@ -427,7 +427,7 @@ class Screen:
 
     def _header(self):
         cols = _size()[0]
-        left = f"  =^{self._face()}^=  mew  ·  {self._title()}"
+        left = f"  =^{self._face()}^=  melon  ·  {self._title()}"
         right = "scrolled back · PageDown / ctrl+end to return  " if self.anchor is not None else "drag to copy · /copy all · F2 native select  "
         if not self.mouse_on:
             right = "native select on (wheel off) · F2 to go back  "
@@ -435,7 +435,7 @@ class Screen:
             right = "✓ copied to clipboard  "
         pad = " " * max(1, cols - len(left) - len(right))
         busy = self.tui._turn_active
-        return [(f"bold fg:{ACCENT}", f"  =^{self._face()}^="), (f"bold fg:{LAVENDER if busy else FG}", "  mew"),
+        return [(f"bold fg:{ACCENT}", f"  =^{self._face()}^="), (f"bold fg:{LAVENDER if busy else FG}", "  melon"),
                 (f"fg:{MUTED}", f"  ·  {self._title()}{pad}"), (f"bold fg:{MINT}" if time.monotonic() - self._copied_at < 2 else f"fg:{AMBER}" if self.anchor is not None else f"fg:{FAINT}", right)]
 
     # -- panes ---------------------------------------------------------

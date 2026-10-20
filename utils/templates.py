@@ -12,15 +12,15 @@ import re
 import shlex
 from pathlib import Path
 
-PROMPT_DIRS = (Path.home() / ".pi" / "agent" / "prompts", Path.home() / ".mew" / "prompts")
+PROMPT_DIRS = (Path.home() / ".pi" / "agent" / "prompts", Path.home() / ".melon" / "prompts")
 
 
 def prompt_dirs(cwd: Path | None = None) -> tuple[Path, ...]:
-    """Pi's and Mew's prompt folders, then Claude Code's command folders, then the repo's own (later ones win)."""
+    """Pi's and Melon's prompt folders, then Claude Code's command folders, then the repo's own (later ones win)."""
     home = Path.home()
-    dirs = [*PROMPT_DIRS, home / ".claude" / "commands", home / ".ai-agent" / "commands"]
+    dirs = [*PROMPT_DIRS, home / ".claude" / "commands", home / ".melon" / "commands"]
     if cwd:
-        dirs += [Path(cwd) / ".claude" / "commands", Path(cwd) / ".ai-agent" / "commands"]
+        dirs += [Path(cwd) / ".claude" / "commands", Path(cwd) / ".melon" / "commands"]
     return tuple(dirs)
 
 

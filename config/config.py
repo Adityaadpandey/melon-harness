@@ -180,7 +180,7 @@ class Config(BaseModel):
     model_pinned: bool = False  # set by -m or /model: the user chose, so never auto-route away from it
     max_parallel_agents: int = 4  # concurrent sub-agents / workers
     enable_parallel_tasks: bool = True  # expose the parallel_tasks tool (off inside workers and sub-agents)
-    auto_challenge: bool = False  # a second model argues against risky requests before mew acts (on in the interactive app, --challenge for one-shot)
+    auto_challenge: bool = False  # a second model argues against risky requests before melon acts (on in the interactive app, --challenge for one-shot)
     auto_learn: bool = False  # a model reads each reply for corrections and preferences and saves them as lessons (on in the interactive app)
     auto_scout: bool = True  # non-trivial requests get a cheap read-only investigator pass first (if the profile defines one)
     advisor: bool = True  # a parameterless `advisor` tool: a stronger model reads the whole transcript and says what the plan misses (fix runs must consult it)
@@ -192,7 +192,7 @@ class Config(BaseModel):
     review_pipeline_role: str = "default"  # the fast main model: the slower "review" route took 40s a call
     review_pipeline_tokens: int = 80_000  # new-work cap for each reviewer and for the verifier
     review_lenses: int = 0  # 0 = one reviewer that works through every angle (default); 2+ = that many separate angle reviewers; 1 = behaviour angle only
-    review_backend: Literal["mew", "claude-code"] = "mew"  # claude-code: reviewers and verifier run as read-only `claude -p` sessions on your Claude login
+    review_backend: Literal["melon", "claude-code"] = "melon"  # claude-code: reviewers and verifier run as read-only `claude -p` sessions on your Claude login
     review_claude_model: str = ""  # --model for those sessions (sonnet, opus, ...); empty = Claude Code's own default
     review_run_checks: bool = True  # run the project's typecheck/lint beside the reviewers; a failure on a changed file is a finding
     review_min_confidence: int = 60  # the verifier scores each claim 0-100; below this it is dropped as not worth the reader's time

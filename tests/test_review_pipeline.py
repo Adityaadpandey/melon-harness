@@ -337,9 +337,9 @@ def test_claude_code_never_inherits_a_gateway_endpoint_or_key(monkeypatch):
 
     for k in ("ANTHROPIC_BASE_URL", "ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN"):
         monkeypatch.setenv(k, "x")
-    monkeypatch.setenv("API_KEY", "mew-gateway-key")
+    monkeypatch.setenv("API_KEY", "melon-gateway-key")
     env = rc.clean_env()
-    assert not any(k.startswith("ANTHROPIC_") for k in env) and env["API_KEY"] == "mew-gateway-key"  # mew's own key is untouched, Claude Code never sees an override
+    assert not any(k.startswith("ANTHROPIC_") for k in env) and env["API_KEY"] == "melon-gateway-key"  # melon's own key is untouched, Claude Code never sees an override
 
 
 async def test_a_pr_is_diffed_against_the_branch_it_merges_into_not_main(tmp_path, monkeypatch):

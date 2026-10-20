@@ -41,8 +41,8 @@ def test_sections_extracted_by_heading_not_fenced_text():
 
 
 async def test_use_skill_tool(tmp_path):
-    (tmp_path / ".ai-agent" / "skills").mkdir(parents=True)
-    (tmp_path / ".ai-agent" / "skills" / "dbg.md").write_text(SKILL)
+    (tmp_path / ".melon" / "skills").mkdir(parents=True)
+    (tmp_path / ".melon" / "skills" / "dbg.md").write_text(SKILL)
     (tmp_path / "docs").mkdir()
     (tmp_path / "docs" / "dbg.md").write_text(DOC)
     cfg = Config(pi_mode=False, cwd=tmp_path, approval=ApprovalPolicy.AUTO)
@@ -55,8 +55,8 @@ async def test_use_skill_tool(tmp_path):
 
 
 async def test_matching_playbook_is_attached_to_the_request(tmp_path):
-    (tmp_path / ".ai-agent" / "skills").mkdir(parents=True)
-    (tmp_path / ".ai-agent" / "skills" / "dbg.md").write_text(SKILL)
+    (tmp_path / ".melon" / "skills").mkdir(parents=True)
+    (tmp_path / ".melon" / "skills" / "dbg.md").write_text(SKILL)
     cfg = Config(pi_mode=False, cwd=tmp_path, approval=ApprovalPolicy.AUTO, auto_verify=False)
     async with Agent(cfg) as a:
         a.session.client = ScriptedClient([text("ok")])

@@ -571,7 +571,7 @@ async def ask(config, prompt: str, role: str, max_turns: int, max_tokens: int, d
         if answer.strip():
             _spent_log.append(tokens)
             return answer
-        # an empty answer (not logged in, timeout) falls through to a mew reviewer instead of losing the review
+        # an empty answer (not logged in, timeout) falls through to a melon reviewer instead of losing the review
 
     cfg = Config(**{
         **config.to_dict(),

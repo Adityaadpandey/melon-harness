@@ -413,7 +413,7 @@ class CodexResponsesAdapter:
         tools: list[dict[str, Any]] | None,
         temperature: float | None,
     ) -> AsyncGenerator[StreamEvent, None]:
-        # the "codex/" prefix only routes inside mew; the backend wants the bare name
+        # the "codex/" prefix only routes inside melon; the backend wants the bare name
         instructions, items = to_responses_input(messages)
         body: dict[str, Any] = {
             "model": model.removeprefix("codex/"),

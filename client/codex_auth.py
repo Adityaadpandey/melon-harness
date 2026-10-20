@@ -1,4 +1,4 @@
-"""Reuses the ChatGPT login that the Codex CLI already stored, so mew can call
+"""Reuses the ChatGPT login that the Codex CLI already stored, so melon can call
 Codex models with your subscription instead of an API key. We only read (and
 refresh) ~/.codex/auth.json; we never ask you to log in again."""
 from __future__ import annotations

@@ -82,8 +82,8 @@ def test_small_instruction_files_inline_and_stubs_skipped(tmp_path):
 
 def test_tunyt_profile_is_selected_by_path_and_project_config_wins(tmp_path):
     root = tmp_path / "tunyt" / "apps" / "server"
-    (root / ".ai-agent").mkdir(parents=True)
-    (root / ".ai-agent" / "config.toml").write_text("max_turns = 7\n")
+    (root / ".melon").mkdir(parents=True)
+    (root / ".melon" / "config.toml").write_text("max_turns = 7\n")
     c = load_config(root)
     assert c.profile == "tunyt" and ".env" in c.forbidden_paths
     assert c.max_turns == 7

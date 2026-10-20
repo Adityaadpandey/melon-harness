@@ -1,4 +1,4 @@
-"""Run a review sub-agent as a headless Claude Code session (`claude -p`) instead of a mew agent.
+"""Run a review sub-agent as a headless Claude Code session (`claude -p`) instead of a melon agent.
 
 It uses the user's own Claude login and quota, loads the repo's CLAUDE.md and skills the way Claude Code always does, and
 gets only read-only tools. Example of what one call runs:

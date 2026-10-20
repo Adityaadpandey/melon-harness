@@ -229,7 +229,7 @@ async def backup(cwd: Path) -> str | None:
         code, out = await _git(cwd, "rev-parse", "--verify", "HEAD")
         sha = out.decode().strip() if code == 0 else ""
     if sha:  # keep the objects from being garbage collected while the user may still undo
-        await _git(cwd, "update-ref", "refs/mew/backup", sha)
+        await _git(cwd, "update-ref", "refs/melon/backup", sha)
     return sha or None
 
 

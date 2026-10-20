@@ -150,7 +150,7 @@ async def test_backup_and_undo_restore_edits_and_remove_created_files(tmp_path):
     restored, deleted, skipped = await undo(tmp_path, ref, ["a.txt", "new.txt"], ["new.txt"])
     assert (tmp_path / "a.txt").read_text() == "two (user's unsaved work)\n"
     assert not (tmp_path / "new.txt").exists() and restored == ["a.txt"] and deleted == ["new.txt"] and not skipped
-    assert (await backup(tmp_path)) and subprocess.run(["git", "rev-parse", "refs/mew/backup"], cwd=tmp_path).returncode == 0
+    assert (await backup(tmp_path)) and subprocess.run(["git", "rev-parse", "refs/melon/backup"], cwd=tmp_path).returncode == 0
 
 
 async def test_a_note_typed_mid_check_stops_the_check_and_is_worked_on_now(repo):

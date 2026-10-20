@@ -24,7 +24,7 @@ SECRET_READ_DENY = [
     "~/.docker/config.json", "~/.netrc", "~/.npmrc", "~/.git-credentials", "~/Library/Keychains",
     "~/.codex", "~/.claude", "~/.config/claude", "~/.pypirc", "~/.vault-token", "~/.password-store", "~/.terraform.d",
     "~/.cargo/credentials.toml", "~/.gem/credentials", "~/.config/hub",
-    "~/Library/Application Support/ai-agent", "~/.local/share/ai-agent", "~/.config/ai-agent",  # mew's own config and traces
+    "~/Library/Application Support/melon", "~/.local/share/melon", "~/.config/melon",  # melon's own config and traces
 ]
 TEMP_WRITE = ["/private/tmp", "/tmp", "/private/var/folders", "/private/var/tmp"]
 

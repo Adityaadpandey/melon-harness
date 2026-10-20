@@ -160,7 +160,7 @@ async def _branch(cwd: Path, name: str, skip: tuple[str, ...], pr_base: str = ""
 async def _remote_pr(cwd: Path, number: str, skip: tuple[str, ...], pr_base: str) -> Target | None:
     """A PR whose branch is not checked out: fetch its head (GitHub keeps it at pull/<n>/head), check it out in a throwaway worktree and
     review that. Example: standing on main, "review PR #42" reads the PR's files, not main's."""
-    ref = f"refs/mew/pr-{number}"
+    ref = f"refs/melon/pr-{number}"
     if not await _fetch(cwd, f"+pull/{number}/head:{ref}"):
         return None
     base = (await _remote_ref(cwd, pr_base) if pr_base else "") or await _base_branch(cwd)
@@ -170,7 +170,7 @@ async def _remote_pr(cwd: Path, number: str, skip: tuple[str, ...], pr_base: str
     mb = await _ok(cwd, "merge-base", base, ref) if base else ""
     if not mb:
         return None
-    tree = Path(tempfile.mkdtemp(prefix=f"mew-pr-{number}-"))
+    tree = Path(tempfile.mkdtemp(prefix=f"melon-pr-{number}-"))
     if not await _ok(cwd, "worktree", "add", "--detach", str(tree), ref) and not (tree / ".git").exists():
         shutil.rmtree(tree, ignore_errors=True)
         return None

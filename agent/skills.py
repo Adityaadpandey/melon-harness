@@ -46,10 +46,10 @@ class Skill:
 
 
 def _user_dirs() -> tuple[list[Path], list[Path]]:
-    """Skill folders shared with other agents, as (below mew's built-ins, above them).
-    Claude Code's (plugins, then ~/.claude/skills) rank below, so mew's compact always-on ponytail
-    beats the plugin's longer Claude Code one; pi's folder ranks above, as it always has, and ~/.mew/skills
-    (the user's own pick for mew, e.g. copied in from ~/.claude/skills and ~/.agents/skills) ranks above all."""
+    """Skill folders shared with other agents, as (below melon's built-ins, above them).
+    Claude Code's (plugins, then ~/.claude/skills) rank below, so melon's compact always-on ponytail
+    beats the plugin's longer Claude Code one; pi's folder ranks above, as it always has, and ~/.melon/skills
+    (the user's own pick for melon, e.g. copied in from ~/.claude/skills and ~/.agents/skills) ranks above all."""
     home = Path.home()
     below = []
     try:
@@ -57,7 +57,7 @@ def _user_dirs() -> tuple[list[Path], list[Path]]:
         below = [Path(v[-1]["installPath"]) / "skills" for v in plugins.values() if v]  # the newest install of each
     except (OSError, ValueError, KeyError, TypeError):
         pass
-    return [*below, home / ".claude" / "skills"], [home / ".pi" / "agent" / "skills", home / ".mew" / "skills"]
+    return [*below, home / ".claude" / "skills"], [home / ".pi" / "agent" / "skills", home / ".melon" / "skills"]
 
 
 def parse_skill(text: str, path: Path | None = None) -> Skill | None:
@@ -93,7 +93,7 @@ def _load(profile: str | None, cwd: str, skill_dirs: tuple[str, ...], home: str)
     if profile:
         dirs.append(PROFILES_DIR / profile / "skills")
     root = Path(cwd)
-    dirs += [root / ".claude" / "skills", root / ".ai-agent" / "skills", *(root / d for d in skill_dirs)]
+    dirs += [root / ".claude" / "skills", root / ".melon" / "skills", *(root / d for d in skill_dirs)]
     found: dict[str, Skill] = {}
     for d in dirs:
         if d.is_dir():

@@ -36,12 +36,12 @@ def build_repo(task: Task, d: Path, model: str, legacy: bool) -> None:
         f.parent.mkdir(parents=True, exist_ok=True)
         f.write_text(content, encoding="utf-8")
     (d / ".gitignore").write_text("__pycache__/\n.pytest_cache/\n*.pyc\n")
-    (d / ".ai-agent").mkdir()
+    (d / ".melon").mkdir()
     if legacy:
         cfg = f'approval = "auto"\nmax_turns = 40\n[model]\nname = "{model}"\ntemperature = 0\n'
     else:
         cfg = f'max_turns = 40\nmax_seconds = 540\ntrace = true\n[model]\nname = "{model}"\n'
-    (d / ".ai-agent" / "config.toml").write_text(cfg)
+    (d / ".melon" / "config.toml").write_text(cfg)
     for cmd in (["init", "-q"], ["config", "user.email", "b@b"], ["config", "user.name", "bench"],
                 ["add", "-A"], ["commit", "-qm", "fixture"]):
         subprocess.run(["git", *cmd], cwd=d, check=True, capture_output=True)

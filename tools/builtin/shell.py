@@ -170,7 +170,7 @@ class ShellTool(Tool):
         # output is copied to a log as it arrives, so a slow command can be handed
         # over to the background mid-run without losing what it already printed
         job_id = len(JOBS) + 1
-        log = Path(tempfile.gettempdir()) / f"mew-job-{os.getpid()}-{job_id}.log"
+        log = Path(tempfile.gettempdir()) / f"melon-job-{os.getpid()}-{job_id}.log"
         log.write_bytes(b"")
         bufs: dict[str, bytearray] = {"out": bytearray(), "err": bytearray()}
 

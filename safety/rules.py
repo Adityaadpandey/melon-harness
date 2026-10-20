@@ -1,4 +1,4 @@
-"""Allow / deny / ask rules in Claude Code's notation, so a project can say what Mew may do without a prompt.
+"""Allow / deny / ask rules in Claude Code's notation, so a project can say what Melon may do without a prompt.
 
     Bash(git diff:*)     any command starting with `git diff`
     Bash(npm run build)  exactly that command
@@ -7,7 +7,7 @@
     WebFetch(domain:docs.python.org)
     Bash                 the whole tool (no specifier)
 
-Example `.ai-agent/permissions.json`:  {"allow": ["Bash(pnpm test:*)"], "deny": ["Read(.env*)", "Bash(rm:*)"], "ask": ["Bash(git push:*)"]}
+Example `.melon/permissions.json`:  {"allow": ["Bash(pnpm test:*)"], "deny": ["Read(.env*)", "Bash(rm:*)"], "ask": ["Bash(git push:*)"]}
 
 Deny wins over ask, ask over allow. An allow never lifts the built-in refusals (plan mode, dangerous commands)."""
 from __future__ import annotations
@@ -21,7 +21,7 @@ from urllib.parse import urlparse
 
 from safety.approval import split_pipeline
 
-# the names people know from Claude Code -> the tool names Mew registers
+# the names people know from Claude Code -> the tool names Melon registers
 ALIASES = {
     "bash": {"shell"},
     "edit": {"edit", "write_file"},
@@ -140,10 +140,10 @@ def files(cwd: Path) -> list[Path]:
     its global settings are not (they were written for a different tool's habits)."""
     home = Path.home()
     return [
-        home / ".ai-agent" / "permissions.json",
+        home / ".melon" / "permissions.json",
         cwd / ".claude" / "settings.json",
         cwd / ".claude" / "settings.local.json",
-        cwd / ".ai-agent" / "permissions.json",
+        cwd / ".melon" / "permissions.json",
     ]
 
 
@@ -160,7 +160,7 @@ def load_rules(cwd: Path) -> Rules:
 
 def save_rule(cwd: Path, kind: str, text: str) -> Path:
     """Append to the project's own file; other keys in it are left as they are."""
-    path = cwd / ".ai-agent" / "permissions.json"
+    path = cwd / ".melon" / "permissions.json"
     try:
         data = json.loads(path.read_text(encoding="utf-8"))
     except (OSError, ValueError):
@@ -176,7 +176,7 @@ def save_rule(cwd: Path, kind: str, text: str) -> Path:
 
 
 def drop_rule(cwd: Path, text: str) -> bool:
-    path = cwd / ".ai-agent" / "permissions.json"
+    path = cwd / ".melon" / "permissions.json"
     try:
         data = json.loads(path.read_text(encoding="utf-8"))
     except (OSError, ValueError):

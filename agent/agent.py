@@ -100,7 +100,7 @@ class Agent:
         self.undo_info: dict | None = None
         self._long_answer = 0  # words in the last final answer when it ran over the limit; reminded on the next request
         self.checkpoints: list[dict] = []  # one entry per request that changed files, for /rewind
-        self._root_hint: Path | None = None  # the repo the last request worked in, when mew starts above it
+        self._root_hint: Path | None = None  # the repo the last request worked in, when melon starts above it
         self._scout_error = ""
         self._no_approver = False
         self._playbooks_sent: set[str] = set()  # names whose text is in the conversation; cleared on compaction
@@ -119,7 +119,7 @@ class Agent:
         cm.repair_orphans()  # providers reject unanswered tool calls
 
     def _adopt_root(self, root: Path | None) -> bool:
-        """Work from the repo itself. The folder mew started in stays reachable for other repos next to it."""
+        """Work from the repo itself. The folder melon started in stays reachable for other repos next to it."""
         if root is None or root == self.config.cwd:
             return False
         self.config.allowed_dirs = [*self.config.allowed_dirs, str(self.config.cwd.resolve())]
@@ -740,7 +740,7 @@ class Agent:
                 self._failed = True
                 yield AgentEvent.agent_error(
                     "Stopped: this change needs approval and the run cannot ask. Re-run with --approval auto-edit "
-                    "(edits) or --approval auto (edits and commands), or start mew interactively."
+                    "(edits) or --approval auto (edits and commands), or start melon interactively."
                 )
                 return
 

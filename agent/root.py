@@ -1,4 +1,4 @@
-"""Finding the project when mew was started one folder above it (in ~/Devlopment with ~/Devlopment/tunyt
+"""Finding the project when melon was started one folder above it (in ~/Devlopment with ~/Devlopment/tunyt
 inside). Outside a repo the harness cannot see what changed, so it skips checks, review and undo."""
 from __future__ import annotations
 

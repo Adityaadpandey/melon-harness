@@ -12,7 +12,7 @@ from rich.console import Console
 from config.config import Config
 from safety.approval import Decision
 from tools.base import FileDiff, ToolConfirmation
-from ui.prompt import MewCompleter, ask_choice, expand_mentions
+from ui.prompt import MelonCompleter, ask_choice, expand_mentions
 from ui.tui import AGENT_THEME, TUI, parse_unified_diff, render_diff, summarize_result, tool_label
 
 DIFF = FileDiff(path="a.py", old_content="x = 1\ny = 2\nz = 3\n", new_content="x = 1\ny = 20\nz = 3\nw = 4\n").to_diff()
@@ -102,7 +102,7 @@ def test_completer_slash_and_file_mentions(tmp_path):
     (tmp_path / "src").mkdir()
     (tmp_path / "src" / "auth.service.ts").write_text("x")
     (tmp_path / ".env").write_text("SECRET=1")
-    c = MewCompleter(tmp_path, [], lambda: ["claude-sonnet-5-5", "deepseek/deepseek-v4-pro"])
+    c = MelonCompleter(tmp_path, [], lambda: ["claude-sonnet-5-5", "deepseek/deepseek-v4-pro"])
 
     def comps(text):
         return [x.text for x in c.get_completions(Document(text), CompleteEvent())]

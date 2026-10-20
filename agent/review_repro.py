@@ -21,7 +21,7 @@ REPRO_PROMPT = """A reviewer claims this defect exists in the code under your cu
 The verifier's evidence: {evidence}
 
 Prove it by running code, or show that it does not happen. Write the smallest test or script that pushes the exact input from the claim through
-the real function (or the real component, route or query) and prints what comes out. Put it in a NEW file named .mew-repro.<ext>; never edit an
+the real function (or the real component, route or query) and prints what comes out. Put it in a NEW file named .melon-repro.<ext>; never edit an
 existing file. Run it with the project's own runner (look at package.json / pyproject.toml / the neighbouring tests for the command; node_modules
 is already linked in). No network, no installs, no database. If the defect needs something you cannot run here, say CANNOT_RUN and why.
 
@@ -39,7 +39,7 @@ MAX_REPROS = 4
 async def make_scratch(cwd: Path, files: list[str], rev_tip: str = "HEAD", from_worktree: bool = True) -> Path | None:
     """A detached worktree of `rev_tip` holding the changed files as they are now, with node_modules linked in from the real checkout.
     Example: a change under apps/web gets apps/web/node_modules linked so `pnpm vitest` resolves its imports. None when git refuses."""
-    tree = Path(tempfile.mkdtemp(prefix="mew-repro-"))
+    tree = Path(tempfile.mkdtemp(prefix="melon-repro-"))
     await _git(cwd, "worktree", "add", "--detach", str(tree), rev_tip)
     if not (tree / ".git").exists():
         shutil.rmtree(tree, ignore_errors=True)

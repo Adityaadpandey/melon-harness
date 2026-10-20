@@ -68,10 +68,10 @@ COMMANDS = {
     "/cost": "tokens, cache hit rate, cache misses, estimated cost",
     "/model": "show or switch model (Tab completes ids)",
     "/approval": "set approval mode: on-request, auto-edit, auto, never, yolo, plan",
-    "/agents": "list sub-agents (built-in and .claude/agents/*.md or .ai-agent/agents/*.md)",
+    "/agents": "list sub-agents (built-in and .claude/agents/*.md or .melon/agents/*.md)",
     "/permissions": "list or edit allow / deny / ask rules, e.g. /permissions deny Read(.env*)",
     "/effort": "how hard the model thinks: low, medium, high or auto (Codex models)",
-    "/plan": "toggle plan mode: read-only, mew investigates and presents a plan before touching anything",
+    "/plan": "toggle plan mode: read-only, melon investigates and presents a plan before touching anything",
     "/diff": "what changed in the working tree (git diff --stat, /diff full for the patch)",
     "/context": "how full the context window is and what is in it",
     "/hooks": "list the configured hooks",
@@ -90,8 +90,8 @@ COMMANDS = {
     "/sessions": "list saved sessions",
     "/resume": "resume a saved session (give its ID)",
     "/checkpoint": "create a checkpoint",
-    "/learn": "teach mew a rule for this repo (kept between sessions)",
-    "/lessons": "list what mew has learned here",
+    "/learn": "teach melon a rule for this repo (kept between sessions)",
+    "/lessons": "list what melon has learned here",
     "/forget": "remove a lesson by number",
     "/rewind": "list requests that changed files; /rewind <n> puts files back to before request n",
     "/undo": "put back the files the last request changed",
@@ -100,7 +100,7 @@ COMMANDS = {
 }
 
 
-class MewCompleter(Completer):
+class MelonCompleter(Completer):
     def __init__(self, cwd: Path, forbidden: list[str], models: Callable[[], list[str]]):
         self.cwd, self.forbidden, self.models = cwd, forbidden, models
         self._files: list[str] = []
@@ -187,7 +187,7 @@ class InputSession:
         self.frame: Callable[[], object] = lambda: None  # full-screen: changes whenever the screen would look different
         self.area = TextArea(
             prompt=[("class:prompt", " ✦ ")], style="class:box", dont_extend_height=True, multiline=True, wrap_lines=True, history=history,
-            completer=ThreadedCompleter(MewCompleter(cwd, forbidden, models)), complete_while_typing=True,
+            completer=ThreadedCompleter(MelonCompleter(cwd, forbidden, models)), complete_while_typing=True,
             height=self._input_height, scrollbar=True,
         )
         kb = KeyBindings()

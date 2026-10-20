@@ -43,7 +43,7 @@ class ToolDiscoveryManager:
         return tools
 
     def discover_from_directory(self, directory: Path) -> None:
-        tool_dir = directory / ".ai-agent" / "tools"
+        tool_dir = directory / ".melon" / "tools"
 
         if not tool_dir.exists() or not tool_dir.is_dir():
             return

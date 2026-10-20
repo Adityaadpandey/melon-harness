@@ -31,7 +31,7 @@ Prove the fix works. Confirming that it exists proves nothing, and a rubber stam
    (grep every other caller, sibling and mirrored half for the same cause)? Is anything in the diff unrelated to the findings, a new dependency,
    or out of step with how the neighbouring code is written?
 2. For each finding, make its trigger happen and show the result: run the repro if one is given, or the test the author added, or write the
-   smallest script of your own (a file named .mew-verify.<ext>) that pushes the finding's input through the real code.
+   smallest script of your own (a file named .melon-verify.<ext>) that pushes the finding's input through the real code.
 3. If the author added a test, show that it fails WITHOUT the fix: `git stash`, run it, `git stash pop` (stash only tracked changes; keep the test file).
 4. Run the project's typecheck, lint and the tests that cover the changed files with the change in place. Investigate every error: nothing is
    "unrelated" until you have shown it fails the same way on HEAD.

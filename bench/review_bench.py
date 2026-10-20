@@ -1,6 +1,6 @@
 """Does the reviewer find planted bugs, and stay quiet on a clean change?
 
-    python -m bench.review_bench --model codex/gpt-5.6-luna                       # mew's own reviewers
+    python -m bench.review_bench --model codex/gpt-5.6-luna                       # melon's own reviewers
     python -m bench.review_bench --model codex/gpt-5.6-luna --backend claude-code # reviewers as Claude Code sessions
     python -m bench.review_bench --cases pagination,control --lenses 1            # compare 1 generalist with the angles
 
@@ -83,7 +83,7 @@ async def run_case(case: Case, model: str, backend: str, lenses: int) -> dict:
 async def main() -> None:
     ap = argparse.ArgumentParser()
     ap.add_argument("--model", required=True)
-    ap.add_argument("--backend", default="mew", choices=["mew", "claude-code"])
+    ap.add_argument("--backend", default="melon", choices=["melon", "claude-code"])
     ap.add_argument("--lenses", type=int, default=0, help="0 = by diff size, 1 = one generalist, 4 = all angles")
     ap.add_argument("--cases", default="")
     ap.add_argument("--out", default="")

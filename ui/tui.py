@@ -1,4 +1,4 @@
-"""Terminal rendering with mew's own look: a night-sky palette (pink, lavender, mint),
+"""Terminal rendering with melon's own look: a night-sky palette (pink, lavender, mint),
 coloured chips for each tool call, a rail down the left of every block, syntax-highlighted
 diffs with tinted rows, and a shimmering status line while the agent works."""
 from __future__ import annotations
@@ -183,7 +183,7 @@ class _Heading(Heading):
         yield Text.assemble(("▌ ", console.get_style(f"markdown.{self.tag}")), self.text)
 
 
-class MewMarkdown(Markdown):
+class MelonMarkdown(Markdown):
     elements = {**Markdown.elements, "heading_open": _Heading}
 
 
@@ -592,7 +592,7 @@ class TUI:
         self.console.print(Padding(Text.assemble(("▍ ", f"bold {ACCENT}"), (shown[:300], f"bold {FG}")), (0, 1), style=f"on {BG_BOX}"))
 
     def _assistant_grid(self, md: str, first: bool):
-        return Rail(MewMarkdown(md.rstrip(), code_theme="dracula"), LAVENDER, "▎", "◆" if first else None)
+        return Rail(MelonMarkdown(md.rstrip(), code_theme="dracula"), LAVENDER, "▎", "◆" if first else None)
 
     def _print_block(self, md: str) -> None:
         if not md.strip():
@@ -803,7 +803,7 @@ class TUI:
         from ui.prompt import COMMANDS
 
         rows = "\n".join(f"- `{c}`  {d}" for c, d in COMMANDS.items())
-        self.console.print(MewMarkdown(
+        self.console.print(MelonMarkdown(
             "## Commands\n" + rows
             + "\n\n## Input\n- `@path` attaches a file (Tab completes)\n"
             "- `!cmd` runs a shell command and shows the output to the model; `!!cmd` runs it privately\n"

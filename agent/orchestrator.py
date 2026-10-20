@@ -92,7 +92,7 @@ class Orchestrator:
         self.git_lock = asyncio.Lock()  # worktree add/remove touch shared .git metadata
         self.resolve = resolve_conflicts
         self.run_id = uuid.uuid4().hex[:6]
-        self.tmp = Path(tempfile.mkdtemp(prefix=f"mew-{self.run_id}-"))
+        self.tmp = Path(tempfile.mkdtemp(prefix=f"melon-{self.run_id}-"))
         self.repo = config.cwd
         self.integration = ""
         self.int_dir = self.tmp / "integration"
@@ -109,7 +109,7 @@ class Orchestrator:
     async def _worktree(self, name: str, base: str) -> Path:
         path = self.tmp / name
         async with self.git_lock:
-            code, out = await git(self.repo, "worktree", "add", "-q", "-b", f"mew/{self.run_id}/{name}", str(path), base)
+            code, out = await git(self.repo, "worktree", "add", "-q", "-b", f"melon/{self.run_id}/{name}", str(path), base)
         if code:
             raise GraphError(f"git worktree failed: {out}")
         self._worktrees.append(path)
@@ -118,7 +118,7 @@ class Orchestrator:
     async def _run_worker(self, node: Node, request: str, base: str) -> None:
         async with self.sem:
             started = time.perf_counter()
-            node.branch = f"mew/{self.run_id}/{node.id}"
+            node.branch = f"melon/{self.run_id}/{node.id}"
             wt = await self._worktree(node.id, base)
             git_dir = str((self.repo / ".git").resolve())  # a worktree's git metadata lives in the main repo's .git
             cfg = Config(**{**self.config.to_dict(), "cwd": str(wt),
@@ -154,7 +154,7 @@ class Orchestrator:
             except Exception as e:  # one worker crashing must not sink the others
                 node.status, node.note = "failed", f"{type(e).__name__}: {e}"
             await git(wt, "add", "-A")
-            await git(wt, "-c", "user.email=mew@local", "-c", "user.name=mew", "commit", "-qm", f"{node.id}: {node.goal[:60]}")
+            await git(wt, "-c", "user.email=melon@local", "-c", "user.name=melon", "commit", "-qm", f"{node.id}: {node.goal[:60]}")
             _, names = await git(wt, "diff", "--name-only", f"{base}", "HEAD")
             node.changed = [n for n in names.splitlines() if n]
             if node.status == "done" and not node.changed:
@@ -167,7 +167,7 @@ class Orchestrator:
             self._emit("worker_done", node=node.id, status=node.status, changed=node.changed, sec=node.seconds)
 
     async def _merge(self, node: Node) -> bool:
-        code, out = await git(self.int_dir, "-c", "user.email=mew@local", "-c", "user.name=mew",
+        code, out = await git(self.int_dir, "-c", "user.email=melon@local", "-c", "user.name=melon",
                               "merge", "--no-ff", "-m", f"merge {node.id}", node.branch)
         if code == 0:
             return True
@@ -181,7 +181,7 @@ class Orchestrator:
         code, head = await git(self.repo, "rev-parse", "HEAD")
         if code:
             raise GraphError("parallel mode needs a git repository with at least one commit")
-        self.integration = f"mew/{self.run_id}/integration"
+        self.integration = f"melon/{self.run_id}/integration"
         try:
             async with self.git_lock:
                 await git(self.repo, "worktree", "add", "-q", "-b", self.integration, str(self.int_dir), head)
@@ -275,7 +275,7 @@ class Orchestrator:
         async with self.git_lock:
             for wt in reversed(self._worktrees):
                 await git(self.repo, "worktree", "remove", "--force", str(wt))
-            _, branches = await git(self.repo, "branch", "--list", f"mew/{self.run_id}/*")
+            _, branches = await git(self.repo, "branch", "--list", f"melon/{self.run_id}/*")
             for b in branches.split():
                 if b.endswith("/integration") or b == "*":
                     continue

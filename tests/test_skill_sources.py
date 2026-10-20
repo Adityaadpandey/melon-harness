@@ -38,7 +38,7 @@ def home(tmp_path, monkeypatch):
 def test_claude_code_skills_load_without_hijacking_requests_or_mews_own_ponytail(home):
     sk = {s.name: s for s in load_skills(Config(cwd=home / "repo"))}  # the dead link is skipped, not a crash
     assert sk["tidy"].description == "Keeps diffs small and readable" and sk["review"].description == "Review a diff"
-    assert sk["ponytail"].always and "Claude Code" not in sk["ponytail"].description  # mew's compact one wins
+    assert sk["ponytail"].always and "Claude Code" not in sk["ponytail"].description  # melon's compact one wins
     assert "review" not in [s.name for s in match_skills(list(sk.values()), "review this diff")]  # listed, never auto-fired
 
 

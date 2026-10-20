@@ -23,7 +23,7 @@ def test_only_the_changed_files_are_checked_never_a_build_or_the_whole_suite(tmp
 
 
 def test_nothing_for_files_with_no_cheap_check(tmp_path):
-    # a Swift app's Tests/ folder is tests/ on macOS: it once made mew run pytest on Swift and call "no tests ran" a failure
+    # a Swift app's Tests/ folder is tests/ on macOS: it once made melon run pytest on Swift and call "no tests ran" a failure
     touch(tmp_path / "Tests/check.swift")
     touch(tmp_path / "Sources/main.swift")
     touch(tmp_path / "web/a.ts")  # eslint not installed

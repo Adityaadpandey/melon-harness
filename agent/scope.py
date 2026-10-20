@@ -1,7 +1,7 @@
 """Requests that cover many places ("fix all such issues in the whole app") need a sweep, not a few lucky reads.
 
 A saved session shows what happens without one: 7 files looked at, 4 fixed, answer written, while the same button
-pattern sat in dozens of other components. The sweep makes mew list every place first, then close the list."""
+pattern sat in dozens of other components. The sweep makes melon list every place first, then close the list."""
 from __future__ import annotations
 
 import re

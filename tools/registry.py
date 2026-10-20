@@ -210,7 +210,7 @@ class ToolRegistry:
     def _pi_cap(self, result: ToolResult, name: str) -> None:
         """Pi's limit: 2000 lines or 50KB, whichever is hit first, whole lines only. Shell output keeps its
         tail (the error is at the end); everything else keeps its head. The full text goes to a temp file the
-        model can open, e.g. 'Showing last 2000 of 9120 lines. Full output: /tmp/mew-ab12.log ...'."""
+        model can open, e.g. 'Showing last 2000 of 9120 lines. Full output: /tmp/melon-ab12.log ...'."""
         lines = result.output.split("\n")
         kept = lines[-PI_MAX_LINES:] if name == "shell" else lines[:PI_MAX_LINES]
         if name == "shell":
@@ -225,7 +225,7 @@ class ToolRegistry:
             out.reverse()
         if len(out) == len(lines):
             return
-        fd, full = tempfile.mkstemp(prefix="mew-", suffix=".log")
+        fd, full = tempfile.mkstemp(prefix="melon-", suffix=".log")
         with os.fdopen(fd, "w", encoding="utf-8") as f:
             f.write(result.output)
         which = "last" if name == "shell" else "first"

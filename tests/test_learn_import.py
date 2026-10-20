@@ -80,7 +80,7 @@ def test_story_names_failed_commands_and_chunks_split(tmp_path):
 
 def test_rulebook_skips_mews_own_section(tmp_path):
     (tmp_path / "apps/web").mkdir(parents=True)
-    (tmp_path / "AGENTS.md").write_text("# Rules\nNever read .env\n\n## Learned by mew\n- old lesson under review\n")
+    (tmp_path / "AGENTS.md").write_text("# Rules\nNever read .env\n\n## Learned by melon\n- old lesson under review\n")
     (tmp_path / "apps/web/AGENTS.md").write_text("Ask before UI changes")
     (tmp_path / ".claude/skills/debug").mkdir(parents=True)
     (tmp_path / ".claude/skills/debug/SKILL.md").write_text("---\nname: debug\ndescription: Use for any 500\n---\n")

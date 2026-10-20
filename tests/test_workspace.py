@@ -91,15 +91,15 @@ async def test_os_sandbox_blocks_writes_outside_and_secret_reads_even_when_text_
 
     assert run("echo ok > inside.txt").returncode == 0 and (ws / "inside.txt").exists()
     # built dynamically so no static check could see it; the real home is never writable from the sandbox
-    probe = Path(os.path.realpath(os.environ.get("REAL_HOME", "/Users"))) / f"mew_sandbox_probe_{os.getpid()}"
+    probe = Path(os.path.realpath(os.environ.get("REAL_HOME", "/Users"))) / f"melon_sandbox_probe_{os.getpid()}"
     real_home = Path(os.path.expanduser("~" + os.environ.get("USER", ""))).resolve()
-    victim = real_home / f"mew_sandbox_probe_{os.getpid()}.txt"
-    r = run(f'h=$(eval echo ~{os.environ.get("USER", "")}); echo x > "$h/mew_sandbox_probe_{os.getpid()}.txt"')
+    victim = real_home / f"melon_sandbox_probe_{os.getpid()}.txt"
+    r = run(f'h=$(eval echo ~{os.environ.get("USER", "")}); echo x > "$h/melon_sandbox_probe_{os.getpid()}.txt"')
     assert r.returncode != 0 and not victim.exists()
     victim.unlink(missing_ok=True)
     r = run(f"ls {real_home}/.ssh")
     assert r.returncode != 0
-    assert run("echo t > /tmp/mew_sandbox_probe && rm /tmp/mew_sandbox_probe").returncode == 0
+    assert run("echo t > /tmp/melon_sandbox_probe && rm /tmp/melon_sandbox_probe").returncode == 0
     assert run("python3 -c 'print(1)' && git --version").returncode == 0
 
 
@@ -187,7 +187,7 @@ def test_a_tilde_inside_prose_is_not_the_home_folder(ws):
 def test_a_commit_message_is_prose_not_a_path(tmp_path):
     ws = Workspace(tmp_path)
     assert ws.shell_violation("git commit -m 'Add rules from ~ and /Users/x/notes'") is None
-    assert ws.shell_violation('git commit --message="read ~/.ai-agent first"') is None
+    assert ws.shell_violation('git commit --message="read ~/.melon first"') is None
     assert ws.shell_violation("git commit -m 'x' && cat /etc/hosts")  # a real path after the message still counts
 
 

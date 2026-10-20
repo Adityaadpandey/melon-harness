@@ -20,6 +20,6 @@ class TestTool(Tool):
         message = params.message
 
         output = f"Test tool received: {message}\n"
-        output += "Tool was discovered from: .ai-agent/tool/test_tool.py"
+        output += "Tool was discovered from: .melon/tool/test_tool.py"
 
         return ToolResult.success_result(output)
