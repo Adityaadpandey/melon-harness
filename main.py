@@ -16,7 +16,7 @@ from agent.persistence import PersistenceManager, SessionSnapshot
 from agent.session import Session
 from config.config import ApprovalPolicy, Config
 from config.loader import load_config
-from config.loader import get_data_dir, load_last_model, save_last_model
+from config.loader import get_data_dir, load_last_model, move_old_dirs, save_last_model
 from utils.text import count_tokens
 from ui.prompt import COMMANDS, InputSession, expand_mentions
 from ui.tui import TUI, context_bar, get_console
@@ -80,7 +80,7 @@ class CLI:
         return ok and (self.last_report or {}).get("status") not in {"failed", "verification_failed"}
 
     async def run_rpc(self, lines=None) -> None:
-        """Drive mew from another program: one JSON command per stdin line, events and replies on stdout.
+        """Drive melon from another program: one JSON command per stdin line, events and replies on stdout.
 
             {"type": "prompt", "message": "fix the bug", "id": "1"}   start a request (one at a time)
             {"type": "steer", "message": "use python 3.12"}           note read after the current tool calls
@@ -245,13 +245,13 @@ class CLI:
 
     async def run_interactive(self) -> str | None:
         screen = None
-        if sys.stdout.isatty() and sys.stdin.isatty() and not os.environ.get("MEW_PLAIN"):  # MEW_PLAIN=1: plain scrolling terminal
+        if sys.stdout.isatty() and sys.stdin.isatty() and not os.environ.get("MELON_PLAIN"):  # MELON_PLAIN=1: plain scrolling terminal
             from ui.screen import Screen
 
             screen = Screen(self.tui, console, lambda: f"{self.config.model_name}  ·  {str(self.config.cwd).replace(str(Path.home()), '~')}")
         self.screen = screen
         self.tui.print_welcome(
-            "mew",
+            "melon",
             lines=[
                 f"model: {self.config.model_name}   approval: {self.config.approval.value}",
                 f"cwd: {str(self.config.cwd).replace(str(Path.home()), '~')}" + (f"   profile: {self.config.profile}" if self.config.profile else ""),
@@ -320,8 +320,8 @@ class CLI:
         console.print("\n[dim]Goodbye![/dim]")
         sid, turns = getattr(self, "_exit_info", (None, 0))
         if turns:
-            console.print(f"[dim]Resume this session:  [/dim][bold]mew --resume {sid}[/bold]")
-            console.print("[dim]Or the newest one in this folder:  [/dim][bold]mew --continue[/bold]")
+            console.print(f"[dim]Resume this session:  [/dim][bold]melon --resume {sid}[/bold]")
+            console.print("[dim]Or the newest one in this folder:  [/dim][bold]melon --continue[/bold]")
 
     async def _run_turn(self, text: str) -> None:
         """Run one request as a task so Ctrl+C cancels the agent, not the app."""
@@ -719,7 +719,7 @@ class CLI:
             elif word == "remove" and rule_text.strip():
                 ok = drop_rule(self.config.cwd, rule_text.strip())
                 mgr.rules = load_rules(self.config.cwd)
-                console.print("[success]Removed[/success]" if ok else "[dim]No such rule in .ai-agent/permissions.json[/dim]")
+                console.print("[success]Removed[/success]" if ok else "[dim]No such rule in .melon/permissions.json[/dim]")
             else:
                 if not mgr.rules.rules:
                     console.print("[dim]No rules. Add one: /permissions allow Bash(git diff:*) | deny Read(.env*) | ask Bash(git push:*)[/dim]", highlight=False)
@@ -736,7 +736,7 @@ class CLI:
             else:
                 self._before_plan = mgr.approval_policy
                 mgr.approval_policy = self.config.approval = ApprovalPolicy.PLAN
-                console.print("[success]Plan mode on: mew can read and search but changes nothing. /plan again to leave.[/success]")
+                console.print("[success]Plan mode on: melon can read and search but changes nothing. /plan again to leave.[/success]")
         elif cmd_name == "/diff":
             git = ["git", "-C", str(self.config.cwd), "diff"] + ([] if cmd_args == "full" else ["--stat"])
             out = subprocess.run(git, capture_output=True, text=True).stdout.strip()
@@ -815,7 +815,7 @@ class CLI:
                 for i, text in enumerate(rows, 1):
                     console.print(f"  {i}. {text}")
                 if not rows:
-                    console.print("[dim]Nothing learned yet. Rejecting an action with feedback, or /learn <rule>, teaches mew.[/dim]")
+                    console.print("[dim]Nothing learned yet. Rejecting an action with feedback, or /learn <rule>, teaches melon.[/dim]")
                 console.print(f"[dim]  {len(learned.data['edits'])} past verified run(s) also guide search.[/dim]")
         elif cmd_name == "/undo":
             info = self.agent.undo_info
@@ -938,7 +938,7 @@ class CLI:
 @click.option("--add-dir", "add_dirs", multiple=True, type=click.Path(exists=True, file_okay=False, path_type=Path), help="Extra directory the agent may use besides the working directory (repeatable)")
 @click.option("--resume", "resume_id", help="Continue a saved session by id (shown when you exit; /sessions lists them)")
 @click.option("--continue", "continue_last", is_flag=True, help="Continue the newest saved session that ran in this folder")
-@click.option("--trust", "trust_project", is_flag=True, help="Trust this project's .ai-agent/config.toml (hooks, verify commands, approval)")
+@click.option("--trust", "trust_project", is_flag=True, help="Trust this project's .melon/config.toml (hooks, verify commands, approval)")
 @click.option("--challenge", "challenge_mode", is_flag=True, help="Have a second model argue against risky requests first (always on interactively)")
 @click.option("--effort", type=click.Choice(["low", "medium", "high"]), help="Reasoning effort (Codex models)")
 @click.option("--model", "-m", help="Model id (overrides config)")
@@ -967,11 +967,12 @@ def main(
     pi_mode: bool | None,
     approval: str | None,
 ):
+    move_old_dirs()
     try:
         config = load_config(cwd=cwd, trust_project=trust_project, pi_mode=pi_mode)
         if config.ignored_project_keys:
             if sys.stdin.isatty() and sys.stdout.isatty() and not prompt:
-                console.print(f"[warning]This project's .ai-agent/config.toml sets: {', '.join(config.ignored_project_keys)}[/warning]")
+                console.print(f"[warning]This project's .melon/config.toml sets: {', '.join(config.ignored_project_keys)}[/warning]")
                 console.print("[dim]These can run commands or relax approvals. They are ignored unless you trust the file.[/dim]")
                 if input("Trust it? [y/N] ").strip().lower() in {"y", "yes"}:
                     config = load_config(cwd=cwd, trust_project=True, pi_mode=pi_mode)
@@ -1039,10 +1040,10 @@ def main(
             sys.exit(1)
     else:
         # a terminal tab names the running program, which is python; set a title the way Claude Code does,
-        # e.g. "✦ mew · tunyt" (✦ is the prompt glyph, like Claude Code's ✳). The old title is pushed first and popped on exit, so the tab gets its own back.
+        # e.g. "✦ melon · tunyt" (✦ is the prompt glyph, like Claude Code's ✳). The old title is pushed first and popped on exit, so the tab gets its own back.
         titled = sys.stdout.isatty()
         if titled:
-            sys.stdout.write(f"\033[22;0t\033]0;✦ mew · {Path(config.cwd).name}\007")
+            sys.stdout.write(f"\033[22;0t\033]0;✦ melon · {Path(config.cwd).name}\007")
             sys.stdout.flush()
         try:
             asyncio.run(cli.run_interactive())

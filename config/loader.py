@@ -28,11 +28,23 @@ AGENT_MD_FILE = "AGENT.MD"
 
 
 def get_config_dir() -> Path:
-    return Path(user_config_dir("ai-agent"))
+    return Path(user_config_dir("melon"))
 
 
 def get_data_dir() -> Path:
-    return Path(user_data_dir("ai-agent"))
+    return Path(user_data_dir("melon"))
+
+
+def move_old_dirs() -> None:
+    """The app used to keep its sessions, traces and lessons under "ai-agent". Move that folder to "melon" once,
+    so --resume and everything learned keep working after the rename. Left alone when "melon" already exists."""
+    for base in (user_data_dir, user_config_dir):  # the same folder on macOS, two on Linux
+        old, new = Path(base("ai-agent")), Path(base("melon"))
+        if old.is_dir() and not new.exists():
+            try:
+                old.rename(new)
+            except OSError as e:
+                logger.warning("could not move %s to %s: %s", old, new, e)
 
 
 def save_last_model(name: str) -> None:
@@ -70,7 +82,7 @@ def _parse_toml(path: Path):
 
 def _get_project_config(cwd: Path) -> Path | None:
     current = cwd.resolve()
-    agent_dir = current / ".ai-agent"
+    agent_dir = current / ".melon"
 
     if agent_dir.is_dir():
         config_file = agent_dir / CONFIG_FILE_NAME
@@ -134,10 +146,10 @@ def taste_text(f: Path) -> str:
 
 
 def _taste_for(dirs: list[Path], home: Path) -> str | None:
-    """Taste from the repo folders, then the user's global ones (Command Code's and mew's own).
+    """Taste from the repo folders, then the user's global ones (Command Code's and melon's own).
     It is learned, not written down, so it ranks below AGENTS.md / CLAUDE.md and the user's request."""
     blocks = []
-    for d in [*dirs, home, home / ".mew"]:
+    for d in [*dirs, home, home / ".melon"]:
         for f in taste_files(d):
             if text := taste_text(f):
                 blocks.append(f"### {f}\n{text}")

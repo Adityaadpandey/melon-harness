@@ -1,4 +1,4 @@
-"""Teach mew from the Claude Code sessions you already ran in a repo.
+"""Teach melon from the Claude Code sessions you already ran in a repo.
 
 Claude Code keeps every session as a jsonl file under ~/.claude/projects/<cwd with / as ->/, but it deletes
 them after 30 days unless `cleanupPeriodDays` is raised. What it never deletes is ~/.claude/history.jsonl:
@@ -13,13 +13,13 @@ Each message you typed starts a task, and the task runs until your next message.
   +1  your next message moves on ("commit it", "works", "nice")
    0  anything else
 
-Tasks that were not punished go into mew's edit history (request words -> files Claude edited), so `search`
+Tasks that were not punished go into melon's edit history (request words -> files Claude edited), so `search`
 finds those files faster next time. The rules you stated along the way ("commit in parts pls") become lessons,
-saved in mew's store and in the repo's AGENTS.md.
+saved in melon's store and in the repo's AGENTS.md.
 
 The quick run asks one model for lessons from your recent prompts. `--deep` reads everything: each task's story
 goes to a model in chunks for candidate lessons, then one last call weighs them against what the repo already
-says (AGENTS.md files, Command Code taste, skills) so only new rules are added, and it also drops lessons mew
+says (AGENTS.md files, Command Code taste, skills) so only new rules are added, and it also drops lessons melon
 saved before that turned out to be noise or repeat the rulebook.
 
     python -m agent.learn_import --repo ~/Devlopment/tunyt                   # quick dry run
@@ -36,7 +36,7 @@ import re
 from collections import Counter
 from pathlib import Path
 
-from agent.learn import HEADING, MAX_LESSONS, Learned
+from agent.learn import HEADING, MAX_LESSONS, OLD_HEADING, Learned
 
 EDIT_TOOLS = {"Edit", "Write", "MultiEdit", "NotebookEdit"}
 INTERRUPTED = "[Request interrupted by user"
@@ -198,13 +198,13 @@ def chunks(tasks: list[dict], size: int = CHUNK_CHARS) -> list[str]:
 
 
 def rulebook(repo: Path) -> str:
-    """What the repo already tells agents: every AGENTS.md (minus mew's own section, which is under review),
+    """What the repo already tells agents: every AGENTS.md (minus melon's own section, which is under review),
     Command Code taste, and each skill's name and description."""
     parts = []
     for f in sorted(repo.rglob("AGENTS.md")):
         if "node_modules" in f.parts or ".deepsec" in f.parts:
             continue
-        body = f.read_text(errors="replace").split(HEADING)[0]
+        body = f.read_text(errors="replace").replace(OLD_HEADING, HEADING).split(HEADING)[0]
         parts.append(f"=== {f.relative_to(repo)}\n{body.strip()}")
     for f in sorted((repo / ".commandcode" / "taste").rglob("*.md")):
         parts.append(f"=== {f.relative_to(repo)}\n{f.read_text(errors='replace').strip()}")
@@ -288,7 +288,7 @@ Skip one-off feature requests and anything only true that day. Be concrete: name
 Return a JSON array of objects {{"rule": "<one imperative line, max 30 words>", "evidence": "<short quote or count>"}}.
 At most {n} items, the best supported first. Nothing else."""
 
-REDUCE_PROMPT = """You maintain the "Learned by mew" section of a repository's AGENTS.md: rules an agent learned
+REDUCE_PROMPT = """You maintain the "Learned by melon" section of a repository's AGENTS.md: rules an agent learned
 from working with this developer. You get:
   * RULEBOOK: what the repo already tells agents (AGENTS.md files, learned taste, skills)
   * CURRENT: the numbered lessons in the section now
@@ -347,11 +347,13 @@ async def deep(tasks: list[dict], hooks: Counter, repo: Path, learned: Learned, 
 
 
 def main(argv: list[str] | None = None) -> None:
+    from config.loader import move_old_dirs
+    move_old_dirs()
     ap = argparse.ArgumentParser(description=__doc__.split("\n")[0])
     ap.add_argument("--repo", type=Path, required=True)
     ap.add_argument("--projects", type=Path, default=Path.home() / ".claude" / "projects")
     ap.add_argument("--history", type=Path, default=Path.home() / ".claude" / "history.jsonl")
-    ap.add_argument("--apply", action="store_true", help="write to mew's store and AGENTS.md (default: dry run)")
+    ap.add_argument("--apply", action="store_true", help="write to melon's store and AGENTS.md (default: dry run)")
     ap.add_argument("--no-lessons", action="store_true", help="edit history only, skip the model calls")
     ap.add_argument("--deep", action="store_true", help="read every session's story and check lessons against the rulebook")
     ap.add_argument("--reweigh", action="store_true", help="with --deep: reuse the saved candidates, redo only the final verdict")
@@ -376,7 +378,7 @@ def main(argv: list[str] | None = None) -> None:
         return
 
     if args.deep:
-        # the dry run is saved next to mew's store, so --apply writes exactly what you reviewed (no new model call)
+        # the dry run is saved next to melon's store, so --apply writes exactly what you reviewed (no new model call)
         # and --reweigh redoes only the last, cheap step on the same candidates
         saved_path = learned.path.with_suffix(".deep.json")
         try:

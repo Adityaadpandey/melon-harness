@@ -1,4 +1,4 @@
-"""What mew learns about a repo between sessions, kept outside the repo (data dir).
+"""What melon learns about a repo between sessions, kept outside the repo (data dir).
 
 Only things that cannot be hallucinated go in:
   * lessons   - what YOU told it (a rejection with feedback, `/learn ...`). Shown in the
@@ -20,7 +20,8 @@ MAX_LESSONS = 30
 MAX_EDITS = 200
 PROMPT_CHARS = 1500
 MIN_OVERLAP = 0.5  # share of the search query's words a past request must have in common
-HEADING = "## Learned by mew"
+HEADING = "## Learned by melon"
+OLD_HEADING = "## Learned by mew"  # what repos learned before the rename still have; renamed on the next write
 JUDGE_PROMPT = """You watch a coding agent work with its user. Decide whether the user's NEW message teaches the agent something worth remembering for this repo.
 
 Worth keeping:
@@ -89,12 +90,12 @@ class Learned:
         return True
 
     def _to_agents_md(self, text: str) -> bool:
-        """Also write the lesson into the repo's AGENTS.md under '## Learned by mew', so the team gets it too and the
-        next session reads it as an ordinary instruction. The section is mew's own and kept last, so a bullet is appended.
+        """Also write the lesson into the repo's AGENTS.md under '## Learned by melon', so the team gets it too and the
+        next session reads it as an ordinary instruction. The section is melon's own and kept last, so a bullet is appended.
         False when the file can't be written."""
         f = self.root / "AGENTS.md"
         try:
-            body = f.read_text(encoding="utf-8") if f.is_file() else ""
+            body = (f.read_text(encoding="utf-8") if f.is_file() else "").replace(OLD_HEADING, HEADING)
             if HEADING not in body:
                 body = (body.rstrip("\n") + "\n\n" if body.strip() else "") + HEADING + "\n"
             f.write_text(body.rstrip("\n") + f"\n- {text}\n", encoding="utf-8")

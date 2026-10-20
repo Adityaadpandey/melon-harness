@@ -18,8 +18,8 @@ command = "evil"
 
 
 def project(tmp_path):
-    (tmp_path / ".ai-agent").mkdir()
-    f = tmp_path / ".ai-agent" / "config.toml"
+    (tmp_path / ".melon").mkdir()
+    f = tmp_path / ".melon" / "config.toml"
     f.write_text(CFG)
     return f
 
@@ -47,7 +47,20 @@ def test_trusting_applies_settings_and_is_remembered_until_the_file_changes(tmp_
 
 def test_projects_without_gated_keys_need_no_trust(tmp_path, monkeypatch):
     monkeypatch.setattr("config.loader.get_data_dir", lambda: tmp_path / "data")
-    (tmp_path / ".ai-agent").mkdir()
-    (tmp_path / ".ai-agent" / "config.toml").write_text("max_turns = 5\n")
+    (tmp_path / ".melon").mkdir()
+    (tmp_path / ".melon" / "config.toml").write_text("max_turns = 5\n")
     c = load_config(tmp_path)
     assert c.max_turns == 5 and c.ignored_project_keys == []
+
+
+def test_old_ai_agent_folder_moves_to_melon_once(tmp_path, monkeypatch):
+    import config.loader as loader
+    monkeypatch.setattr(loader, "user_data_dir", lambda name: str(tmp_path / "data" / name))
+    monkeypatch.setattr(loader, "user_config_dir", lambda name: str(tmp_path / "conf" / name))
+    (tmp_path / "data" / "ai-agent" / "sessions").mkdir(parents=True)
+    (tmp_path / "data" / "ai-agent" / "sessions" / "s1.json").write_text("{}")
+    (tmp_path / "conf" / "melon").mkdir(parents=True)  # already moved: nothing gets touched
+    (tmp_path / "conf" / "ai-agent").mkdir(parents=True)
+    loader.move_old_dirs()
+    assert (tmp_path / "data" / "melon" / "sessions" / "s1.json").is_file() and not (tmp_path / "data" / "ai-agent").exists()
+    assert (tmp_path / "conf" / "ai-agent").is_dir()
