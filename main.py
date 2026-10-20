@@ -211,10 +211,13 @@ class CLI:
             window = sess.client.registry.get(self.config.model_name).context_length  # what the agent compacts against
             if used:
                 parts.append(f"ctx {context_bar(100 * used / window, 12)}  {used / 1000:.0f}k/{window / 1000:.0f}k")
-            u = summarize_usage(sess.tracer.events, self.config.pricing)
-            if u["calls"]:
-                if u["est_cost_usd"] is not None:
-                    parts.append(f"${u['est_cost_usd']}")
+            # the trace only grows, so the cost is redone when an event lands, not on every redraw
+            ev = sess.tracer.events
+            cached = getattr(self, "_cost", None)
+            if not cached or cached[0] is not ev or cached[1] != len(ev):
+                cached = self._cost = (ev, len(ev), summarize_usage(ev, self.config.pricing)["est_cost_usd"])
+            if cached[2] is not None:
+                parts.append(f"${cached[2]}")
             if self.config.sandbox != "off":
                 from safety.sandbox import mode
 
@@ -251,6 +254,8 @@ class CLI:
             )
             self.inputs = inputs
             inputs.is_busy = lambda: self.tui._turn_active
+            if screen:
+                inputs.frame = screen.frame
             inputs.on_steer = agent.steering.append
             inputs.on_cycle = self._cycle_mode
             if self.resume_id:

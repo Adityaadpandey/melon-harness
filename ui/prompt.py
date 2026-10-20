@@ -184,6 +184,7 @@ class InputSession:
         self.is_busy: Callable[[], bool] = lambda: False
         self.on_steer: Callable[[str], None] | None = None  # when set, a line typed mid-turn steers the running agent
         self._task: asyncio.Task | None = None
+        self.frame: Callable[[], object] = lambda: None  # full-screen: changes whenever the screen would look different
         self.area = TextArea(
             prompt=[("class:prompt", " ✦ ")], style="class:box", dont_extend_height=True, multiline=True, wrap_lines=True, history=history,
             completer=ThreadedCompleter(MewCompleter(cwd, forbidden, models)), complete_while_typing=True,
@@ -333,7 +334,6 @@ class InputSession:
         self.app = Application(
             layout=Layout(root, focused_element=self.area), key_bindings=merge_key_bindings([kb, extra_kb] if extra_kb else [kb]),
             erase_when_done=not self.fullscreen, full_screen=self.fullscreen, mouse_support=(mouse if mouse is not None else self.fullscreen),
-            refresh_interval=0.1 if self.fullscreen else None,
             style=Style.from_dict({
                 "prompt": f"bg:{BG_BOX} {ACCENT} bold", "box": f"bg:{BG_BOX} {FG}", "statusbar": f"bg:{BG_PANEL}", "tb.key": f"bg:{BG_RAISED} {FG}",
                 "bar": f"bg:{BG_BOX} {ACCENT} bold", "toolbar": MUTED, "tb.dot": RULE,
@@ -384,12 +384,23 @@ class InputSession:
             if self.line_future is fut:
                 self.line_future = None
 
+    async def _tick(self) -> None:
+        """Full-screen: redraw ten times a second, but only when the frame or the footer changed.
+        Typing and new output redraw on their own; this is for the spinner, clock and blinking cat."""
+        last = None
+        while True:
+            await asyncio.sleep(0.1)
+            now = (self.frame(), self._toolbar())
+            if now != last:
+                self.app.invalidate()
+            last = now
+
     async def read(self) -> str:
         if not self.fullscreen:
             self.area.buffer.reset()
             return await self.app.run_async()
         if self._task is None:
-            self._task = asyncio.create_task(self.app.run_async())
+            self._task = asyncio.create_task(self.app.run_async(pre_run=lambda: self.app.create_background_task(self._tick())))
         getter = asyncio.ensure_future(self.queue.get())
         done, _ = await asyncio.wait({getter, self._task}, return_when=asyncio.FIRST_COMPLETED)
         if getter not in done:

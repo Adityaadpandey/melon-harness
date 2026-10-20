@@ -414,6 +414,17 @@ class Screen:
             return ("O.O", "o.o", "O.O", "o.O", "O.o")[int(now * 3) % 5]
         return "-.-" if int(now * 2) % 9 == 0 else "o.o"
 
+    def frame(self):
+        """What would look different on the next redraw. While something moves (a turn, a question,
+        a drag) it's the clock, so every tick redraws; when idle it only changes when the cat blinks
+        or a flash or glow wears off, so a quiet screen isn't redrawn ten times a second for nothing."""
+        import ui.prompt as prompt_mod
+
+        now, t = time.monotonic(), self.tui
+        if t._turn_active or t.agents or self._dragging or (prompt_mod.ACTIVE and prompt_mod.ACTIVE.question):
+            return now
+        return (self._face(), self._title(), now - self._copied_at < 2, any(now - v < 2 for v in t.touched.values()))
+
     def _header(self):
         cols = _size()[0]
         left = f"  =^{self._face()}^=  mew  ·  {self._title()}"
