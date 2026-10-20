@@ -19,6 +19,7 @@ class SessionSnapshot:
     total_usage: TokenUsage
     cwd: str = ""  # where it ran, so --continue can find the newest session of a folder
     title: str = ""  # first words of the first request, to tell sessions apart
+    todos: dict[str, dict] | None = None  # the checklist, id -> {content, done}
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -30,6 +31,7 @@ class SessionSnapshot:
             "total_usage": self.total_usage.__dict__,
             "cwd": self.cwd,
             "title": self.title,
+            "todos": self.todos or {},
         }
 
     @classmethod
@@ -43,6 +45,7 @@ class SessionSnapshot:
             total_usage=TokenUsage(**data["total_usage"]),
             cwd=data.get("cwd", ""),
             title=data.get("title", ""),
+            todos=data.get("todos") or {},
         )
 
 

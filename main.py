@@ -436,6 +436,7 @@ class CLI:
         return SessionSnapshot(
             session_id=sess.session_id, created_at=sess.created_at, updated_at=sess.updated_at, turn_count=sess.turn_count,
             messages=msgs, total_usage=sess.context_manager.total_usage, cwd=str(self.config.cwd), title=title,
+            todos=getattr(sess.tool_registry.get("todos"), "_todos", None),
         )
 
     def _autosave(self) -> None:
@@ -745,14 +746,7 @@ class CLI:
                 )
         elif cmd_name == "/save":
             persistence_manager = PersistenceManager()
-            session_snapshot = SessionSnapshot(
-                session_id=self.agent.session.session_id,
-                created_at=self.agent.session.created_at,
-                updated_at=self.agent.session.updated_at,
-                turn_count=self.agent.session.turn_count,
-                messages=self.agent.session.context_manager.get_messages(),
-                total_usage=self.agent.session.context_manager.total_usage,
-            )
+            session_snapshot = self._snapshot()
             persistence_manager.save_session(session_snapshot)
             console.print(
                 f"[success]Session saved: {self.agent.session.session_id}[/success]"
@@ -838,14 +832,7 @@ class CLI:
                         console.print(f"[warning]Left alone (no earlier copy): {', '.join(skipped)}[/warning]")
         elif cmd_name == "/checkpoint":
             persistence_manager = PersistenceManager()
-            session_snapshot = SessionSnapshot(
-                session_id=self.agent.session.session_id,
-                created_at=self.agent.session.created_at,
-                updated_at=self.agent.session.updated_at,
-                turn_count=self.agent.session.turn_count,
-                messages=self.agent.session.context_manager.get_messages(),
-                total_usage=self.agent.session.context_manager.total_usage,
-            )
+            session_snapshot = self._snapshot()
             checkpoint_id = persistence_manager.save_checkpoint(session_snapshot)
             console.print(f"[success]Checkpoint created: {checkpoint_id}[/success]")
         elif cmd_name == "/restore":
