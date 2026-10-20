@@ -255,6 +255,7 @@ def load_config(cwd: Path | None, trust_project: bool = False, pi_mode: bool | N
     # is never opened: it holds that project's secrets, and loading it would
     # also hand them to every shell command the agent runs.
     load_dotenv(Path(__file__).resolve().parent.parent / ".env")
+    load_dotenv(get_data_dir() / ".env")  # installed copy: keep the key at ~/Library/Application Support/melon/.env, works from any folder
 
     system_path = get_system_config_path()
 

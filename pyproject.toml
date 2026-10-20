@@ -1,0 +1,23 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "melon-agent"
+version = "0.1.0"
+description = "melon: the coding agent that proves its work"
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+    "openai", "anthropic", "pydantic", "tiktoken", "tomli", "platformdirs", "rich",
+    "click", "fastmcp", "ddgs", "httpx", "python-dotenv", "prompt_toolkit",
+]
+
+[project.scripts]
+melon = "main:main"
+
+[tool.setuptools]
+py-modules = ["main", "apply_patch"]
+
+[tool.setuptools.packages.find]
+include = ["agent*", "client*", "config*", "context*","hooks*", "prompts*", "safety*", "tools*", "ui*", "utils*"]
