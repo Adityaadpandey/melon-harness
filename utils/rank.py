@@ -10,6 +10,7 @@ from __future__ import annotations
 import math
 import re
 from collections import Counter
+from functools import lru_cache
 from pathlib import Path
 
 STOP = {"a", "an", "and", "are", "as", "at", "be", "by", "for", "from", "in", "is", "it", "of", "on", "or",
@@ -25,10 +26,16 @@ _cache: dict[tuple[str, str], tuple[float, Counter, int]] = {}
 _loaded: set[str] = set()
 
 
+_CAMEL = re.compile(r"([a-z0-9])([A-Z])")
+_ACRONYM = re.compile(r"([A-Z]+)([A-Z][a-z])")
+_WORD_BREAK = re.compile(r"[^a-z0-9]+")
+
+
+@lru_cache(maxsize=1 << 16)  # a repo's vocabulary repeats: "props", "classes" are stemmed once, not per occurrence
 def _stem(t: str) -> str:
     if len(t) > 4 and t.endswith("ies"):
         return t[:-3] + "y"
-    if len(t) > 4 and re.search(r"(ches|shes|sses|xes|zes)$", t):
+    if len(t) > 4 and t.endswith(("ches", "shes", "sses", "xes", "zes")):
         return t[:-2]
     if len(t) > 3 and t.endswith("s") and not t.endswith("ss"):
         return t[:-1]
@@ -36,33 +43,30 @@ def _stem(t: str) -> str:
 
 
 def tokenize(text: str) -> list[str]:
-    text = re.sub(r"([a-z0-9])([A-Z])", r"\1 \2", text)
-    text = re.sub(r"([A-Z]+)([A-Z][a-z])", r"\1 \2", text)
-    return [_stem(t) for t in re.split(r"[^a-z0-9]+", text.lower()) if t and t not in STOP]
+    text = _ACRONYM.sub(r"\1 \2", _CAMEL.sub(r"\1 \2", text))
+    return [_stem(t) for t in _WORD_BREAK.split(text.lower()) if t and t not in STOP]
 
 
 def _index(root: Path, f: Path):
     """Term counts for one file, cached by mtime (in memory and on disk between runs)."""
     key = (str(root), str(f))
     try:
-        mtime = f.stat().st_mtime
+        st = f.stat()
     except OSError:
         return None
+    mtime = st.st_mtime
     hit = _cache.get(key)
     if hit and hit[0] == mtime:
         return hit
+    if f.suffix in SKIP_SUFFIX or st.st_size > MAX_FILE_BYTES:
+        return None
     try:
-        if f.suffix in SKIP_SUFFIX or f.stat().st_size > MAX_FILE_BYTES:
-            return None
         raw = f.read_bytes()
     except OSError:
         return None
     if b"\0" in raw[:2048]:
         return None
-    lines = raw.decode("utf-8", errors="replace").splitlines()
-    counts: Counter = Counter()
-    for line in lines:
-        counts.update(tokenize(line))
+    counts = Counter(tokenize(raw.decode("utf-8", errors="replace")))  # whole file at once: line breaks split words anyway
     rel = tokenize(f.relative_to(root).as_posix())
     for t in rel:
         counts[t] += PATH_WEIGHT
