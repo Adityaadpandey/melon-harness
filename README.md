@@ -127,10 +127,11 @@ Most harnesses make the model do the hard parts and then hope. melon moves the h
 ## Quick start
 
 ```bash
-uv venv .venv && uv pip install --python .venv/bin/python -r requirements.txt
-echo 'API_KEY=...' > .env            # BASE_URL defaults to https://api.commandcode.ai/provider/v1
-.venv/bin/python main.py                                      # interactive
-.venv/bin/python main.py -m claude-haiku-5-5 --approval auto "your task"   # one shot
+uv tool install -e .                  # puts `melon` on your PATH; -e so edits to this checkout apply live
+mkdir -p "$(python3 -c 'from platformdirs import user_data_dir; print(user_data_dir("melon"))')"
+echo 'API_KEY=...' > "<that folder>/.env"   # or a .env in this checkout; BASE_URL defaults to https://api.commandcode.ai/provider/v1
+cd any/project && melon                                    # interactive
+melon -m claude-haiku-5-5 --approval auto "your task"      # one shot
 ```
 
 Using a ChatGPT/Codex login instead of an API key? `-m codex/<model>` reads and refreshes the login the Codex CLI already stored.
