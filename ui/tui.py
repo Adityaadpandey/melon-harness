@@ -424,6 +424,58 @@ class TUI:
         self.read_files.clear(), self.written.clear(), self.touched.clear()
         self._buf, self._first_block = "", True
 
+    def replay(self, earlier: list[dict[str, Any]], messages: list[dict[str, Any]], recall=None) -> None:
+        """--resume: draw a saved conversation again, through the same paths a live turn takes, so the
+        side panel, /expand and /copy come back too. `earlier` is what compaction replaced (read back from
+        transcripts/<id>.jsonl) and `messages` is what the model still sees. The compacted summary at the
+        head of those becomes a single marker line, e.g. "✦ compacted · 84 earlier messages, the model sees a summary".
+        `recall` looks up an archived result id: a result that was cleared ("[Old tool result cleared ... (r12, ...")
+        or cut short ("full output: r12") is drawn from its full saved text."""
+        import json
+
+        from context.manager import ContextManager
+        from tools.base import FileDiff
+
+        for m in earlier + messages:
+            role, content = m.get("role"), m.get("content") or ""
+            if role == "user":
+                if content.startswith(ContextManager.COMPACT_HEAD):
+                    self.console.print()
+                    self.console.print(Text(f"  ✦ compacted · {len(earlier)} earlier messages above, the model sees a summary of them", style=f"italic {MUTED}"))
+                else:
+                    self.echo_user(content.split("\n\n---\n")[0])  # drop the playbooks the harness appended
+            elif role == "assistant":
+                self._first_block = True
+                self._print_block(content)
+                for tc in m.get("tool_calls") or []:
+                    fn = tc.get("function") or {}
+                    try:
+                        args = json.loads(fn.get("arguments") or "{}")
+                    except ValueError:
+                        args = {}
+                    self._calls[tc.get("id", "")] = (fn.get("name", ""), args if isinstance(args, dict) else {})
+            elif role == "tool":
+                cid = m.get("tool_call_id", "")
+                name, args = self._calls.get(cid, ("", {}))
+                stub = re.match(r"\[Old tool result cleared to save tokens \((r\d+),", content) or re.search(r"full output: (r\d+), get a range", content)
+                if stub and recall and (full := recall(stub.group(1))) is not None:
+                    content = full
+                ok = not content.startswith("Error: ")  # how ToolResult.to_model_output writes a failure
+                error, output = (None, content) if ok else (content.removeprefix("Error: ").split("\n\nOutput:\n", 1) + [""])[:2]
+                diff = None  # the real diff never reached the context; rebuild it from the call itself
+                if ok and name == "edit":
+                    diff = FileDiff(Path(args.get("path", "")), args.get("old_string", ""), args.get("new_string", "")).to_diff()
+                elif ok and name == "write_file":
+                    diff = FileDiff(Path(args.get("path", "")), "", args.get("content", "")).to_diff()
+                # the counts a live call carries in its metadata, rebuilt from the output (one hit, file or entry per line)
+                lines = [ln for ln in output.splitlines() if ln.strip()] if ok and not output.startswith(("No ", "(no output)")) else []
+                md = {"entries": len(lines), "matches": len(lines),
+                      "files_with_matches": len({ln.split(":", 1)[0] for ln in lines}) if name == "grep" else len(lines)}
+                self.tool_call_complete(cid, name, None, ok, output, error, md, diff, False, None)
+        self._calls.clear()
+        self.touched.clear()  # nothing just happened, so nothing in the panel should glow
+        self._first_block = True
+
     # -- live region -----------------------------------------------------
     def _live_ok(self) -> bool:
         return not self.fullscreen and self.console.is_terminal and not getattr(self.console, "record", False)

@@ -284,3 +284,30 @@ async def test_a_question_cancelled_mid_wait_is_forgotten_so_enter_does_not_cras
             with pytest.raises(asyncio.CancelledError):
                 await task
         assert s.line_future is None and s.choice is None
+
+
+def test_resume_replays_the_whole_conversation(tmp_path):
+    """Compacted-away messages and the live tail are drawn again, and the side panel fills back in."""
+    t, con = make(tmp_path)
+    call = lambda cid, name, args: {"id": cid, "type": "function", "function": {"name": name, "arguments": __import__("json").dumps(args)}}
+    earlier = [
+        {"role": "user", "content": "fix the header\n\n---\nplaybook text the user never typed"},
+        {"role": "assistant", "content": "Reading it first.", "tool_calls": [call("c1", "read_file", {"path": "a.py"})]},
+        {"role": "tool", "tool_call_id": "c1", "content": "[Old tool result cleared to save tokens (r4, 14 chars) from read_file. ...]"},
+    ]
+    tail = [
+        {"role": "user", "content": "# Earlier conversation (compacted)\n\nOlder messages were replaced...\n\nsummary"},
+        {"role": "assistant", "content": "", "tool_calls": [call("c2", "edit", {"path": "a.py", "old_string": "x = 1\n", "new_string": "x = 2\ny = 3\n"}),
+                                                             call("c3", "shell", {"command": "pytest -q"})]},
+        {"role": "tool", "tool_call_id": "c2", "content": "Edited a.py"},
+        {"role": "tool", "tool_call_id": "c3", "content": "Error: exit 1\n\nOutput:\n1 failed"},
+        {"role": "assistant", "content": "The test still fails."},
+    ]
+    t.replay(earlier, tail, {"r4": "1|x = 1\n2|y = 2"}.get)
+    out = con.export_text()
+    assert "fix the header" in out and "playbook text" not in out
+    assert "compacted · 3 earlier messages" in out and "The test still fails." in out
+    assert "Read 2 lines" in out  # the cleared result is drawn from its archived copy
+    assert t.read_files == {"a.py": 1} and t.written["a.py"][:2] == (2, 1)  # the diff is rebuilt from the edit call
+    assert t.commands == [("pytest -q", False)] and t.results[-1]["error"] == "exit 1"
+    assert not t.touched and not t._calls and t.last_reply == "The test still fails."

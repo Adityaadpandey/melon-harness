@@ -32,6 +32,21 @@ def looks_like_plan(text: str) -> bool:
     return steps >= 3 and len(text.split()) >= 60
 
 
+def _read_jsonl(path: Path) -> list[dict]:
+    """One JSON object per line; a missing file or a line cut off by a crash is skipped, not fatal."""
+    try:
+        lines = path.read_text(encoding="utf-8").splitlines()
+    except OSError:
+        return []
+    out = []
+    for ln in lines:
+        try:
+            out.append(json.loads(ln))
+        except ValueError:
+            pass
+    return out
+
+
 class CLI:
     def __init__(self, config: Config):
         self.agent: Agent | None = None
@@ -465,11 +480,30 @@ class CLI:
             elif msg.get("role") == "tool":
                 cm.add_tool_result(msg.get("tool_call_id", ""), msg.get("content", ""))
         cm.repair_orphans()  # a session saved mid-turn may end on an unanswered tool call
+        # the trace brings back the footer's cost, /cost and the cache stats; the context bar is the last
+        # model call's prompt, unless a compaction came after it (then the estimate is closer)
+        session.tracer.events = _read_jsonl(get_data_dir() / "traces" / f"{session_id}.jsonl")
+        last = next((e for e in reversed(session.tracer.events) if e.get("event") == "compaction" or (e.get("event") == "model_call" and e.get("ok"))), None)
+        if last and last["event"] == "model_call" and last.get("tokens"):
+            from client.response import TokenUsage
+
+            cm.set_latest_usage(TokenUsage(**{k: v for k, v in last["tokens"].items() if k in TokenUsage.__dataclass_fields__}))
+        todos = session.tool_registry.get("todos")
+        if todos is not None and snapshot.todos:
+            todos._todos = dict(snapshot.todos)
         # the new session starts with no one to ask; without this a resumed run refuses every edit
         session.approval_manager.confirmation_callback = self.agent.session.approval_manager.confirmation_callback
+        mid_session = self.agent.session.turn_count > 0  # /resume over a live conversation: wipe what it showed first
         await self.agent.session.client.close()
         await self.agent.session.mcp_manager.shutdown()
         self.agent.session = session
+        # draw the whole conversation again, including what compaction took out of the model's view
+        self.tui.reset()
+        if mid_session and getattr(self, "screen", None):
+            self.screen.clear()
+        self.tui.replay(_read_jsonl(get_data_dir() / "transcripts" / f"{session_id}.jsonl"), snapshot.messages, session.tool_registry.archive.get)
+        if todos is not None:
+            self.tui.set_todos(todos.snapshot())
         return True
 
     async def _process_message(self, message: str) -> str | None:
