@@ -8,6 +8,8 @@ def _private_data_dir(tmp_path_factory, monkeypatch):
     import config.loader as loader
 
     base = tmp_path_factory.mktemp("appdirs")
+    (base / "data" / "melon").mkdir(parents=True)
+    (base / "data" / "melon" / "models.json").write_text("[]")  # a fresh, empty model catalog: no test fetches the real one
     monkeypatch.setattr(loader, "user_data_dir", lambda name: str(base / "data" / name))
     monkeypatch.setattr(loader, "user_config_dir", lambda name: str(base / "config" / name))
 
