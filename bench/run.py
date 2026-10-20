@@ -2,6 +2,7 @@
 
   python -m bench.run --harness . --label new --model claude-haiku-5-5 --runs 3
   python -m bench.run --harness /path/to/old-checkout --label baseline --model deepseek/deepseek-v4-flash
+  python -m bench.run --agent claude-code --label cc                # the same tasks run by `claude -p` on your Claude login
   python -m bench.run --summarize bench/results/*.json
 
 Every run gets a fresh git repo built from the task fixture, the harness is run
@@ -30,18 +31,19 @@ ROOT = Path(__file__).resolve().parent.parent
 BLOCK_MARKERS = ("MODEL_NOT_IN_PLAN", "No API key", "must be called via", "Rate limit exceeded", "usage limit", "limit resets")
 
 
-def build_repo(task: Task, d: Path, model: str, legacy: bool) -> None:
+def build_repo(task: Task, d: Path, model: str, legacy: bool, melon_config: bool = True) -> None:
     for rel, content in task.files.items():
         f = d / rel
         f.parent.mkdir(parents=True, exist_ok=True)
         f.write_text(content, encoding="utf-8")
     (d / ".gitignore").write_text("__pycache__/\n.pytest_cache/\n*.pyc\n")
-    (d / ".melon").mkdir()
-    if legacy:
-        cfg = f'approval = "auto"\nmax_turns = 40\n[model]\nname = "{model}"\ntemperature = 0\n'
-    else:
-        cfg = f'max_turns = 40\nmax_seconds = 540\ntrace = true\n[model]\nname = "{model}"\n'
-    (d / ".melon" / "config.toml").write_text(cfg)
+    if melon_config:  # Claude Code gets the bare fixture, nothing of melon's in it
+        (d / ".melon").mkdir()
+        if legacy:
+            cfg = f'approval = "auto"\nmax_turns = 40\n[model]\nname = "{model}"\ntemperature = 0\n'
+        else:
+            cfg = f'max_turns = 40\nmax_seconds = 540\ntrace = true\n[model]\nname = "{model}"\n'
+        (d / ".melon" / "config.toml").write_text(cfg)
     for cmd in (["init", "-q"], ["config", "user.email", "b@b"], ["config", "user.name", "bench"],
                 ["add", "-A"], ["commit", "-qm", "fixture"]):
         subprocess.run(["git", *cmd], cwd=d, check=True, capture_output=True)
@@ -56,16 +58,45 @@ def accept(task: Task, d: Path, env: dict) -> tuple[bool, str]:
     return r.returncode == 0, (r.stdout + r.stderr)[-600:]
 
 
-async def run_one(task: Task, harness: Path, model: str, mode: str, timeout: int, env: dict, run_idx: int) -> dict:
+def claude_report(text: str) -> dict:
+    """The same fields melon's --report has, read from `claude -p --output-format json` (the last JSON line of the output).
+    Tokens are summed over every model the session used, sub-agents included."""
+    for line in reversed(text.splitlines()):
+        if not line.startswith("{"):
+            continue
+        try:
+            data = json.loads(line)
+        except ValueError:
+            continue
+        per_model = (data.get("modelUsage") or {}).values()
+        tok = lambda k: sum(m.get(k) or 0 for m in per_model)
+        return {
+            "final_response": data.get("result"), "model_calls": data.get("num_turns"), "is_error": data.get("is_error"),
+            "models_used": list(data.get("modelUsage") or {}), "cost_usd": data.get("total_cost_usd"),
+            "usage": {"prompt_tokens": tok("inputTokens") + tok("cacheReadInputTokens") + tok("cacheCreationInputTokens"),
+                      "completion_tokens": tok("outputTokens"), "cached_tokens": tok("cacheReadInputTokens")},
+        }
+    return {}
+
+
+async def run_one(task: Task, harness: Path, model: str, mode: str, timeout: int, env: dict, run_idx: int,
+                  agent: str = "melon") -> dict:
     legacy = not (harness / "agent" / "task.py").exists()
     d = Path(tempfile.mkdtemp(prefix=f"bench-{task.id}-"))
-    build_repo(task, d, model, legacy)
+    build_repo(task, d, model, legacy, melon_config=agent == "melon")
     originals = {p: (d / p).read_bytes() for p in task.protect}
     report_path = d.parent / f"{d.name}.report.json"
 
     cmd = [sys.executable, str(harness / "main.py")]
     prompt = task.prompt
-    if not legacy:
+    if agent == "claude-code":
+        # auto permission mode is Claude Code's counterpart of melon's --approval auto: edits and commands run unasked,
+        # risky ones go past its classifier. The child never sees a gateway key, so it runs on your Claude login.
+        from agent.review_claude import clean_env
+        env = {**clean_env(), "PATH": env["PATH"]}
+        cmd = ["claude", "-p", "--output-format", "json", "--no-session-persistence", "--permission-mode", "auto",
+               *(["--model", model] if model else [])]
+    elif not legacy:
         cmd += ["-m", model, "--approval", "auto", "--report", str(report_path)]
         if mode == "parallel" and task.subtasks:
             graph = d.parent / f"{d.name}.graph.json"
@@ -88,13 +119,13 @@ async def run_one(task: Task, harness: Path, model: str, mode: str, timeout: int
     wall = time.perf_counter() - t0
     text = out.decode("utf-8", "replace")
 
-    rep = {}
+    rep = claude_report(text) if agent == "claude-code" else {}
     if report_path.exists():
         try:
             rep = json.loads(report_path.read_text())
         except ValueError:
             pass
-    blocked = any(m in text for m in BLOCK_MARKERS) and not rep.get("model_calls")
+    blocked = any(m in text for m in BLOCK_MARKERS) and (not rep.get("model_calls") or rep.get("is_error"))
 
     acc_ok, acc_tail = accept(task, d, env)
     protect_ok = all((d / p).exists() and (d / p).read_bytes() == b for p, b in originals.items())
@@ -104,11 +135,13 @@ async def run_one(task: Task, harness: Path, model: str, mode: str, timeout: int
 
     usage = rep.get("usage") or {}
     row = {
-        "task": task.id, "category": task.category, "model": model, "mode": mode, "run": run_idx,
+        "task": task.id, "category": task.category, "mode": mode, "run": run_idx, "agent": agent,
+        "model": model if agent == "melon" else "claude-code/" + (",".join(rep.get("models_used") or []) or model or "default"),
+        "cost_usd": rep.get("cost_usd"),
         "status": "blocked" if blocked else ("pass" if success else "fail"),
         "accept_ok": acc_ok, "protect_ok": protect_ok, "stdout_ok": stdout_ok,
         "regression": not protect_ok,
-        "claimed_done": proc.returncode == 0 and not timed_out,
+        "claimed_done": proc.returncode == 0 and not timed_out and not rep.get("is_error"),
         "exit_code": proc.returncode, "timed_out": timed_out, "wall_sec": round(wall, 2),
         "harness_status": (rep.get("report") or {}).get("status"),
         "repairs": (rep.get("report") or {}).get("repairs"),
@@ -137,13 +170,13 @@ async def main_run(a) -> None:
 
     async def guarded(t, i):
         async with sem:
-            row = await run_one(t, harness, a.model, a.mode, a.timeout, env, i)
+            row = await run_one(t, harness, a.model, a.mode, a.timeout, env, i, a.agent)
             row["label"], row["jobs"] = a.label, a.jobs
-            print(f"{row['status']:<7} {t.id:<28} {row['wall_sec']:>7}s  {a.model}", flush=True)
+            print(f"{row['status']:<7} {t.id:<28} {row['wall_sec']:>7}s  {row['model']}", flush=True)
             return row
 
     rows = await asyncio.gather(*(guarded(t, i) for t in tasks for i in range(a.runs)))
-    out = Path(a.out or ROOT / "bench" / "results" / f"{a.label}-{a.model.replace('/', '_')}-{a.mode}-{int(time.time())}.json")
+    out = Path(a.out or ROOT / "bench" / "results" / f"{a.label}-{(a.model or a.agent).replace('/', '_')}-{a.mode}-{int(time.time())}.json")
     out.parent.mkdir(parents=True, exist_ok=True)
     out.write_text(json.dumps(rows, indent=1))
     print(f"\nwrote {out}")
@@ -188,6 +221,7 @@ if __name__ == "__main__":
     ap.add_argument("--harness", default=str(ROOT))
     ap.add_argument("--label", default="new")
     ap.add_argument("--model")
+    ap.add_argument("--agent", choices=["melon", "claude-code"], default="melon", help="which harness runs the tasks")
     ap.add_argument("--tasks")
     ap.add_argument("--runs", type=int, default=1)
     ap.add_argument("--mode", choices=["single", "parallel"], default="single")
@@ -199,6 +233,6 @@ if __name__ == "__main__":
     if a.summarize is not None:
         summarize(a.summarize)
     else:
-        if not a.model:
+        if not a.model and a.agent == "melon":  # Claude Code falls back to its own default model
             ap.error("--model is required")
         asyncio.run(main_run(a))
