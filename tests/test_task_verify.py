@@ -169,3 +169,36 @@ async def test_a_note_typed_mid_check_stops_the_check_and_is_worked_on_now(repo)
         assert time.monotonic() - t < 15
         assert rep["status"] == "verified" and rep["repairs"] == 0
         assert "white buttons" in str(a.session.client.requests[2][-1]["content"])
+
+
+async def test_a_dropped_parameter_is_sent_back_once_even_though_the_checks_pass(repo):
+    # the benchmark miss: the fix removed `seen` and the agent's own test still passed
+    (repo / "lib.py").write_text("def unique_by(items, key, seen=set()):\n    return items\n")
+    git(repo, "add", "-A")
+    git(repo, "commit", "-qm", "lib")
+    cfg = cfg_for(repo, verify_commands=["true"])
+    async with Agent(cfg) as a:
+        a.session.client = ScriptedClient([
+            call("read_file", {"path": "lib.py"}),
+            call("write_file", {"path": "lib.py", "content": "def unique_by(items, key):\n    return items\n"}), text("done"),
+            call("write_file", {"path": "lib.py", "content": "def unique_by(items, key, seen=None):\n    return items\n"}), text("kept it"),
+        ])
+        rep = final(await run(a, "fix the shared state bug in unique_by"))
+        sent = a.session.client.requests[3][-1]["content"]
+        assert "unique_by() no longer accepts `seen`" in sent and rep["status"] == "verified"
+        assert len(a.session.client.requests) == 5  # one nudge, not a loop
+
+
+async def test_signature_guard_skips_what_the_user_asked_for_and_functions_that_moved(repo):
+    from agent.verify import signature_breaks
+    (repo / "a.py").write_text("def load(path, cache=None):\n    pass\n\ndef helper(x):\n    pass\n")
+    (repo / "b.py").write_text("")
+    (repo / "test_a.py").write_text("def test_x(tmp):\n    pass\n")
+    git(repo, "add", "-A")
+    git(repo, "commit", "-qm", "base")
+    (repo / "a.py").write_text("def load(path):\n    pass\n")
+    (repo / "b.py").write_text("def helper(x):\n    pass\n")  # moved, not removed
+    (repo / "test_a.py").write_text("def test_x():\n    pass\n")  # tests are nobody's API
+    changed = ["a.py", "b.py", "test_a.py"]
+    assert await signature_breaks(repo, changed, "tidy up a.py") == ["a.py: load() no longer accepts `cache`"]
+    assert await signature_breaks(repo, changed, "drop the cache parameter from load") == []

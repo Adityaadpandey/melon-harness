@@ -27,6 +27,8 @@ from agent.verify import (
     repair_prompt,
     select_checks,
     run_check,
+    signature_breaks,
+    signature_prompt,
     snapshot,
 )
 from client.response import StreamEvent, StreamEventType, TokenUsage, ToolCall, ToolResultMessage
@@ -286,6 +288,7 @@ class Agent:
         backup_ref = await backup(self.config.cwd) if before is not None else None
         final_response: str | None = None
         nudged = False
+        signatures_checked = False
         reviews = 0
         sent_back = self._fix_brief  # findings the author was just asked to fix: the next review checks that fix (a fix run starts with the review's own)
         grounded_once = False
@@ -392,6 +395,18 @@ class Agent:
                     repair_prompt(failures, task.changed_files)
                 )
                 continue
+
+            if not signatures_checked and not task.expired():
+                # once per request: checks pass even when a public signature broke for callers outside the repo
+                signatures_checked = True
+                breaks = await signature_breaks(self.config.cwd, task.changed_files, message)
+                if breaks:
+                    self.session.tracer.emit("signature_breaks", task=task.id, breaks=breaks[:10])
+                    if task.status == TaskStatus.VERIFYING:
+                        task.transition(TaskStatus.RUNNING, "public signature changed")
+                    yield AgentEvent.notice(f"The change breaks {len(breaks)} public signature(s) ({breaks[0]}); asking to keep old calls working")
+                    self.session.context_manager.add_user_message(signature_prompt(breaks))
+                    continue
 
             if self._fix_run and advisor and advisor_nudges < 2 and not task.expired() and review_fix.needs_final_advice(registry, advisor, base_writes):
                 advisor_nudges += 1

@@ -249,3 +249,144 @@ async def undo(cwd: Path, ref: str, changed: list[str], created: list[str]) -> t
         else:
             skipped.append(f)
     return restored, deleted, skipped
+
+
+# --- signature guard -------------------------------------------------------------------------------------------
+# Checks prove the code runs; they can't see a caller that isn't in the repo or in the tests the agent knows of.
+# The benchmark case: asked to fix `def unique_by(items, key, seen=set())`, the agent dropped `seen` altogether,
+# its own tests passed, and every caller that passed seen= got a TypeError. These helpers list such breaks so the
+# agent is asked once to keep old calls working (or to say why it can't).
+
+_TEST_FILE = re.compile(r"(^|/)(tests?|__tests__)/|(^|/)test_[^/]*\.py$|_test\.py$|\.(test|spec)\.[jt]sx?$")
+
+
+def _py_signatures(src: str) -> dict[str, "ast.arguments"] | None:
+    """Public functions and methods by qualified name ("Cart.add"), or None when the file doesn't parse."""
+    import ast
+
+    try:
+        tree = ast.parse(src)
+    except SyntaxError:
+        return None
+    sigs: dict[str, ast.arguments] = {}
+
+    def walk(body, prefix: str) -> None:
+        for n in body:
+            if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef)) and (not n.name.startswith("_") or n.name == "__init__"):
+                sigs[prefix + n.name] = n.args
+            elif isinstance(n, ast.ClassDef) and not n.name.startswith("_"):
+                walk(n.body, f"{prefix}{n.name}.")
+
+    walk(tree.body, "")
+    return sigs
+
+
+def _py_breaks(old_src: str, new_src: str) -> tuple[list[tuple[str, str]], set[str]]:
+    """([(what broke, the name it is about)], names still defined) for one Python file."""
+    old, new = _py_signatures(old_src), _py_signatures(new_src)
+    if old is None or new is None:
+        return [], set()
+    out = []
+    for name, a in old.items():
+        b = new.get(name)
+        if b is None:
+            out.append((f"{name}() was removed or renamed", name.rsplit(".", 1)[-1]))
+            continue
+        old_pos = [x.arg for x in a.posonlyargs + a.args]
+        new_pos = [x.arg for x in b.posonlyargs + b.args]
+        old_all = old_pos + [x.arg for x in a.kwonlyargs]
+        new_all = new_pos + [x.arg for x in b.kwonlyargs]
+        if b.kwarg is None:
+            out += [(f"{name}() no longer accepts `{p}`", p) for p in old_all if p not in new_all]
+        n_pos_defaults = len(b.defaults)
+        required = new_pos[: len(new_pos) - n_pos_defaults] + [k.arg for k, d in zip(b.kwonlyargs, b.kw_defaults) if d is None]
+        out += [(f"{name}() now requires `{p}`", p) for p in required if p not in old_all]
+        moved = [p for i, p in enumerate(old_pos) if p in new_pos and new_pos.index(p) != i and p not in ("self", "cls")]
+        if moved:
+            out.append((f"{name}() reorders its positional parameters ({', '.join(old_pos)} -> {', '.join(new_pos)})", moved[0]))
+        if a.vararg and not b.vararg:
+            out.append((f"{name}() no longer accepts *{a.vararg.arg}", a.vararg.arg))
+        if a.kwarg and not b.kwarg:
+            out.append((f"{name}() no longer accepts **{a.kwarg.arg}", a.kwarg.arg))
+    return out, {n.rsplit(".", 1)[-1] for n in new}
+
+
+_JS_EXPORT = re.compile(
+    r"export\s+(?:default\s+)?(?:async\s+)?function\s*\*?\s*(\w+)\s*(?:<[^>()]*>)?\s*\("
+    r"|export\s+const\s+(\w+)\s*(?::[^=]+)?=\s*(?:async\s+)?(?:function\s*\w*\s*)?(?:<[^>()]*>)?\s*\("
+)
+
+
+def _js_signatures(src: str) -> dict[str, list[tuple[str, bool]]]:
+    """Exported functions -> [(parameter text, optional)]. A light reader, not a TS parser: enough for
+    `export function f(a: string, b = 1)` and `export const f = async ({ id }: Props) =>`."""
+    sigs: dict[str, list[tuple[str, bool]]] = {}
+    for m in _JS_EXPORT.finditer(src):
+        depth, i, start = 1, m.end(), m.end()
+        while i < len(src) and depth:
+            depth += {"(": 1, "[": 1, "{": 1, ")": -1, "]": -1, "}": -1}.get(src[i], 0)
+            i += 1
+        params, cur, d = [], "", 0
+        for ch in src[start:i - 1] + ",":
+            if ch == "," and d == 0:
+                if cur.strip():
+                    p = cur.strip()
+                    top = re.sub(r"[\[{(<].*", "", p)  # what sits before any nested type or pattern
+                    params.append((p, p.startswith("...") or "?" in top or "=" in re.sub(r"=>", "", p)))
+                cur = ""
+                continue
+            d += {"(": 1, "[": 1, "{": 1, "<": 1, ")": -1, "]": -1, "}": -1, ">": -1}.get(ch, 0) if not (ch == ">" and cur.endswith("=")) else 0
+            cur += ch
+        sigs[m.group(1) or m.group(2)] = params
+    return sigs
+
+
+def _js_breaks(old_src: str, new_src: str) -> tuple[list[tuple[str, str]], set[str]]:
+    old, new = _js_signatures(old_src), _js_signatures(new_src)
+    out = []
+    for name, a in old.items():
+        b = new.get(name)
+        if b is None:
+            if not re.search(rf"export\s[^;\n]*\b{re.escape(name)}\b", new_src):  # still exported some other way: fine
+                out.append((f"{name}() is no longer exported", name))
+            continue
+        if len(b) < len(a) and not (b and b[-1][0].startswith("...")):
+            out.append((f"{name}() takes fewer parameters ({len(a)} -> {len(b)})", name))
+        if sum(not opt for _, opt in b) > sum(not opt for _, opt in a):
+            out.append((f"{name}() requires more arguments than before", name))
+    return out, set(new)
+
+
+async def signature_breaks(cwd: Path, changed: list[str], request: str = "") -> list[str]:
+    """Public signatures this change breaks, as "file: what", e.g. "lib/dedupe.py: unique_by() no longer accepts `seen`".
+    Skips test files, new and deleted files, a function that moved to another changed file, and anything whose name the
+    request mentions (the user asked for it)."""
+    found: list[tuple[str, str, str]] = []
+    defined: set[str] = set()
+    asked = set(re.findall(r"\w+", request.lower()))
+    for f in changed:
+        suffix = Path(f).suffix
+        if (suffix != ".py" and suffix not in JS_SUFFIX) or _TEST_FILE.search(f) or not (cwd / f).is_file():
+            continue
+        code, old = await _git(cwd, "show", f"HEAD:{f}")
+        if code != 0:
+            continue
+        try:
+            new = (cwd / f).read_text(encoding="utf-8", errors="replace")
+        except OSError:
+            continue
+        breaks, names = (_py_breaks if suffix == ".py" else _js_breaks)(old.decode("utf-8", "replace"), new)
+        defined |= names
+        found += [(f, what, about) for what, about in breaks]
+    return [f"{f}: {what}" for f, what, about in found
+            if about.lower() not in asked and not (("removed" in what or "exported" in what) and about in defined)]
+
+
+def signature_prompt(breaks: list[str]) -> str:
+    return (
+        "Your change alters public signatures that code outside this diff may rely on (other modules, other repos, "
+        "callers no test here covers):\n" + "\n".join(f"- {b}" for b in breaks[:10]) + "\n\n"
+        "Unless the user asked for that, keep old calls working: keep the parameter and give it a safe default "
+        "(e.g. `seen=None`, then create the value inside), or keep the old name as a thin wrapper. Then re-run the check. "
+        "If the break is really needed, leave it and say so in one sentence of your final answer."
+    )
