@@ -36,15 +36,33 @@ def get_data_dir() -> Path:
 
 
 def move_old_dirs() -> None:
-    """The app used to keep its sessions, traces and lessons under "ai-agent". Move that folder to "melon" once,
-    so --resume and everything learned keep working after the rename. Left alone when "melon" already exists."""
+    """The app used to keep its sessions, traces and lessons under "ai-agent". Move them into "melon" so --resume and
+    everything learned keep working after the rename. When "melon" already exists (an old copy of the app was still
+    running, or something wrote there first) the two are merged: whatever melon lacks is moved in, and a file both
+    have stays melon's. Example: ai-agent/sessions/a.json joins melon/sessions/ next to the b.json already there."""
     for base in (user_data_dir, user_config_dir):  # the same folder on macOS, two on Linux
         old, new = Path(base("ai-agent")), Path(base("melon"))
-        if old.is_dir() and not new.exists():
+        if old.is_dir() and old != new:
             try:
-                old.rename(new)
+                _merge_into(old, new)
             except OSError as e:
                 logger.warning("could not move %s to %s: %s", old, new, e)
+
+
+def _merge_into(old: Path, new: Path) -> None:
+    if not new.exists():
+        old.rename(new)
+        return
+    for item in old.iterdir():
+        target = new / item.name
+        if not target.exists():
+            item.rename(target)
+        elif item.is_dir() and target.is_dir():
+            _merge_into(item, target)
+    try:
+        old.rmdir()  # only goes once everything has moved; a file both had keeps the old folder around
+    except OSError:
+        pass
 
 
 def save_last_model(name: str) -> None:

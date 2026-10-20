@@ -2,6 +2,17 @@ import pytest
 
 
 @pytest.fixture(autouse=True)
+def _private_data_dir(tmp_path_factory, monkeypatch):
+    """Tests write sessions, traces and lessons into a temporary folder, never the real
+    ~/Library/Application Support/melon (they once created it there and stopped the move from ai-agent)."""
+    import config.loader as loader
+
+    base = tmp_path_factory.mktemp("appdirs")
+    monkeypatch.setattr(loader, "user_data_dir", lambda name: str(base / "data" / name))
+    monkeypatch.setattr(loader, "user_config_dir", lambda name: str(base / "config" / name))
+
+
+@pytest.fixture(autouse=True)
 def _no_personal_skills(request, monkeypatch):
     """Tests must not depend on the skills installed on this machine (~/.claude, ~/.pi).
     A test that wants them marks itself with @pytest.mark.real_skill_dirs."""
