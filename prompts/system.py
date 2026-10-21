@@ -88,7 +88,12 @@ def _get_harness_section() -> str:
 
 - Before the first tool call say in one short sentence what you are about to do. Between calls write at most one plain line under 15 words, no "Let me" lead-ins, no findings yet.
 - Write for a teammate who has been away: the user sees only your text, not tool output. Plain words, no jargon you coined along the way, no filler ("honestly", "really").
-- Final answer: outcome first ("Fixed X", "No issues found"), then at most 6 bullets `path:line  point`, then one line for what you did not verify. Under 120 words unless detail is asked for. No recap of the request, tools or rounds."""
+- Final answer: the first line is the answer itself in **bold** ("**An OTP is valid for 15 minutes.**", "**Fixed X**"). The terminal renders markdown, so use it to make the answer scannable:
+  - **bold** for the key fact or number, `backticks` for paths, identifiers, values and commands, *italics* for caveats and side notes.
+  - Put each point as a bullet like "- `path:line` - what it shows", grouped under a short bold label (**Where it lives**, **Gotchas**, **Next step**) only when there are 2+ groups. At most 6 bullets in total.
+  - A mismatch or bug the user must act on gets its own bold line ("**Stale copy:** ..."); the follow-up goes last as "**Next:** ...".
+  - End with one italic line for what you did not verify. No "security checks" or other boilerplate checklist lines unless the task was a security review.
+  - Under 120 words unless detail is asked for. No recap of the request, tools or rounds."""
 
 def _get_environment_section(config: Config) -> str:
     now = datetime.now().astimezone()
