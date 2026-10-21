@@ -105,6 +105,7 @@ class Agent:
         self._root_hint: Path | None = None  # the repo the last request worked in, when melon starts above it
         self._scout_error = ""
         self._no_approver = False
+        self.forced_skills: list = []
         self._playbooks_sent: set[str] = set()  # names whose text is in the conversation; cleared on compaction
         self._last_request = ""  # the user's previous request and the answer it got: what a "no, not this" is about
         self._last_answer = ""
@@ -147,7 +148,8 @@ class Agent:
         if self.config.auto_learn and self._last_request and not self._learning:
             self._learning = asyncio.create_task(self._learn_from(message, self._last_request, self._last_answer))  # in the background, so the reply is not held up
         self._last_request = message
-        matched = match_skills(self.session.skills, message)
+        forced, self.forced_skills = self.forced_skills, []  # set by a typed /skill-name, for this request only
+        matched = [*forced, *(p for p in match_skills(self.session.skills, message) if p not in forced)]
         # a playbook already in the conversation is named, not pasted again (the code-review one is ~1.5k tokens a request)
         playbooks = [p for p in matched if p.name not in self._playbooks_sent]
         again = [p.name for p in matched if p.name in self._playbooks_sent]

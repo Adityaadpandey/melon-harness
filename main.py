@@ -261,6 +261,9 @@ class CLI:
 
         async with Agent(self.config, confirmation_callback=self.tui.confirm) as agent:
             self.agent = agent
+            import ui.prompt as prompt_mod
+
+            prompt_mod.SKILLS = {k.name: k.description for k in agent.session.skills if not k.always}  # for / completion
             reg = agent.session.client.registry
             inputs = InputSession(
                 self.config.cwd, self.config.forbidden_paths, lambda: [m.id for m in reg.all()],
@@ -915,6 +918,10 @@ class CLI:
             templates = load_templates(prompt_dirs(self.config.cwd))
             if cmd_name[1:] in templates:
                 await self._run_turn(expand(templates[cmd_name[1:]], split_args(cmd_args)))
+            elif sk := next((k for k in self.agent.session.skills if k.name == cmd_name[1:] and not k.always), None):
+                # /code-review the auth change: that playbook is loaded for this request, whatever the words say
+                self.agent.forced_skills = [sk]
+                await self._run_turn(cmd_args or f"Apply the {sk.name} skill to this project: {sk.description}")
             else:
                 console.print(f"[error]Unknown command: {cmd_name}[/error]")
 

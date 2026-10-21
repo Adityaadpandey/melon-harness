@@ -100,6 +100,9 @@ COMMANDS = {
 }
 
 
+SKILLS: dict[str, str] = {}  # name -> description, filled by main once the skills are loaded
+
+
 class MelonCompleter(Completer):
     def __init__(self, cwd: Path, forbidden: list[str], models: Callable[[], list[str]]):
         self.cwd, self.forbidden, self.models = cwd, forbidden, models
@@ -129,6 +132,9 @@ class MelonCompleter(Completer):
             for name, desc in self._custom_commands().items():  # the user's own markdown commands
                 if f"/{name}".startswith(text) and f"/{name}" not in COMMANDS:
                     yield Completion(f"/{name}", start_position=-len(text), display_meta=desc)
+            for name, desc in SKILLS.items():  # skills too, so / reaches every playbook
+                if f"/{name}".startswith(text) and f"/{name}" not in COMMANDS:
+                    yield Completion(f"/{name}", start_position=-len(text), display_meta="skill: " + desc[:80])
             return
         if text.startswith("/model "):
             arg = text[len("/model "):]
