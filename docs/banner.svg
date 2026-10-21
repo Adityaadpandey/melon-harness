@@ -8,7 +8,16 @@
     </linearGradient>
   </defs>
   <rect width="1200" height="300" rx="20" fill="url(#bg)"/>
-  <text x="70" y="128" font-family="Menlo, Consolas, monospace" font-size="32" fill="#ff8fc7">=^0.0^=</text>
+  <g transform="translate(70 40)">
+    <path d="M0 22 A60 60 0 0 0 120 22 Z" fill="#8ff0c4"/>
+    <path d="M9 22 A51 51 0 0 0 111 22 Z" fill="#e7f7d9"/>
+    <path d="M14 22 A46 46 0 0 0 106 22 Z" fill="#ff6f91"/>
+    <rect x="-4" y="16" width="128" height="7" rx="3.5" fill="#8ff0c4"/>
+    <ellipse cx="38" cy="38" rx="3" ry="5" fill="#1b1530"/><ellipse cx="82" cy="38" rx="3" ry="5" fill="#1b1530"/>
+    <path d="M52 44 Q60 54 68 44" stroke="#1b1530" stroke-width="3" fill="none" stroke-linecap="round"/>
+    <ellipse cx="28" cy="50" rx="4" ry="2.5" fill="#ffd0dc"/><ellipse cx="92" cy="50" rx="4" ry="2.5" fill="#ffd0dc"/>
+    <ellipse cx="46" cy="64" rx="2.5" ry="4" fill="#1b1530" transform="rotate(-20 46 64)"/><ellipse cx="74" cy="64" rx="2.5" ry="4" fill="#1b1530" transform="rotate(20 74 64)"/>
+  </g>
   <text x="70" y="212" font-family="Menlo, Consolas, monospace" font-size="96" font-weight="700" fill="url(#ink)">melon</text>
   <text x="400" y="196" font-family="-apple-system, Segoe UI, Helvetica, Arial, sans-serif" font-size="30" fill="#ecebf5">The coding agent that proves its work.</text>
   <text x="400" y="232" font-family="-apple-system, Segoe UI, Helvetica, Arial, sans-serif" font-size="20" fill="#9a98b0">verify · review · ground · and never send a token twice</text>
