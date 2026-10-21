@@ -9,15 +9,12 @@ from typing import Any, AsyncGenerator
 
 from client.adapters import AnthropicAdapter, CodexResponsesAdapter, OpenAIChatAdapter
 from client.errors import ProviderError, classify
+from client.providers import split
 from client.response import StreamEvent, StreamEventType, TextDelta, TokenUsage, ToolCall
 from client.routing import ModelRegistry, Router
 from config.config import Config
 from config.loader import get_data_dir
 from utils.trace import Tracer
-
-
-def _provider(model: str) -> str:
-    return "codex" if model.startswith("codex/") else "gateway"
 
 
 class LLMClient:
@@ -40,6 +37,18 @@ class LLMClient:
 
     async def initialize(self) -> None:
         await self.registry.load()
+
+    def _provider(self, model: str) -> str:
+        """Which account a model is billed to: models sharing one also share its quota."""
+        direct = split(self.config, model)
+        return direct[0].name if direct else "codex" if model.startswith("codex/") else "gateway"
+
+    def _direct_adapter(self, p):
+        """Straight to a provider (`groq:...`), with its own URL and key."""
+        if p.name not in self._adapters:
+            cls = AnthropicAdapter if p.protocol == "anthropic" else OpenAIChatAdapter
+            self._adapters[p.name] = cls(p.api_key or "", p.base_url, p.headers or None)
+        return self._adapters[p.name]
 
     def _adapter(self, endpoint: str):
         if endpoint not in self._adapters:
@@ -71,7 +80,7 @@ class LLMClient:
         models, skipped = self.router.candidates(
             role, need_tools=bool(tools), min_context=est_tokens
         )
-        models = [m for m in models if _provider(m) not in self._quota_blocked]
+        models = [m for m in models if self._provider(m) not in self._quota_blocked]
         for s in skipped:
             self.tracer.emit("model_skipped", role=role, reason=s)
         if not models:
@@ -101,8 +110,8 @@ class LLMClient:
             last_error = f"{model}: {outcome}"
             if outcome.quota:
                 # every model on this provider shares the quota: skip the rest of them
-                self._quota_blocked.add(_provider(model))
-                queue = [m for m in queue if _provider(m) not in self._quota_blocked]
+                self._quota_blocked.add(self._provider(model))
+                queue = [m for m in queue if self._provider(m) not in self._quota_blocked]
             if "unsupported_model" in str(outcome) or "not supported on this endpoint" in str(outcome):
                 _, near = self.registry.validate(model)
                 last_error += f". Not in the model catalog" + (f"; did you mean: {', '.join(near)}?" if near else ".")
@@ -115,7 +124,12 @@ class LLMClient:
 
     async def _call_model(self, model, role, messages, tools, stream, collected):
         info = self.registry.get(model)
-        adapter = self._adapter(info.endpoint)
+        direct = split(self.config, model)
+        if direct and not direct[0].api_key:  # say which env var is missing instead of a bare 401 from the provider
+            yield ProviderError(self.config.missing_key(model), status=401, fallback=True)
+            return
+        adapter = self._direct_adapter(direct[0]) if direct else self._adapter(info.endpoint)
+        wire_model = direct[1] if direct else model  # the provider wants its own name, without our "groq:" prefix
         temperature = None if model in self._no_temperature else self.config.temperature
         if hasattr(adapter, "_effort"):  # Codex only: summaries never need deep thinking, everything else follows the request
             adapter._effort = "low" if role == "summarize" else (self.config.reasoning_effort or self.auto_effort)
@@ -125,7 +139,7 @@ class LLMClient:
             first_token: float | None = None
             text, calls, usage, finish = "", [], None, None
             try:
-                async for ev in adapter.stream(model, messages, tools, temperature):
+                async for ev in adapter.stream(wire_model, messages, tools, temperature):
                     if first_token is None and ev.type in (
                         StreamEventType.TEXT_DELTA,
                         StreamEventType.TOOL_CALL_START,

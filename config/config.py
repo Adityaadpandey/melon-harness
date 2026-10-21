@@ -128,6 +128,16 @@ class VerifyRule(BaseModel):
     tests_glob: str | None = None
 
 
+class ProviderConfig(BaseModel):
+    """A model API reached directly as `-m <name>:<model>`. See client/providers.py for
+    the built-in ones; a table here adds a new provider or changes a built-in."""
+
+    base_url: str | None = None
+    api_key_env: str | None = None  # env var holding the key; leave out for local servers
+    protocol: Literal["openai", "anthropic"] | None = None
+    headers: dict[str, str] = Field(default_factory=dict)
+
+
 class Config(BaseModel):
     model: ModelConfig = Field(default_factory=ModelConfig)
     cwd: Path = Field(default_factory=Path.cwd)
@@ -143,6 +153,7 @@ class Config(BaseModel):
     # role -> ordered model ids. Roles in use: default (fallbacks after the main
     # model), explore, review, summarize. A missing role falls back to default.
     routing: dict[str, list[str]] = Field(default_factory=dict)
+    providers: dict[str, ProviderConfig] = Field(default_factory=dict)
     trace: bool = True
     zdr: bool = False  # send x-cmd-zdr: 1 (zero data retention routing; fails if a model has no ZDR upstream)
 
@@ -292,11 +303,26 @@ class Config(BaseModel):
     def temperature(self, value: float) -> None:
         self.model.temperature = value
 
-    def validate(self) -> list[str]:
-        errors: list[str] = []
+    def missing_key(self, model_id: str | None = None) -> str | None:
+        """Why the model can't be called for lack of a key, or None when it can."""
+        from client.providers import split
 
-        if not self.api_key and not self.model_name.startswith("codex/"):
-            errors.append("No API key found. Set API_KEY environment variable")
+        model_id = model_id or self.model_name
+        direct = split(self, model_id)
+        if direct:
+            p, _ = direct
+            return None if p.api_key else f"No key for {p.name}. Set {p.api_key_env}, or run /connect {p.name}"
+        if model_id.startswith("codex/") or self.api_key:
+            return None
+        return "No API key found. Set API_KEY for the gateway, or run /connect to use a provider directly (e.g. openai, anthropic, groq, ollama)"
+
+    def validate(self) -> list[str]:
+        from client.providers import PRESETS
+
+        errors: list[str] = []
+        for name, p in self.providers.items():
+            if not p.base_url and name not in PRESETS:
+                errors.append(f"[providers.{name}] needs a base_url (it is not one of the built-in providers)")
 
         if not self.cwd.exists():
             errors.append(f"Working directory does not exist: {self.cwd}")

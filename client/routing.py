@@ -85,7 +85,21 @@ class ModelRegistry:
                 endpoints=m.get("supported_endpoints") or ["/chat/completions"],
             )
         self._add_codex_models()
+        self._add_provider_models()
         self._apply_probe()
+
+    def _add_provider_models(self) -> None:
+        """Models of directly connected providers, as saved by /connect."""
+        for f in self.data_dir.glob("models-*.json"):
+            try:
+                self.add_provider_models(f.stem.removeprefix("models-"), json.loads(f.read_text()))
+            except (OSError, ValueError):
+                continue
+
+    def add_provider_models(self, provider: str, ids: list[str]) -> None:
+        for mid in ids:
+            full = f"{provider}:{mid}"
+            self._models.setdefault(full, ModelInfo(full, self.config.model.context_window))
 
     def _add_codex_models(self) -> None:
         """Codex models you can pick, read from the Codex CLI's own list."""
@@ -122,7 +136,9 @@ class ModelRegistry:
 
     def validate(self, model_id: str) -> tuple[bool, list[str]]:
         """(known?, close matches). With no catalog (offline) anything goes."""
-        if not self._models or model_id in self._models or model_id.startswith("codex/"):
+        from client.providers import split
+
+        if not self._models or model_id in self._models or model_id.startswith("codex/") or split(self.config, model_id):
             return True, []
         import difflib
 
