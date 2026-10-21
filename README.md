@@ -38,7 +38,7 @@ do not exercise the changed behaviour.</sub>
 ## Try it in two minutes
 
 ```bash
-git clone <this repo> && cd mew-agent
+git clone https://github.com/Adityaadpandey/melon-harness && cd melon-harness
 uv tool install -e .                       # puts `melon` on your PATH (-e: edits to this checkout apply live)
 ```
 

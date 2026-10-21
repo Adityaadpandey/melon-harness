@@ -3,6 +3,8 @@
 Raw material for a blog post (or three). Everything here comes from the git history (357 commits), the code, and the saved
 benchmark files. Where a number is an estimate it says so, and where something was never measured it says that too.
 
+Repo: https://github.com/Adityaadpandey/melon-harness (package `melon-harness`, command `melon`).
+
 One naming note: the project was called **mew** until Oct 20, when the code, CLI text, env vars and folders became melon too
 (`melon --resume`, `MELON_PLAIN`, `~/.melon`, `.melon/`, `refs/melon/backup`). The history below uses "mew" where the commits do.
 

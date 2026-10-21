@@ -3,7 +3,7 @@ requires = ["setuptools>=68"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "melon-agent"
+name = "melon-harness"
 version = "0.1.0"
 description = "melon: the coding agent that proves its work"
 readme = "README.md"
