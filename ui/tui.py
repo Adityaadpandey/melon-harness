@@ -28,6 +28,7 @@ from safety.approval import Decision
 from tools.base import ToolConfirmation
 from utils.paths import display_path_rel_to_cwd
 
+from ui.mascot import melon as mascot
 from ui.palette import ACCENT, AMBER, CORAL, FG, INK, LAVENDER, MINT, MUTED, SKY, TEAL, BG_BOX, FAINT, RULE
 
 AGENT_THEME = Theme(
@@ -567,8 +568,7 @@ class TUI:
     def print_welcome(self, title: str, lines: list[str]) -> None:
         import random
 
-        # a watermelon slice: coral flesh with a face and two seeds, mint rind underneath
-        melon = Text.assemble((" ╭─────────╮\n", CORAL), (" │ ", CORAL), ("'", FG), (" o.o ", f"bold {FG}"), ("' ", FG), ("│\n", CORAL), (" ╰▄▄▄▄▄▄▄▄▄╯", MINT))
+        melon = mascot()
         info = Text.assemble((title, f"bold {ACCENT}"), ("  ·  a small agent for real repos\n", MUTED))
         if not self.fullscreen:  # the full-screen header and footer already show model, directory and mode
             for ln in lines:
