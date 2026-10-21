@@ -68,6 +68,7 @@ COMMANDS = {
     "/compact": "summarize older messages now to free context",
     "/cost": "tokens, cache hit rate, cache misses, estimated cost",
     "/model": "show or switch model (Tab completes ids)",
+    "/connect": "use a model API directly: /connect groq asks for the key, saves it, lists its models",
     "/approval": "set approval mode: on-request, auto-edit, auto, never, yolo, plan",
     "/agents": "list sub-agents (built-in and .claude/agents/*.md or .melon/agents/*.md)",
     "/permissions": "list or edit allow / deny / ask rules, e.g. /permissions deny Read(.env*)",
@@ -137,6 +138,14 @@ class MelonCompleter(Completer):
                 if f"/{name}".startswith(text) and f"/{name}" not in COMMANDS:
                     yield Completion(f"/{name}", start_position=-len(text), display_meta="skill: " + desc[:80])
             return
+        if text.startswith("/connect "):
+            from client.providers import PRESETS
+
+            arg = text[len("/connect "):]
+            for name in PRESETS:
+                if name.startswith(arg.lower()):
+                    yield Completion(name, start_position=-len(arg))
+            return
         if text.startswith("/model "):
             arg = text[len("/model "):]
             for m in self.models():
@@ -187,6 +196,7 @@ class InputSession:
         self.choice: tuple[int, asyncio.Future] | None = None
         self.question: tuple[str, list[str]] | None = None  # shown by the full-screen status area
         self.line_future: asyncio.Future | None = None
+        self.secret = False  # while True the input box shows dots, for pasting an API key
         self.on_interrupt: Callable[[], None] | None = None
         self.is_busy: Callable[[], bool] = lambda: False
         self.on_steer: Callable[[str], None] | None = None  # when set, a line typed mid-turn steers the running agent
@@ -194,6 +204,7 @@ class InputSession:
         self.frame: Callable[[], object] = lambda: None  # full-screen: changes whenever the screen would look different
         self.area = TextArea(
             prompt=[("class:prompt", " ✦ ")], style="class:box", dont_extend_height=True, multiline=True, wrap_lines=True, history=history,
+            password=Condition(lambda: self.secret),
             completer=ThreadedCompleter(MelonCompleter(cwd, forbidden, models)), complete_while_typing=True,
             height=self._input_height, scrollbar=True,
         )
@@ -459,14 +470,19 @@ async def ask_choice(console, question: str, options: list[str], *, input=None, 
         return len(options) - 1
 
 
-async def read_line(prompt: str) -> str:
+async def read_line(prompt: str, secret: bool = False) -> str:
+    """One typed line. `secret` hides what is typed and keeps it out of history."""
     if ACTIVE is not None:
         from ui.tui import get_console
 
         get_console().print(f"  [dim]{prompt.strip()}[/dim]")
-        return await ACTIVE.line()
+        ACTIVE.secret = secret
+        try:
+            return await ACTIVE.line()
+        finally:
+            ACTIVE.secret = False
     try:
-        return (await PromptSession().prompt_async(prompt)).strip()
+        return (await PromptSession().prompt_async(prompt, is_password=secret)).strip()
     except (EOFError, KeyboardInterrupt):
         return ""
 

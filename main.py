@@ -559,6 +559,49 @@ class CLI:
                 return await self._process_message("The plan is approved. Carry it out now, step by step, and verify as you go.")
         return final_response
 
+    async def _connect(self, name: str) -> None:
+        """/connect groq: ask for the key (hidden), keep it in melon's .env, prove it works by
+        listing the provider's models, and make those models Tab-completable in /model."""
+        from client.providers import all_providers, fetch_models
+        from config.loader import save_env_key
+        from ui.prompt import read_line
+
+        console = get_console()
+        providers = all_providers(self.config)
+        p = providers.get(name)
+        if not p:
+            if name:
+                console.print(f"[error]Unknown provider: {name}[/error]")
+            console.print("Connect one with [bold]/connect <name>[/bold]:")
+            for n, q in providers.items():
+                state = "[success]ready[/success]" if q.api_key else f"[dim]needs {q.api_key_env}[/dim]"
+                console.print(f"  {n:<11} {state}  [dim]{q.base_url}[/dim]")
+            console.print("[dim]Anything else that speaks the OpenAI or Anthropic format: add a [providers.<name>] table to config.toml (see client/providers.py).[/dim]")
+            return
+        if p.api_key_env:
+            note = " (Enter keeps the current one)" if p.api_key else ""
+            key = (await read_line(f"Paste your {p.name} API key{note}: ", secret=True)).strip()
+            if key and any(c.isspace() for c in key):
+                console.print("[error]That doesn't look like a key (it has spaces or line breaks). Nothing saved.[/error]")
+                return
+            if key:
+                path = save_env_key(p.api_key_env, key)
+                console.print(f"[dim]Saved {p.api_key_env} to {path}[/dim]")
+                if old := self.agent.session.client._adapters.pop(p.name, None):
+                    await old.close()  # it was built with the previous key
+            elif not p.api_key:
+                console.print("[dim]Cancelled.[/dim]")
+                return
+        try:
+            ids = await fetch_models(p)
+        except Exception as e:
+            console.print(f"[warning]Couldn't list {p.name}'s models ({str(e)[:160]}). If the key is right you can still pick one by name: /model {p.name}:<model>[/warning]")
+            return
+        get_data_dir().mkdir(parents=True, exist_ok=True)  # a keyless local server never wrote the .env that creates it
+        (get_data_dir() / f"models-{p.name}.json").write_text(json.dumps(ids))
+        self.agent.session.client.registry.add_provider_models(p.name, ids)
+        console.print(f"[success]Connected {p.name}: {len(ids)} models.[/success] Switch with [bold]/model {p.name}:[/bold] and Tab, e.g. /model {p.name}:{ids[0] if ids else '<model>'}")
+
     async def _handle_command(self, command: str) -> bool:
         cmd = command.lower().strip()
         parts = cmd.split(maxsplit=1)
@@ -677,6 +720,8 @@ class CLI:
                     console.print(f"[success]Model changed to: {cmd_args} [/success]")
             else:
                 console.print(f"Current model: {self.config.model_name}")
+        elif cmd_name == "/connect":
+            await self._connect(cmd_args.strip().lower())
         elif cmd_name == "/approval":
             if cmd_args:
                 try:
@@ -1012,6 +1057,11 @@ def main(
         config.approval = ApprovalPolicy.AUTO_EDIT
 
     errors = config.validate()
+    no_key = config.missing_key()
+    if no_key and (prompt or json_mode or rpc_mode):
+        errors.append(no_key)
+    elif no_key:  # interactive: start anyway, so /connect can fix it from inside
+        console.print(f"[warning]{no_key}[/warning]")
 
     if errors:
         for error in errors:

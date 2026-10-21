@@ -1,3 +1,4 @@
+import os
 import re
 from pathlib import Path
 from typing import Any
@@ -43,6 +44,19 @@ def save_last_model(name: str) -> None:
         (d / "last_model").write_text(name.strip())
     except OSError:
         pass  # losing this only means falling back to the configured default
+
+
+def save_env_key(name: str, value: str) -> Path:
+    """Keep an API key in melon's own .env (loaded at every start), readable only by you.
+    Replaces an older line for the same key rather than stacking duplicates."""
+    path = get_data_dir() / ".env"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    lines = path.read_text().splitlines() if path.exists() else []
+    lines = [ln for ln in lines if not ln.startswith(f"{name}=")] + [f"{name}={value}"]
+    path.write_text("\n".join(lines) + "\n")
+    path.chmod(0o600)
+    os.environ[name] = value
+    return path
 
 
 def load_last_model() -> str | None:
