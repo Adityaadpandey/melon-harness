@@ -386,7 +386,7 @@ class InputSession:
 
     async def _tick(self) -> None:
         """Full-screen: redraw ten times a second, but only when the frame or the footer changed.
-        Typing and new output redraw on their own; this is for the spinner, clock and blinking cat."""
+        Typing and new output redraw on their own; this is for the spinner, clock and blinking melon."""
         last = None
         while True:
             await asyncio.sleep(0.1)

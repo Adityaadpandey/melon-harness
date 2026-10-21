@@ -567,7 +567,8 @@ class TUI:
     def print_welcome(self, title: str, lines: list[str]) -> None:
         import random
 
-        cat = Text.assemble((" /\\_/\\ \n", ACCENT), ("( ", ACCENT), ("o.o", MINT), (" )\n", ACCENT), (" > ^ < ", ACCENT))
+        # a watermelon slice: coral flesh with a face and two seeds, mint rind underneath
+        melon = Text.assemble((" ╭─────────╮\n", CORAL), (" │ ", CORAL), ("'", FG), (" o.o ", f"bold {FG}"), ("' ", FG), ("│\n", CORAL), (" ╰▄▄▄▄▄▄▄▄▄╯", MINT))
         info = Text.assemble((title, f"bold {ACCENT}"), ("  ·  a small agent for real repos\n", MUTED))
         if not self.fullscreen:  # the full-screen header and footer already show model, directory and mode
             for ln in lines:
@@ -579,7 +580,7 @@ class TUI:
             info.append("/help commands  ·  @file attach  ·  !cmd run  ·  drag to copy", style=MUTED)
         info.rstrip()
         grid = Table.grid(padding=(0, 3))
-        grid.add_row(cat, info)
+        grid.add_row(melon, info)
         self.console.print()
         self.console.print(Padding(grid, (0, 2)))
         if not self.quiet:

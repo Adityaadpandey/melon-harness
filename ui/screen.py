@@ -408,7 +408,7 @@ class Screen:
         return Point(0, last if self.anchor is None else min(self.anchor, last))
 
     def _face(self) -> str:
-        """The cat blinks when idle and widens its eyes while the agent is working."""
+        """The melon blinks when idle and widens its eyes while the agent is working."""
         now = time.monotonic()
         if self.tui._turn_active:
             return ("O.O", "o.o", "O.O", "o.O", "O.o")[int(now * 3) % 5]
@@ -416,7 +416,7 @@ class Screen:
 
     def frame(self):
         """What would look different on the next redraw. While something moves (a turn, a question,
-        a drag) it's the clock, so every tick redraws; when idle it only changes when the cat blinks
+        a drag) it's the clock, so every tick redraws; when idle it only changes when the melon blinks
         or a flash or glow wears off, so a quiet screen isn't redrawn ten times a second for nothing."""
         import ui.prompt as prompt_mod
 
@@ -427,7 +427,7 @@ class Screen:
 
     def _header(self):
         cols = _size()[0]
-        left = f"  =^{self._face()}^=  melon  ·  {self._title()}"
+        left = f"  ◖{self._face()}◗  melon  ·  {self._title()}"
         right = "scrolled back · PageDown / ctrl+end to return  " if self.anchor is not None else "drag to copy · /copy all · F2 native select  "
         if not self.mouse_on:
             right = "native select on (wheel off) · F2 to go back  "
@@ -435,7 +435,7 @@ class Screen:
             right = "✓ copied to clipboard  "
         pad = " " * max(1, cols - len(left) - len(right))
         busy = self.tui._turn_active
-        return [(f"bold fg:{ACCENT}", f"  =^{self._face()}^="), (f"bold fg:{LAVENDER if busy else FG}", "  melon"),
+        return [(f"bold fg:{CORAL}", f"  ◖{self._face()}◗"), (f"bold fg:{LAVENDER if busy else FG}", "  melon"),
                 (f"fg:{MUTED}", f"  ·  {self._title()}{pad}"), (f"bold fg:{MINT}" if time.monotonic() - self._copied_at < 2 else f"fg:{AMBER}" if self.anchor is not None else f"fg:{FAINT}", right)]
 
     # -- panes ---------------------------------------------------------
