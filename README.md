@@ -4,7 +4,7 @@
 
 <p align="center">
   <img alt="python" src="https://img.shields.io/badge/python-3-c3a6ff?style=flat-square">
-  <img alt="tests" src="https://img.shields.io/badge/tests-454%20passing-8ff0c4?style=flat-square">
+  <img alt="tests" src="https://img.shields.io/badge/tests-453%20passing-8ff0c4?style=flat-square">
   <img alt="models" src="https://img.shields.io/badge/models-Claude%20%C2%B7%20GPT%20%C2%B7%20Codex%20%C2%B7%20DeepSeek-ff8fc7?style=flat-square">
   <img alt="sandbox" src="https://img.shields.io/badge/sandbox-macOS-ffd28f?style=flat-square">
 </p>
@@ -98,7 +98,7 @@ Measured from this repo. Where a figure is an estimate, it says so.
 <td align="center"><h3>~0.7k</h3>tokens in the system prompt<br><sub>was ~3k, <b>4x smaller</b></sub></td>
 <td align="center"><h3>87%</h3>of input from cache<br><sub>11-task benchmark above</sub></td>
 <td align="center"><h3>5.6s</h3>cold search index of a 24k-file repo<br><sub>was 11.1s; warm: 1.2s</sub></td>
-<td align="center"><h3>454</h3>offline tests<br><sub>all passing in ~30s</sub></td>
+<td align="center"><h3>453</h3>offline tests<br><sub>all passing in ~30s</sub></td>
 </tr>
 <tr>
 <td align="center"><h3>~22%</h3>of tool output still in context<br><sub>last request of a 32-call replay</sub></td>
@@ -751,7 +751,7 @@ Commands: `/help /clear /compact /context /cost /model /effort /approval /plan /
 ## Tests and benchmarks
 
 ```bash
-.venv/bin/python -m pytest -q                       # 454 offline unit tests
+.venv/bin/python -m pytest -q                       # 453 offline unit tests
 .venv/bin/python -m bench.run --model claude-haiku-5-5 --runs 3 --label mine
 .venv/bin/python -m bench.run --mode parallel --model deepseek/deepseek-v4.1-flash --jobs 1 --runs 3
 .venv/bin/python -m bench.run --agent claude-code --model claude-sonnet-5-5   # same tasks and hidden tests, driven by `claude -p`

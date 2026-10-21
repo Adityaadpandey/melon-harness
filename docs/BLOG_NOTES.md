@@ -5,9 +5,6 @@ benchmark files. Where a number is an estimate it says so, and where something w
 
 Repo: https://github.com/Adityaadpandey/melon-harness (package `melon-harness`, command `melon`).
 
-One naming note: the project was called **mew** until Oct 20, when the code, CLI text, env vars and folders became melon too
-(`melon --resume`, `MELON_PLAIN`, `~/.melon`, `.melon/`, `refs/melon/backup`). The history below uses "mew" where the commits do.
-
 ---
 
 ## 1. The one-paragraph story
@@ -38,7 +35,7 @@ Commits per day: Oct 13 (29), Oct 14 (96), Oct 15 (72), Oct 16 (36), Oct 17 (26)
 | **Oct 17** | Playbooks (PR review, commit review, bug hunt, security, scalability, planning). Permission rules in Claude Code notation. User-defined sub-agents. JS/TS auto-verify via each package's own typecheck. `/rewind`. Task notes that survive compaction. Nested `AGENTS.md`. Custom slash commands. `gh` and `curl` allowed outside the sandbox, but only one plain command, only with approval. |
 | **Oct 18** | The review system grew up: **review targets** (working tree, last N commits, one commit, branch, PR, including a PR not checked out), lenses, a **contracts** reviewer, a verifier that batches six claims at a time, **sandboxed repro of HIGH findings**, the **advisor** tool, **fix runs** and a **fix verifier**. The motive was a head-to-head with Claude Code's review on one PR. |
 | **Oct 19** | Context quality (compaction keeps every user message, a `FILES AND CODE` section, restores working files). Then **learning**: lessons from corrections, written into `AGENTS.md`, and `learn_import --deep` that mines old Claude Code sessions. A context-replay and review benchmark saved to disk. |
-| **Oct 20** | README rewritten with diagrams and decisions. Project renamed melon, and the app data moved from `ai-agent` to `melon` on first launch so sessions and lessons carried over. Then a day of **measuring and trimming**: transcript redraws, idle redraws, grep and search index speed. `resume` brings back the whole session. A head-to-head against Claude Code on 11 tasks, and the two things it taught: the **signature guard** and **fewer todo-only turns**. |
+| **Oct 20** | README rewritten with diagrams and decisions. The project's code, CLI text, env vars and folders all say melon (`melon --resume`, `MELON_PLAIN`, `~/.melon`, `.melon/`, `refs/melon/backup`). Then a day of **measuring and trimming**: transcript redraws, idle redraws, grep and search index speed. `resume` brings back the whole session. A head-to-head against Claude Code on 11 tasks, and the two things it taught: the **signature guard** and **fewer todo-only turns**. |
 | **Oct 21** | `pyproject.toml` and a `melon` command (`uv tool install -e .`), the API key is also read from melon's data folder so it works from any directory. README rewritten to be read, not just kept. |
 
 ## 3. Architecture in plain words
@@ -104,7 +101,7 @@ into the repo's own `AGENTS.md`, so a human can read, edit and commit them.
 already says, so only new rules get added.
 
 ### 4.9 Pi mode: delete rails that don't pay rent
-mew began with a lot of guardrails: call caps, a scout before every task, reference retries, aggressive clearing. Copying the
+melon began with a lot of guardrails: call caps, a scout before every task, reference retries, aggressive clearing. Copying the
 simple design of the pi agent (seven tools, a tiny prompt, files read whole) and measuring it showed which rails were worth
 keeping. It became the default (`--no-pi` brings the old setup back).
 *The honest part:* it wasn't one-way. Within the same day the replay showed **3.4x the input tokens** when old results were never
@@ -124,7 +121,7 @@ The answer states its scope (working tree, last 3 commits, PR 42), lists every f
 exercise the change, and labels guesses `[guess]`.
 
 ### 4.13 Trust is per exact file
-A repo's `.ai-agent/config.toml` can't turn on hooks, MCP servers, verify commands or approval changes until you trust that exact
+A repo's `.melon/config.toml` can't turn on hooks, MCP servers, verify commands or approval changes until you trust that exact
 file, and editing it revokes the trust. A cloned repo can't quietly turn on code execution.
 
 ### 4.14 Let a benchmark miss become a rule
@@ -171,9 +168,6 @@ Good blog posts need these. All are visible in the commit history.
 - **Reviews that argued with themselves.** The model listed findings, then dismissed them in the same answer. Fixed by a
   one-time clean rewrite, then by structure (verifier) instead of wording tricks.
 - **Learning by regex found nothing** (see 4.8).
-- **The rename left sessions behind.** Moving app data from `ai-agent` to `melon` skipped the move when a `melon` folder
-  already existed, and the test suite had created one, so 51 sessions and every lesson stayed behind. The move now merges.
-  Tests also got their own temporary data folder, so they stop writing into the real one.
 - **A test suite that quietly doubled.** Creating an agent downloaded the real model list, taking the suite to 60s and failing
   a timing test. Tests now start with an empty cached catalog.
 - **"Verified" was true and still wrong.** `unique_by` dropped a parameter, every check passed, status said `verified` (4.14).
@@ -184,7 +178,7 @@ Good blog posts need these. All are visible in the commit history.
 | Number | Source |
 |---|---|
 | 357 commits in 9 days; ~17k lines of Python and ~5.9k lines of tests in 56 test files | `git rev-list --count HEAD`, `wc -l` |
-| 454 offline tests passing in ~32s | `pytest -q`, run on 2026-10-21 |
+| 453 offline tests passing in ~32s | `pytest -q`, run on 2026-10-21 |
 | System prompt ~3k → ~0.7k tokens (earlier: ~1,990 → ~1,140 in one pass) | README / commit messages |
 | Search index of a large repo: 13.7s cold → 1.2s warm | commit message |
 | Context replay: 32 model calls, 64 tool runs, 453k chars of tool output; last request ~25k tokens (~22% of what was ingested) | `bench/results/context-replay-baseline.json` (estimate) |
