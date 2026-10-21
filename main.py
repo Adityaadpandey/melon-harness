@@ -1042,13 +1042,15 @@ def main(
         # e.g. "✦ melon · tunyt" (✦ is the prompt glyph, like Claude Code's ✳). The old title is pushed first and popped on exit, so the tab gets its own back.
         titled = sys.stdout.isatty()
         if titled:
-            sys.stdout.write(f"\033[22;0t\033]0;✦ melon · {Path(config.cwd).name}\007")
+            title = f"✦ melon · {Path(config.cwd).name}"
+            # 0 sets both, but iTerm's tab only follows 1 (icon/tab) and the window follows 2, so send all three
+            sys.stdout.write(f"\033[22;0t\033]0;{title}\007\033]1;{title}\007\033]2;{title}\007")
             sys.stdout.flush()
         try:
             asyncio.run(cli.run_interactive())
         finally:
             if titled:
-                sys.stdout.write("\033]0;\007\033[23;0t")
+                sys.stdout.write("\033]0;\007\033]1;\007\033]2;\007\033[23;0t")
                 sys.stdout.flush()
 
 
