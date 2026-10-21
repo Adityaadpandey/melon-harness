@@ -1,6 +1,6 @@
 # melon: everything we built and decided, written for the blog
 
-Raw material for a blog post (or three). Everything here comes from the git history (335 commits), the code, and the saved
+Raw material for a blog post (or three). Everything here comes from the git history (357 commits), the code, and the saved
 benchmark files. Where a number is an estimate it says so, and where something was never measured it says that too.
 
 One naming note: the project was called **mew** until Oct 20, when the code, CLI text, env vars and folders became melon too
@@ -10,7 +10,7 @@ One naming note: the project was called **mew** until Oct 20, when the code, CLI
 
 ## 1. The one-paragraph story
 
-In eight days (2026-10-13 to 2026-10-20, 335 commits) one person built a terminal coding agent from an empty folder. It started as
+In nine days (2026-10-13 to 2026-10-21, 357 commits) one person built a terminal coding agent from an empty folder. It started as
 a way to get a strong harness for a real product repo (Tunyt), and it ended up being about one idea: **an agent should prove its
 work instead of announcing it.** Checks run on the changed files, a second model reviews the real diff, a third agent tries to
 disprove every finding, and every file path in the answer is looked up on disk. The rest (cheap context, a sandbox, routing,
@@ -19,12 +19,13 @@ learning from your corrections) exists to make that proof affordable and safe.
 **Possible titles**
 - "I built a coding agent in a week. The best part is the one that argues with itself."
 - "Agents say 'done'. Mine has to show its work."
-- "What 335 commits taught me about agent harnesses"
+- "What 357 commits taught me about agent harnesses"
+- "I benchmarked my homemade agent against Claude Code. It tied, and the misses taught me more than the wins."
 - "Every token should earn its place: building a coding agent that never sends the same thing twice"
 
 ## 2. The timeline
 
-Commits per day: Oct 13 (29), Oct 14 (96), Oct 15 (72), Oct 16 (36), Oct 17 (26), Oct 18 (19), Oct 19 (56), Oct 20 (4).
+Commits per day: Oct 13 (29), Oct 14 (96), Oct 15 (72), Oct 16 (36), Oct 17 (26), Oct 18 (19), Oct 19 (56), Oct 20 (20), Oct 21 (3).
 
 | Day | What happened |
 |---|---|
@@ -35,7 +36,8 @@ Commits per day: Oct 13 (29), Oct 14 (96), Oct 15 (72), Oct 16 (36), Oct 17 (26)
 | **Oct 17** | Playbooks (PR review, commit review, bug hunt, security, scalability, planning). Permission rules in Claude Code notation. User-defined sub-agents. JS/TS auto-verify via each package's own typecheck. `/rewind`. Task notes that survive compaction. Nested `AGENTS.md`. Custom slash commands. `gh` and `curl` allowed outside the sandbox, but only one plain command, only with approval. |
 | **Oct 18** | The review system grew up: **review targets** (working tree, last N commits, one commit, branch, PR, including a PR not checked out), lenses, a **contracts** reviewer, a verifier that batches six claims at a time, **sandboxed repro of HIGH findings**, the **advisor** tool, **fix runs** and a **fix verifier**. The motive was a head-to-head with Claude Code's review on one PR. |
 | **Oct 19** | Context quality (compaction keeps every user message, a `FILES AND CODE` section, restores working files). Then **learning**: lessons from corrections, written into `AGENTS.md`, and `learn_import --deep` that mines old Claude Code sessions. A context-replay and review benchmark saved to disk. |
-| **Oct 20** | README rewritten with diagrams and decisions. Project renamed melon. |
+| **Oct 20** | README rewritten with diagrams and decisions. Project renamed melon, and the app data moved from `ai-agent` to `melon` on first launch so sessions and lessons carried over. Then a day of **measuring and trimming**: transcript redraws, idle redraws, grep and search index speed. `resume` brings back the whole session. A head-to-head against Claude Code on 11 tasks, and the two things it taught: the **signature guard** and **fewer todo-only turns**. |
+| **Oct 21** | `pyproject.toml` and a `melon` command (`uv tool install -e .`), the API key is also read from melon's data folder so it works from any directory. README rewritten to be read, not just kept. |
 
 ## 3. Architecture in plain words
 
@@ -123,6 +125,26 @@ exercise the change, and labels guesses `[guess]`.
 A repo's `.ai-agent/config.toml` can't turn on hooks, MCP servers, verify commands or approval changes until you trust that exact
 file, and editing it revokes the trust. A cloned repo can't quietly turn on code execution.
 
+### 4.14 Let a benchmark miss become a rule
+The head-to-head (section 6) had one melon miss: asked to dedupe, `unique_by` lost its `seen=` parameter, the checks passed, and
+the run said `verified`. Passing tests did not cover the old call. So a **signature guard** now compares the diff's public
+signatures with the old ones (Python through `ast`, TS/JS exports through a light reader) and sends the agent back once if a
+parameter was dropped, made required, reordered, or an export vanished. Tests, new files, moved functions and anything the
+request names are skipped, so a deliberate change isn't blocked. The prompt had also said "no compatibility leftovers", which
+read as permission to drop the parameter; it now asks to keep existing callers working.
+
+### 4.15 Count the model calls, not just the tokens
+Looking at the 113 model calls in the benchmark, 31 were turns that held nothing but a todo update, because the todo tool said
+"mark each step done the moment it finishes, never batch". Todos are now for long work (5+ steps) and their updates ride along
+with the next real call. Cheap per call, but every call re-sends the conversation.
+
+### 4.16 Measure the harness itself, not only the model
+Much of Oct 20 was the app, not the agent: the transcript pane re-split and hashed the whole session on each redraw (93ms for
+20k lines, now under 5ms), the screen redrew ten times a second even idle (now only when something changed, 0.4/s), grep read
+every file line by line (now once per file, and a whole-file miss skips the line pass: 5.1s to 1.1s on a 24k-file repo), and
+the search index was built line by line (11.1s to 5.6s). None of this is model quality, and all of it is what makes a long
+session feel fast.
+
 ## 5. Mistakes, reversals and things we got wrong
 
 Good blog posts need these. All are visible in the commit history.
@@ -147,13 +169,20 @@ Good blog posts need these. All are visible in the commit history.
 - **Reviews that argued with themselves.** The model listed findings, then dismissed them in the same answer. Fixed by a
   one-time clean rewrite, then by structure (verifier) instead of wording tricks.
 - **Learning by regex found nothing** (see 4.8).
+- **The rename left sessions behind.** Moving app data from `ai-agent` to `melon` skipped the move when a `melon` folder
+  already existed, and the test suite had created one, so 51 sessions and every lesson stayed behind. The move now merges.
+  Tests also got their own temporary data folder, so they stop writing into the real one.
+- **A test suite that quietly doubled.** Creating an agent downloaded the real model list, taking the suite to 60s and failing
+  a timing test. Tests now start with an empty cached catalog.
+- **"Verified" was true and still wrong.** `unique_by` dropped a parameter, every check passed, status said `verified` (4.14).
+- **The benchmark's other miss was Claude Code's:** asked to delete the repository's history and data, it did.
 
 ## 6. Real numbers (and where each comes from)
 
 | Number | Source |
 |---|---|
-| 335 commits in 8 days; ~18k lines of Python and ~5.7k lines of tests in 52 test files | `git log`, `wc -l` |
-| 449 offline tests passing in ~27s | `pytest -q`, run on 2026-10-20 |
+| 357 commits in 9 days; ~17k lines of Python and ~5.9k lines of tests in 56 test files | `git rev-list --count HEAD`, `wc -l` |
+| 454 offline tests passing in ~32s | `pytest -q`, run on 2026-10-21 |
 | System prompt ~3k → ~0.7k tokens (earlier: ~1,990 → ~1,140 in one pass) | README / commit messages |
 | Search index of a large repo: 13.7s cold → 1.2s warm | commit message |
 | Context replay: 32 model calls, 64 tool runs, 453k chars of tool output; last request ~25k tokens (~22% of what was ingested) | `bench/results/context-replay-baseline.json` (estimate) |
@@ -164,18 +193,27 @@ Good blog posts need these. All are visible in the commit history.
 | 3,000-line transcript redraw: ~109ms → ~3ms per streamed write | commit message, Oct 14 |
 | Review sub-agent spawning its own challenger: 80k tokens, 4 minutes | commit message, Oct 15 |
 | Skills list was half of a 26k-char system prompt | commit message, Oct 16 |
+| **melon vs Claude Code, 11 tasks, one run each: 10/11 and 10/11** | `bench/results/vs-melon-codex_gpt-5.6-luna.json`, `bench/results/vs-cc-claude-code.json` |
+| Prompt tokens 1.01M (melon) vs 1.31M (Claude Code); cached share 87% vs 76% | same files, summed |
+| Model calls 113 vs 42; wall time 355s vs 273s (melon is slower and chattier here) | same files, summed |
+| Claude Code cost $1.49 for the 11 tasks; melon's cost is not recorded (Codex login) | same files |
+| 31 of melon's 113 calls were todo-only turns | commit message, Oct 20 |
+| Transcript redraw with 20k lines: 93ms to under 5ms; idle redraws 10/s to 0.4/s | commit messages, Oct 20 |
+| Broad grep on a 24k-file repo 5.1s to 1.1s; cold search index 11.1s to 5.6s (index file 25MB to 19MB) | commit messages, Oct 20 |
 | Deep learn on a real repo: 563 sessions since 2026-05-25 mined; the run produced 17 lessons and dropped the older noise | working notes from the Oct 19 run |
 
 **Not claimed anywhere, on purpose**
-- No head-to-head benchmark against other harnesses was run, so no "better than X" number exists.
+- The head-to-head is **one run per task on 11 small tasks, with different models** (Codex luna vs Sonnet 5.5), so it supports
+  "in the same range" and nothing stronger. Do not write "melon beats Claude Code". Do write that melon sent fewer tokens and
+  more calls, and that each missed a different task.
 - The cross-model task benchmark (`bench/results/final-*`) shows 22/22 for one model and 4/22 for most others. That looks like
   quota blocking, not ability, so it is not quoted.
 - The planted-bug review bench has two saved runs on two tiny cases, so no recall figure is quoted. One run missed the bug, the
   next found it with no noise on the control case. That is a fair thing to say in a blog, and an unfair thing to turn into a percentage.
 - Several defaults were tuned on one real repo. Treat them as measured there, not universal.
 
-If you want stronger numbers for the post, the honest route is to rerun the model comparison on a day with free quota, and to
-add more planted-bug cases. Both are real work, and both would make the story better.
+If you want stronger numbers for the post, the honest route is to run the head-to-head with the same model on both sides and
+several runs per task, rerun the model comparison on a day with free quota, and add more planted-bug cases. Both are real work, and both would make the story better.
 
 ## 7. Suggested blog outline
 
@@ -190,7 +228,9 @@ add more planted-bug cases. Both are real work, and both would make the story be
 6. **Pi mode: deleting your own rails.** The about-face within a day is the interesting part.
 7. **Memory that can't hallucinate.** Regex learning failed; "read the reply next to what it replied to" worked; `AGENTS.md` as
    the store so humans stay in the loop.
-8. **What isn't there.** macOS-only sandbox, no image input, no head-to-head benchmark. Ending on honesty fits the product.
+8. **The head-to-head.** 10/11 each, with a different miss each. Show the table, then what the misses changed (signature guard,
+   fewer todo turns). Be loud about the caveats: different models, one run, 11 tasks.
+9. **What isn't there.** macOS-only sandbox, no image input, no head-to-head benchmark. Ending on honesty fits the product.
 
 **Lines worth quoting**
 - "A prompt that says never read `.env` is a request. A boundary is code."
@@ -218,4 +258,5 @@ add more planted-bug cases. Both are real work, and both would make the story be
 | Safety layers | `safety/guard.py`, `safety/workspace.py`, `safety/sandbox.py` |
 | Learning | `agent/learn.py`, `agent/learn_import.py` |
 | Parallel worktrees | `agent/orchestrator.py` |
-| Benchmarks | `bench/context_replay.py`, `bench/review_bench.py`, `bench/run.py` |
+| Signature guard | `agent/verify.py` (wired in `agent/agent.py`) |
+| Benchmarks | `bench/context_replay.py`, `bench/review_bench.py`, `bench/run.py` (`--agent claude-code` for the head-to-head) |
