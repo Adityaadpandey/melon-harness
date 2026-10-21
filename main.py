@@ -16,7 +16,7 @@ from agent.persistence import PersistenceManager, SessionSnapshot
 from agent.session import Session
 from config.config import ApprovalPolicy, Config
 from config.loader import load_config
-from config.loader import get_data_dir, load_last_model, move_old_dirs, save_last_model
+from config.loader import get_data_dir, load_last_model, save_last_model
 from utils.text import count_tokens
 from ui.prompt import COMMANDS, InputSession, expand_mentions
 from ui.tui import TUI, context_bar, get_console
@@ -967,7 +967,6 @@ def main(
     pi_mode: bool | None,
     approval: str | None,
 ):
-    move_old_dirs()
     try:
         config = load_config(cwd=cwd, trust_project=trust_project, pi_mode=pi_mode)
         if config.ignored_project_keys:

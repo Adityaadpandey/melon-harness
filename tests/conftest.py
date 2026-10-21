@@ -4,7 +4,7 @@ import pytest
 @pytest.fixture(autouse=True)
 def _private_data_dir(tmp_path_factory, monkeypatch):
     """Tests write sessions, traces and lessons into a temporary folder, never the real
-    ~/Library/Application Support/melon (they once created it there and stopped the move from ai-agent)."""
+    ~/Library/Application Support/melon."""
     import config.loader as loader
 
     base = tmp_path_factory.mktemp("appdirs")

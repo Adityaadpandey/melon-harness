@@ -36,7 +36,7 @@ import re
 from collections import Counter
 from pathlib import Path
 
-from agent.learn import HEADING, MAX_LESSONS, OLD_HEADING, Learned
+from agent.learn import HEADING, MAX_LESSONS, Learned
 
 EDIT_TOOLS = {"Edit", "Write", "MultiEdit", "NotebookEdit"}
 INTERRUPTED = "[Request interrupted by user"
@@ -204,7 +204,7 @@ def rulebook(repo: Path) -> str:
     for f in sorted(repo.rglob("AGENTS.md")):
         if "node_modules" in f.parts or ".deepsec" in f.parts:
             continue
-        body = f.read_text(errors="replace").replace(OLD_HEADING, HEADING).split(HEADING)[0]
+        body = f.read_text(errors="replace").split(HEADING)[0]
         parts.append(f"=== {f.relative_to(repo)}\n{body.strip()}")
     for f in sorted((repo / ".commandcode" / "taste").rglob("*.md")):
         parts.append(f"=== {f.relative_to(repo)}\n{f.read_text(errors='replace').strip()}")
@@ -347,8 +347,6 @@ async def deep(tasks: list[dict], hooks: Counter, repo: Path, learned: Learned, 
 
 
 def main(argv: list[str] | None = None) -> None:
-    from config.loader import move_old_dirs
-    move_old_dirs()
     ap = argparse.ArgumentParser(description=__doc__.split("\n")[0])
     ap.add_argument("--repo", type=Path, required=True)
     ap.add_argument("--projects", type=Path, default=Path.home() / ".claude" / "projects")

@@ -21,7 +21,6 @@ MAX_EDITS = 200
 PROMPT_CHARS = 1500
 MIN_OVERLAP = 0.5  # share of the search query's words a past request must have in common
 HEADING = "## Learned by melon"
-OLD_HEADING = "## Learned by mew"  # what repos learned before the rename still have; renamed on the next write
 JUDGE_PROMPT = """You watch a coding agent work with its user. Decide whether the user's NEW message teaches the agent something worth remembering for this repo.
 
 Worth keeping:
@@ -95,7 +94,7 @@ class Learned:
         False when the file can't be written."""
         f = self.root / "AGENTS.md"
         try:
-            body = (f.read_text(encoding="utf-8") if f.is_file() else "").replace(OLD_HEADING, HEADING)
+            body = (f.read_text(encoding="utf-8") if f.is_file() else "")
             if HEADING not in body:
                 body = (body.rstrip("\n") + "\n\n" if body.strip() else "") + HEADING + "\n"
             f.write_text(body.rstrip("\n") + f"\n- {text}\n", encoding="utf-8")

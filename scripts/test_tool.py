@@ -22,7 +22,7 @@ def main():
         "error": error,
     }
 
-    log_path = os.path.expanduser("/Users/rivaanranawat/Desktop/ai-agent/hook.log")
+    log_path = os.path.expanduser("~/.melon/hook.log")
     os.makedirs(os.path.dirname(log_path), exist_ok=True)
     with open(log_path, "a") as f:
         f.write(f"[HOOK] {json.dumps(log_data)}\n")

@@ -51,24 +51,3 @@ def test_projects_without_gated_keys_need_no_trust(tmp_path, monkeypatch):
     (tmp_path / ".melon" / "config.toml").write_text("max_turns = 5\n")
     c = load_config(tmp_path)
     assert c.max_turns == 5 and c.ignored_project_keys == []
-
-
-def test_old_ai_agent_folder_moves_to_melon_and_merges_with_one_that_exists(tmp_path, monkeypatch):
-    import config.loader as loader
-    monkeypatch.setattr(loader, "user_data_dir", lambda name: str(tmp_path / "data" / name))
-    monkeypatch.setattr(loader, "user_config_dir", lambda name: str(tmp_path / "conf" / name))
-    (tmp_path / "data" / "ai-agent" / "sessions").mkdir(parents=True)
-    (tmp_path / "data" / "ai-agent" / "sessions" / "s1.json").write_text("{}")
-    # melon already exists (something wrote there first): the old sessions still have to show up in it
-    (tmp_path / "conf" / "ai-agent" / "sessions").mkdir(parents=True)
-    (tmp_path / "conf" / "ai-agent" / "sessions" / "old.json").write_text("old")
-    (tmp_path / "conf" / "ai-agent" / "last_model").write_text("old-model")
-    (tmp_path / "conf" / "melon" / "sessions").mkdir(parents=True)
-    (tmp_path / "conf" / "melon" / "sessions" / "new.json").write_text("new")
-    (tmp_path / "conf" / "melon" / "last_model").write_text("new-model")
-    loader.move_old_dirs()
-    assert (tmp_path / "data" / "melon" / "sessions" / "s1.json").is_file() and not (tmp_path / "data" / "ai-agent").exists()
-    conf = tmp_path / "conf" / "melon"
-    assert sorted(p.name for p in (conf / "sessions").iterdir()) == ["new.json", "old.json"]
-    assert (conf / "last_model").read_text() == "new-model"  # both had it: melon's copy wins, the old one is left behind
-    assert sorted(p.name for p in (tmp_path / "conf" / "ai-agent").iterdir()) == ["last_model"]
