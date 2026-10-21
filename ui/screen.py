@@ -482,10 +482,16 @@ class Screen:
             c.print(self.tui._renderable())
         if asking:
             q, opts = asking
-            c.print(Text.assemble((" ? ", f"bold {LAVENDER}"), (q, "bold")))
+            head, _, context = q.partition("\n")  # lines after the first explain what the answer decides
+            c.print(Text.assemble((" ? ", f"bold {LAVENDER}"), (head, "bold")))
+            if context:
+                c.print(Text("   " + context, MUTED))
+                c.print()
             for i, opt in enumerate(opts, 1):
                 label, _, why = opt.partition(" — ")  # a choice may carry a one-line explanation after the dash
-                c.print(Text.assemble((f"   [{i}] ", f"bold {CORAL if i == len(opts) else ACCENT}"), (label, f"bold {FG}" if why else FG), (f"  {why}" if why else "", MUTED), ("  ⏎" if i == 1 else "", MUTED)))
+                c.print(Text.assemble((f"   [{i}] ", f"bold {CORAL if i == len(opts) else ACCENT}"), (label, f"bold {FG}" if why else FG), ("  ⏎" if i == 1 else "", MUTED)))
+                if why:
+                    c.print(Text("       " + why, MUTED))
         out = c.file.getvalue().rstrip("\n") + "\n" + self._scanner(c.width)
         self._status_cache = (time.monotonic(), out, out.count("\n") + 1)
         return out, out.count("\n") + 1

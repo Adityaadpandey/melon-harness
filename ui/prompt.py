@@ -17,6 +17,7 @@ from prompt_toolkit.input.ansi_escape_sequences import ANSI_SEQUENCES
 from prompt_toolkit.key_binding import KeyBindings
 from prompt_toolkit.keys import Keys
 from prompt_toolkit.styles import Style
+from rich.markup import escape
 
 from utils.search import list_files
 
@@ -435,10 +436,16 @@ async def ask_choice(console, question: str, options: list[str], *, input=None, 
             return await ACTIVE.choose(len(options))
         finally:
             ACTIVE.question = None
-    console.print(f"\n [bold {LAVENDER}]?[/] [bold]{question}[/bold]")
+    head, _, context = question.partition("\n")  # lines after the first explain what the answer decides
+    console.print(f"\n [bold {LAVENDER}]?[/] [bold]{escape(head)}[/bold]")
+    if context:
+        console.print(f"   [dim]{escape(context)}[/dim]\n")
     for i, opt in enumerate(options, 1):
         key = CORAL if i == len(options) else ACCENT
-        console.print(f"  [bold {key}]\\[{i}][/] {opt}" + ("  [dim](enter)[/dim]" if i == 1 else ""))
+        label, _, why = opt.partition(" — ")
+        console.print(f"  [bold {key}]\\[{i}][/] {escape(label)}" + ("  [dim](enter)[/dim]" if i == 1 else ""))
+        if why:
+            console.print(f"      [dim]{escape(why)}[/dim]")
     kb = KeyBindings()
     for i in range(len(options)):
         kb.add(str(i + 1))(lambda e, i=i: e.app.exit(result=i))
