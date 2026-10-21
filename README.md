@@ -43,7 +43,8 @@ uv tool install -e .                       # puts `melon` on your PATH (-e: edit
 ```
 
 Give it a key. Either a `.env` with `API_KEY=...` (in this checkout, or in melon's data folder so it works from any directory)
-or, if you already use the Codex CLI, nothing at all: `-m codex/<model>` reuses that login.
+or, if you already use the Codex CLI, nothing at all: `-m codex/<model>` reuses that login. To use OpenAI, Anthropic, Gemini,
+Groq, OpenRouter, Ollama or another provider directly, start `melon` and type `/connect` (see [Models and routing](#models-and-routing)).
 
 ```bash
 cd any/project && melon                                    # interactive
@@ -638,6 +639,22 @@ flowchart LR
   concurrency, security, architecture and multi-file work go `strong`. A failed repair or a loop escalates to `strong`. `-m` or
   `/model` pins a model. `/effort low|medium|high|auto` sets how hard it thinks.
 - `python scripts/probe_models.py --json out.json` shows which models your key can really call.
+- **Any provider, directly.** `provider:model` skips the gateway and calls that API with its own key:
+  `melon -m groq:llama-3.3-70b`, `-m anthropic:claude-sonnet-5-5`, `-m ollama:qwen3:8b`. Built in: openai, anthropic, gemini,
+  openrouter, groq, deepseek, mistral, xai, together, fireworks, cerebras, moonshot, zai, ollama, lmstudio. Set the key
+  (`GROQ_API_KEY=...`), or type `/connect groq`: it asks for the key, saves it to melon's `.env`, and lists the models for
+  `/model groq:<Tab>`. These ids also work in `[routing]` chains, so a fallback can live on a different provider.
+  Anything else that speaks the OpenAI or Anthropic format takes three lines:
+
+  ```toml
+  [providers.work]
+  base_url    = "https://llm.internal.example.com/v1"
+  api_key_env = "WORK_LLM_KEY"   # leave out for a local server that needs no key
+  protocol    = "anthropic"      # default "openai"
+  ```
+
+  A project's own `.melon/config.toml` can only set `[providers]` once you trust it, because it could otherwise send your keys
+  to its own server.
 
 ## Memory and learning
 
