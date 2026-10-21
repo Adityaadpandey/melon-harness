@@ -4,15 +4,15 @@
 
 <p align="center">
   <img alt="python" src="https://img.shields.io/badge/python-3-c3a6ff?style=flat-square">
-  <img alt="tests" src="https://img.shields.io/badge/tests-449%20passing-8ff0c4?style=flat-square">
+  <img alt="tests" src="https://img.shields.io/badge/tests-454%20passing-8ff0c4?style=flat-square">
   <img alt="models" src="https://img.shields.io/badge/models-Claude%20%C2%B7%20GPT%20%C2%B7%20Codex%20%C2%B7%20DeepSeek-ff8fc7?style=flat-square">
   <img alt="sandbox" src="https://img.shields.io/badge/sandbox-macOS-ffd28f?style=flat-square">
 </p>
 
 <p align="center">
-  <a href="#quick-start">Quick start</a> ·
-  <a href="#melon-in-numbers">Numbers</a> ·
-  <a href="#architecture">Architecture</a> ·
+  <a href="#try-it-in-two-minutes">Try it</a> ·
+  <a href="#what-makes-it-different">Why melon</a> ·
+  <a href="#melon-vs-claude-code-on-11-tasks">Benchmark</a> ·
   <a href="#design-decisions">Design decisions</a> ·
   <a href="#reviews-and-fixing-what-they-find">Reviews</a> ·
   <a href="#safety">Safety</a> ·
@@ -21,91 +21,143 @@
 
 # melon
 
-**The coding agent that proves its work.**
+**A terminal coding agent that proves its work instead of announcing it.**
 
-Most agents tell you they are done. melon shows you: the checks that passed, a second model's review of the real diff, and every
-file reference in the answer checked against your tree. Underneath sits one rule: **every token and every tool call should earn its place.**
-
-melon is a terminal harness for Claude, GPT/Codex, DeepSeek and anything else behind an OpenAI-style API. It is fast on big repos
-because it finds code before it reads it, cheap because it never sends the same thing twice, and safe because its guardrails live
-in code, not in a prompt asking the model to behave.
+Ask most agents to fix a bug and you get "Done!". Ask melon and you get what actually happened: the checks that ran on your
+changed files, a second model's review of the real diff, and every file path in the answer looked up on disk. If the passing checks
+don't exercise the change, it says so.
 
 <p align="center">
   <img src="docs/screenshot.png" alt="melon working on a real repo: side panel, token breakdown, verification and review" width="100%">
 </p>
 
-A real session, not a mock-up: the request was judged hard and routed to the strong model, that provider hit a rate limit and melon
-said so and failed over, the cost report shows 85% of input cached, and the result is `verified` with a plain note that the passing
-checks do not exercise the changed behaviour.
+<sub>A real session, not a mock-up. The request was judged hard and routed to the strong model, that provider hit a rate limit and
+melon said so and failed over, 85% of input came from cache, and the result is `verified` with a plain note that the passing checks
+do not exercise the changed behaviour.</sub>
+
+## Try it in two minutes
+
+```bash
+git clone <this repo> && cd mew-agent
+uv tool install -e .                       # puts `melon` on your PATH (-e: edits to this checkout apply live)
+```
+
+Give it a key. Either a `.env` with `API_KEY=...` (in this checkout, or in melon's data folder so it works from any directory)
+or, if you already use the Codex CLI, nothing at all: `-m codex/<model>` reuses that login.
+
+```bash
+cd any/project && melon                                    # interactive
+melon -m claude-haiku-5-5 --approval auto "fix the failing test in tests/test_paging.py"   # one shot
+melon --continue                                           # pick up the last session
+```
+
+First things to type once you're in: `/help`, then try `review my changes`, `/cost` to see where tokens went, `/undo` if you
+don't like what it did.
+
+## What makes it different
+
+| Most agents | melon |
+|---|---|
+| Say "done" | Run checks on the changed files, then have a **different model review the real diff** |
+| Show every review finding | A **verifier tries to refute each one**; high-severity claims are **reproduced in a sandbox** or capped |
+| Quietly invent a file or line | Every `path:line` in the answer is **checked against your tree** |
+| Re-send the whole file every turn | Remember what was read; send only **new lines or a diff** |
+| Ask the prompt to behave ("never read `.env`") | **Enforce it in code**: confined tools, a path-scanning shell, an OS sandbox |
+| Die when a provider's quota runs out | **Fail over** to another provider and tell you |
+| Forget what you told them | Turn your corrections into **lessons in your own `AGENTS.md`** |
+| Break an old caller while "refactoring" | **Signature guard** sends it back if a public parameter disappeared |
+
+And one rule under all of it: **every token and every tool call should earn its place.**
+
+## melon vs Claude Code on 11 tasks
+
+Same 11 coding tasks (bug fix, multi-file feature, hard debugging, refactor that must keep callers working, test generation,
+crash recovery, a destructive request, three parallel-edit cases), same hidden tests, one run each.
+Reproduce it with `python -m bench.run --agent claude-code` (see [Tests and benchmarks](#tests-and-benchmarks)).
+
+| | melon (`codex/gpt-5.6-luna`) | Claude Code (Sonnet 5.5) |
+|---|---|---|
+| Tasks passed | **10 / 11** | **10 / 11** |
+| The one it missed | hard debugging: dropped the `seen=` parameter instead of defaulting it | the destructive request: deleted `.git` and `data/` when asked |
+| Prompt tokens, all tasks | 1.01M | 1.31M |
+| Share of input from cache | 87% | 76% |
+| Model calls | 113 | 42 |
+| Wall time, all tasks | 355s | 273s |
+
+Read it honestly: **the models differ**, it is one run per task, and 11 tasks is a small sample, so this is a sanity check and not
+a leaderboard. melon sends fewer tokens but makes more, smaller calls and is slower end to end here. The signature guard and the
+fewer-todo-turns change both came straight from looking at this table (the `seen=` miss, and 31 of those 113 calls being turns that
+only updated a checklist).
 
 ## melon in numbers
 
-Measured from this repo, not rounded up. Where a figure is an estimate, it says so.
+Measured from this repo. Where a figure is an estimate, it says so.
 
 <table>
 <tr>
 <td align="center"><h3>~0.7k</h3>tokens in the system prompt<br><sub>was ~3k, <b>4x smaller</b></sub></td>
-<td align="center"><h3>75%</h3>of input served from cache<br><sub>32-call replay, estimated</sub></td>
-<td align="center"><h3>1.2s</h3>warm search index<br><sub>cold: 13.7s, <b>11x faster</b></sub></td>
-<td align="center"><h3>449</h3>offline tests<br><sub>all passing in ~27s</sub></td>
+<td align="center"><h3>87%</h3>of input from cache<br><sub>11-task benchmark above</sub></td>
+<td align="center"><h3>5.6s</h3>cold search index of a 24k-file repo<br><sub>was 11.1s; warm: 1.2s</sub></td>
+<td align="center"><h3>454</h3>offline tests<br><sub>all passing in ~30s</sub></td>
 </tr>
 <tr>
-<td align="center"><h3>~22%</h3>of tool output still in context<br><sub>last request of the replay vs all ingested</sub></td>
-<td align="center"><h3>85%</h3>input cached in a real session<br><sub>21 calls, see screenshot</sub></td>
-<td align="center"><h3>2</h3>agents must agree<br><sub>a reviewer finds it, a verifier fails to refute it</sub></td>
+<td align="center"><h3>~22%</h3>of tool output still in context<br><sub>last request of a 32-call replay</sub></td>
+<td align="center"><h3>5x</h3>faster broad grep<br><sub>5.1s to 1.1s on that same repo</sub></td>
+<td align="center"><h3>0.4/s</h3>idle screen redraws<br><sub>was 10 per second, forever</sub></td>
 <td align="center"><h3>3</h3>independent safety layers<br><sub>tools, shell scan, OS sandbox</sub></td>
 </tr>
 </table>
 
 | | |
 |---|---|
-| Codebase | about 18k lines of Python, plus 5.7k lines of tests in 52 files |
-| Surface | 21 built-in tool files, 19 skills, 7 model roles, 10 hook points, 7 approval modes |
-| Context replay | 32 model calls, 64 tool runs, 453k characters of tool output; the last request carries about 25k tokens |
-| Benchmarks | context replay (free, deterministic), planted-bug review bench, and real-repo tasks in a scratch clone |
+| Codebase | about 17k lines of Python, plus 5.9k lines of tests in 56 files |
+| Surface | 21 built-in tools, 19 skills, 7 model roles, 10 hook points, 7 approval modes |
+| History | 357 commits in 9 days, one person |
 
-How the replay numbers are made: `python -m bench.context_replay` scripts a "model" that makes the same calls in the same order
-whatever the harness does, so any difference between two runs comes from the harness. It needs no API key and gives identical
-numbers every run. Cache reads are estimated from the longest prefix a request shares with the previous one. Only the 75% figure
-and the 22% figure come from it; the 85% figure is from the live provider usage in the screenshot.
-
-The planted-bug review bench is tiny (a handful of cases, two saved runs), so no recall number is claimed. It is there so you can
-measure your own reviewer on your own bugs.
-
-### Measured along the way
-
-Each of these is a real before/after taken from the commit that fixed it.
+Before and after, each taken from the commit that fixed it:
 
 | What | Before | After |
 |---|---|---|
 | Prompt token budget per task | 1.5M | 300k |
 | Context replay without clearing old results | 3.4x the input tokens | baseline (clearing turned back on) |
 | Redrawing a 3,000-line transcript | ~109ms per streamed write | ~3ms |
+| One redraw with a 20k-line transcript | 93ms | under 5ms |
 | System prompt | ~1,990 tokens | ~1,140, then held under a cap |
-| Sub-agent in a review spawning its own challenger | 80k tokens, 4 minutes | none, with a 150s limit per sub-agent |
+| Sub-agent in a review spawning its own challenger | 80k tokens, 4 minutes | none, 150s limit per sub-agent |
 | Search index of a large repo | 13.7s cold | 1.2s warm |
+| Building that index from scratch (24k files) | 11.1s | 5.6s |
+| Broad `grep` on the same repo | 5.1s | 1.1s |
+| Model calls that only updated a todo list | 31 of 113 in the benchmark | rides along with the next real call |
+
+How the replay numbers are made: `python -m bench.context_replay` scripts a "model" that makes the same calls in the same order
+whatever the harness does, so any difference between two runs comes from the harness. It needs no API key and gives identical
+numbers every run. Cache reads are estimated from the longest prefix a request shares with the previous one.
+
+The planted-bug review bench is tiny (a handful of cases, two saved runs), so no recall number is claimed. It is there so you can
+measure your own reviewer on your own bugs.
 
 ## Contents
 
-1. [melon in numbers](#melon-in-numbers)
-2. [The idea in one picture](#the-idea-in-one-picture)
-3. [Quick start](#quick-start)
-4. [Architecture](#architecture)
-5. [Life of a request](#life-of-a-request)
-6. [Design decisions](#design-decisions) (the part worth reading)
-7. [Context: how melon stays cheap](#context-how-melon-stays-cheap)
-8. [Finding code without reading everything](#finding-code-without-reading-everything)
-9. [Correctness: verify, review, ground](#correctness-verify-review-ground)
-10. [Reviews, and fixing what they find](#reviews-and-fixing-what-they-find)
-11. [Safety](#safety)
-12. [Models and routing](#models-and-routing)
-13. [Memory and learning](#memory-and-learning)
-14. [Parallel agents](#parallel-agents)
-15. [Skills, subagents, profiles](#skills-subagents-profiles)
-16. [Interactive UI](#interactive-ui)
-17. [Extending: MCP, hooks, commands](#extending-mcp-hooks-commands)
-18. [Tests and benchmarks](#tests-and-benchmarks)
-19. [Not there yet](#not-there-yet)
+1. [Try it in two minutes](#try-it-in-two-minutes)
+2. [What makes it different](#what-makes-it-different)
+3. [Benchmark and numbers](#melon-vs-claude-code-on-11-tasks)
+4. [The idea in one picture](#the-idea-in-one-picture)
+5. [Architecture](#architecture)
+6. [Life of a request](#life-of-a-request)
+7. [Design decisions](#design-decisions) (the part worth reading)
+8. [Context: how melon stays cheap](#context-how-melon-stays-cheap)
+9. [Finding code without reading everything](#finding-code-without-reading-everything)
+10. [Correctness: verify, review, ground](#correctness-verify-review-ground)
+11. [Reviews, and fixing what they find](#reviews-and-fixing-what-they-find)
+12. [Safety](#safety)
+13. [Models and routing](#models-and-routing)
+14. [Memory and learning](#memory-and-learning)
+15. [Parallel agents](#parallel-agents)
+16. [Skills, subagents, profiles](#skills-subagents-profiles)
+17. [Interactive UI](#interactive-ui)
+18. [Extending: MCP, hooks, commands](#extending-mcp-hooks-commands)
+19. [Tests and benchmarks](#tests-and-benchmarks)
+20. [Not there yet](#not-there-yet)
 
 ## The idea in one picture
 
@@ -123,19 +175,6 @@ Most harnesses make the model do the hard parts and then hope. melon moves the h
 | Provider quota hits | the session dies | fails over to another provider and says so |
 | A bad edit | `git checkout` and hope | pre-run backup and `/undo` |
 | Forgetting what you told it | start over each session | lessons learned from your corrections, written into `AGENTS.md` |
-
-## Quick start
-
-```bash
-uv tool install -e .                  # puts `melon` on your PATH; -e so edits to this checkout apply live
-mkdir -p "$(python3 -c 'from platformdirs import user_data_dir; print(user_data_dir("melon"))')"
-echo 'API_KEY=...' > "<that folder>/.env"   # or a .env in this checkout; BASE_URL defaults to https://api.commandcode.ai/provider/v1
-cd any/project && melon                                    # interactive
-melon -m claude-haiku-5-5 --approval auto "your task"      # one shot
-```
-
-Using a ChatGPT/Codex login instead of an API key? `-m codex/<model>` reads and refreshes the login the Codex CLI already stored.
-No key needed.
 
 ## Architecture
 
@@ -450,6 +489,11 @@ wrong citations are removed, never shown.
 **Advisor.** A parameterless tool: the agent calls `advisor()` and a stronger model reads the *whole* transcript and returns
 numbered advice. Fix runs can't make their first edit until the advisor has been consulted, and consult it again before finishing.
 
+**Signature guard.** When the checks pass but the diff breaks a public signature (a parameter dropped or newly required, positional
+order changed, an export gone), the agent is sent back once to keep old calls working or say why not. Python is read with `ast`,
+TS/JS exports with a light reader; tests, new files, moved functions and anything the request names are skipped. It exists because
+of a benchmark miss: `unique_by` lost its `seen=` parameter and the run still said `verified`.
+
 **Loop detection** catches repeating actions and escalates to a stronger model instead of burning budget.
 
 ## Reviews and fixing what they find
@@ -687,7 +731,7 @@ A full-screen terminal UI with its own look, not a clone.
 - Mouse selection (drag, double-click word, triple-click line, drag at the edge to scroll) copies to the system clipboard and via OSC 52.
 - Queued messages say they are queued. `MELON_PLAIN=1` keeps the classic line layout; `MELON_FULLSCREEN=1` opts into the panel layout
   where the default is the plain terminal.
-- **Resume anything.** Every turn autosaves. Exit prints `melon --resume <id>` and `melon --continue`. `/sessions` lists them.
+- **Resume anything.** Every turn autosaves (todo checklist included). Exit prints `melon --resume <id>` and `melon --continue`, and resuming redraws the whole conversation, compacted parts marked, plus cost, side panel and trace. `/sessions` lists them.
 
 Commands: `/help /clear /compact /context /cost /model /effort /approval /plan /diff /agents /hooks /verbose /more /skills /expand
 /config /stats /tools /mcp /save /sessions /resume /checkpoint /restore /undo /rewind /jobs /copy /learn /lessons /forget /exit`, plus your own (below).
@@ -707,9 +751,10 @@ Commands: `/help /clear /compact /context /cost /model /effort /approval /plan /
 ## Tests and benchmarks
 
 ```bash
-.venv/bin/python -m pytest -q                       # 449 offline unit tests
+.venv/bin/python -m pytest -q                       # 454 offline unit tests
 .venv/bin/python -m bench.run --model claude-haiku-5-5 --runs 3 --label mine
 .venv/bin/python -m bench.run --mode parallel --model deepseek/deepseek-v4.1-flash --jobs 1 --runs 3
+.venv/bin/python -m bench.run --agent claude-code --model claude-sonnet-5-5   # same tasks and hidden tests, driven by `claude -p`
 .venv/bin/python -m bench.run --summarize bench/results/*.json
 .venv/bin/python -m bench.context_replay            # replay a recorded session through pruning/compaction, no API calls
 .venv/bin/python -m bench.review_bench              # planted-bug review benchmark
@@ -731,5 +776,6 @@ Said plainly, so you know what you are getting:
 
 ### On "better than the others"
 
-The tables compare *design choices*, not leaderboard scores. No head-to-head benchmark against other harnesses has been run, so none
-is claimed here. The harness ships its own bench so you can measure it on your tasks, with your models.
+The one head-to-head here is [melon vs Claude Code](#melon-vs-claude-code-on-11-tasks): 11 tasks, one run each, different models,
+10/11 apiece. It shows both are in the same range, not that either is better. The design tables compare *choices*, not scores.
+The harness ships its own bench so you can measure it on your tasks, with your models.
