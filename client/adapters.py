@@ -3,6 +3,8 @@ one provider protocol and streams back normalized StreamEvents. Nothing in
 here knows about routing, retries or fallback; that lives in LLMClient."""
 from __future__ import annotations
 
+import asyncio
+
 import json
 import uuid
 from typing import Any, AsyncGenerator
@@ -21,6 +23,8 @@ from client.response import (
 )
 
 TIMEOUT = httpx.Timeout(120.0, connect=15.0)
+# Codex streams events steadily, so 60s of silence means the connection is dead: retry now instead of staring at a frozen screen for two minutes
+CODEX_TIMEOUT = httpx.Timeout(60.0, connect=15.0)
 
 
 def _tool_defs(tools: list[dict[str, Any]]) -> list[dict[str, Any]]:
@@ -389,7 +393,7 @@ class CodexResponsesAdapter:
         self._effort = effort  # low | medium | high; None keeps the backend default
 
         self._auth = auth or CodexAuth()
-        self._http = httpx.AsyncClient(timeout=TIMEOUT)
+        self._http = httpx.AsyncClient(timeout=CODEX_TIMEOUT)
         self._cache_key = str(uuid.uuid4())  # stable per session: keeps every turn on the backend that holds our prompt cache
 
     async def close(self) -> None:
@@ -439,18 +443,22 @@ class CodexResponsesAdapter:
             body["reasoning"] = {"effort": self._effort}
 
         try:
-            headers = self._headers()
+            headers = await asyncio.to_thread(self._headers)  # a token refresh is a blocking http call: keep it off the UI loop
         except RuntimeError as e:
             raise ProviderError(str(e), status=401) from e
+        except httpx.HTTPError as e:
+            raise classify(None, f"Connection error while refreshing the Codex login: {e}") from e
         try:
             for attempt in range(2):
                 async with self._http.stream("POST", self.URL, json=body, headers=headers) as r:
                     if r.status_code == 401 and attempt == 0:
                         # token expired mid-session: refresh once and replay
                         try:
-                            headers = self._headers(force_refresh=True)
+                            headers = await asyncio.to_thread(self._headers, True)
                         except RuntimeError as e:
                             raise ProviderError(str(e), status=401) from e
+                        except httpx.HTTPError as e:
+                            raise classify(None, f"Connection error while refreshing the Codex login: {e}") from e
                         continue
                     if r.status_code != 200:
                         raise classify(r.status_code, (await r.aread()).decode(errors="replace")[:500])

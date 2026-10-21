@@ -8,7 +8,7 @@ from pathlib import Path
 from typing import Any, AsyncGenerator
 
 from client.adapters import AnthropicAdapter, CodexResponsesAdapter, OpenAIChatAdapter
-from client.errors import ProviderError
+from client.errors import ProviderError, classify
 from client.response import StreamEvent, StreamEventType, TextDelta, TokenUsage, ToolCall
 from client.routing import ModelRegistry, Router
 from config.config import Config
@@ -160,7 +160,9 @@ class LLMClient:
                         finish_reason=finish, usage=usage,
                     )
                 return
-            except ProviderError as e:
+            except Exception as e:
+                if not isinstance(e, ProviderError):  # a parse slip or dropped connection mid-stream: treat it like a network error so it retries and falls back
+                    e = classify(None, f"{type(e).__name__}: {e}")
                 self.tracer.emit(
                     "model_call", model=model, role=role, attempt=attempt, ok=False,
                     status=e.status, error=str(e)[:300],
@@ -171,6 +173,7 @@ class LLMClient:
                     temperature = None
                     continue
                 if e.retry and attempt < self._max_retries and not collected.emitted:
+                    yield StreamEvent(type=StreamEventType.NOTICE, notice=f"{model} didn't answer ({str(e)[:80]}), trying again ({attempt + 1}/{self._max_retries})")
                     await asyncio.sleep(self._backoff(attempt))
                     continue
                 if e.fallback:

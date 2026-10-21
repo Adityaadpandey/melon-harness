@@ -94,7 +94,7 @@ class FakeAdapter:
     async def stream(self, model, messages, tools, temperature):
         self.calls.append((model, temperature))
         step = self.script[model].pop(0)
-        if isinstance(step, ProviderError):
+        if isinstance(step, Exception):
             raise step
         yield StreamEvent(type=StreamEventType.TEXT_DELTA, text_delta=TextDelta(step))
         yield StreamEvent(type=StreamEventType.MESSAGE_COMPLETE)
@@ -124,6 +124,15 @@ async def test_transient_error_is_retried_on_same_model(tmp_path):
     c, fake = make_client(tmp_path, {"m1": [classify(503, "x"), "ok"]})
     evs = await collect(c)
     assert [m for m, _ in fake.calls] == ["m1", "m1"]
+    assert any(e.type == StreamEventType.TEXT_DELTA for e in evs)
+
+
+async def test_stray_exception_is_retried_and_tells_the_user(tmp_path):
+    # a KeyError from a half-parsed stream used to skip retries and kill the turn
+    c, fake = make_client(tmp_path, {"m1": [KeyError("item"), "ok"]})
+    evs = await collect(c)
+    assert [m for m, _ in fake.calls] == ["m1", "m1"]
+    assert any(e.type == StreamEventType.NOTICE and "trying again" in e.notice for e in evs)
     assert any(e.type == StreamEventType.TEXT_DELTA for e in evs)
 
 
