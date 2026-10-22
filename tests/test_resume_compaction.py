@@ -79,10 +79,31 @@ def test_compaction_that_overflows_drops_the_oldest_messages_and_asks_again(tmp_
             if len(sizes) == 1:
                 yield StreamEvent(type=StreamEventType.ERROR, error="prompt is too long")
             else:
-                yield StreamEvent(type=StreamEventType.MESSAGE_COMPLETE, text_delta=TextDelta("SUMMARY"), usage=TokenUsage(1, 1, 2))
+                yield StreamEvent(type=StreamEventType.MESSAGE_COMPLETE, text_delta=TextDelta(GOOD), usage=TokenUsage(1, 1, 2))
 
     summary, _, cut = asyncio_run(ChatCompactor(TooLongOnce()).compress(cm))
-    assert summary == "SUMMARY" and cut > 0 and sizes[1] < sizes[0]
+    assert summary == GOOD and cut > 0 and sizes[1] < sizes[0]
+
+
+GOOD = "## ORIGINAL GOAL\nfix paging\n## COMPLETED ACTIONS\nread f1\n## NEXT STEP\nedit f2"
+
+
+def test_a_summary_cut_off_or_without_its_sections_is_not_saved(tmp_path):
+    from client.response import StreamEvent, StreamEventType, TextDelta
+
+    cfg = Config(cwd=tmp_path, keep_recent_tokens=600)
+    cm = ContextManager(cfg, None, [])
+    for i in range(10):
+        add_pair(cm, i, "read_file", f"app/f{i}.py")
+    replies = [(GOOD, "length"), ("Sure! The user wants paging fixed.", "stop"), (GOOD, "stop")]
+
+    class Summarizer:
+        async def chat_completion(self, messages, stream=False, role=""):
+            text, finish = replies.pop(0)
+            yield StreamEvent(type=StreamEventType.MESSAGE_COMPLETE, text_delta=TextDelta(text), finish_reason=finish)
+
+    summary, _, _ = asyncio_run(ChatCompactor(Summarizer()).compress(cm))
+    assert summary == GOOD and replies == []  # the half summary and the chatty one were both asked again
 
 
 def test_resumed_archive_keeps_old_ids_and_never_overwrites_them(tmp_path):

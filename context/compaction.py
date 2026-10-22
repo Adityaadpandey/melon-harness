@@ -6,6 +6,10 @@ from prompts.system import get_compression_prompt
 from utils.precompact import pre_compact
 
 
+# a reply with fewer than three of these is chatter, not the handoff the next turns depend on
+HEADINGS = ("## ORIGINAL GOAL", "## COMPLETED ACTIONS", "## CURRENT STATE", "## NEXT STEP", "## USER MESSAGES", "## KEY CONTEXT")
+
+
 class ChatCompactor:
     def __init__(self, client: LLMClient):
         self.client = client
@@ -88,11 +92,16 @@ class ChatCompactor:
                     if event.type == StreamEventType.MESSAGE_COMPLETE:
                         usage = event.usage
                         summary += event.text_delta.content if event.text_delta else ""
+                        # a summary that stopped at the output limit has lost its last sections (the user's messages,
+                        # key context): pi refuses those rather than saving half a handoff
+                        failed = failed or event.finish_reason in ("length", "max_tokens", "max_output_tokens")
+                    elif event.type == StreamEventType.TOOL_CALL_COMPLETE:
+                        failed = True  # it tried to act instead of summarising
                     elif event.type == StreamEventType.ERROR:
                         failed = True
             except Exception:
                 failed = True
-            if summary and not failed:
+            if summary and not failed and sum(h in summary for h in HEADINGS) >= 3:
                 return summary, usage, cut
             if len(msgs) < 5:
                 break
