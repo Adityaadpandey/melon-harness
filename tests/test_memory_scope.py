@@ -18,3 +18,15 @@ def test_memory_is_per_workspace(tmp_path, monkeypatch):
     assert "npm test" in run(a, action="get", key="test_cmd")
     assert "not found" in run(b, action="get", key="test_cmd")
     assert "No memories" in run(b, action="list")
+
+
+def test_stored_memory_reaches_the_prompt(tmp_path, monkeypatch):
+    # the tool and the prompt used to read different files, so nothing the model saved ever came back
+    from agent.session import Session
+
+    monkeypatch.setattr("tools.builtin.memory.get_data_dir", lambda: tmp_path / "data")
+    monkeypatch.setattr("agent.session.get_data_dir", lambda: tmp_path / "data")
+    run(tmp_path, action="set", key="test_cmd", value="npm test")
+    session = Session.__new__(Session)
+    session.config = Config(cwd=str(tmp_path))
+    assert "test_cmd: npm test" in session._load_memory()

@@ -94,17 +94,14 @@ class Session:
             warm(Path(self.config.cwd), self.config.forbidden_paths)  # first search of the session finds the index ready
 
     def _load_memory(self) -> str | None:
-        data_dir = get_data_dir()
-        data_dir.mkdir(parents=True, exist_ok=True)
-        path = data_dir / "user_memory.json"
+        from tools.builtin.memory import MemoryTool
 
-        if not path.exists():
-            return None
-
+        # the memory tool saves one file per workspace; the old shared user_memory.json is still read so nothing stored earlier is lost
+        entries = dict(MemoryTool(self.config)._load_memory().get("entries") or {})
+        legacy = get_data_dir() / "user_memory.json"
         try:
-            content = path.read_text(encoding="utf-8")
-            data = json.loads(content)
-            entries = data.get("entries")
+            if legacy.exists():
+                entries = {**(json.loads(legacy.read_text(encoding="utf-8")).get("entries") or {}), **entries}
             if not entries:
                 return None
 
