@@ -48,3 +48,18 @@ async def test_an_untouched_task_list_is_brought_back(cfg):
         await run(agent)
         sent = [m.get("content") or "" for m in agent.session.client.requests[-1]]
         assert any("task list has not been touched" in c and "fix it" in c for c in sent)
+
+
+async def test_compaction_stops_when_the_context_refills_right_away(tmp_path):
+    cfg = Config(cwd=tmp_path, approval=ApprovalPolicy.AUTO, pi_mode=False, compact_at_tokens=1)
+    compactions = []
+    async with Agent(cfg) as agent:
+        async def fake_compact():
+            compactions.append(agent.session.turn_count)
+            return True
+
+        agent._compact = fake_compact
+        agent.session.client = ScriptedClient([*[call("glob", {"pattern": f"*{i}"}, f"g{i}") for i in range(7)], text("done")])
+        events = await run(agent)
+        assert len(compactions) == 3  # the fourth refill in a row prunes instead of paying for another summary
+        assert any("fills up again" in (e.data.get("message") or "") for e in events if e.data)

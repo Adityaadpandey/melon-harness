@@ -106,6 +106,8 @@ class Agent:
         self._escalated = False
         self._budget_hit = False
         self._compact_retry_turn = 0
+        self._last_compact_turn: int | None = None
+        self._thrash = 0  # compactions in a row after which the context was full again within 3 turns
         self._overflow_retried = False
         self._last_model_call = 0.0
         self.capped_last = False  # did the last request stop at the call budget? /more only makes sense then
@@ -668,7 +670,16 @@ class Agent:
                 self.session.client.registry.get(self.config.model_name).context_length
             )
             if self.session.context_manager.needs_compression() and self.session.turn_count >= self._compact_retry_turn:
-                if await self._compact():
+                refilled = self._last_compact_turn is not None and self.session.turn_count - self._last_compact_turn <= 3
+                self._thrash = self._thrash + 1 if refilled else 0
+                if self._thrash >= 3:
+                    # Claude Code's breaker: what is kept (the tail, restored files) already fills the window, so another
+                    # summary just pays for itself and changes nothing. Shed tool output and stop summarising for a while.
+                    self._thrash, self._compact_retry_turn = 0, self.session.turn_count + 10
+                    self.session.context_manager.prune_tool_outputs()
+                    yield AgentEvent.notice("The context fills up again right after each compaction; pruned old tool output instead")
+                elif await self._compact():
+                    self._last_compact_turn = self.session.turn_count
                     yield AgentEvent.notice("Context compacted (recent messages kept)")
                 else:
                     # the summarizer failed: shed old tool output instead, and don't pay for another
