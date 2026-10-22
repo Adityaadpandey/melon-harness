@@ -43,7 +43,7 @@ ROUTES = {"fast": ["flash"], "strong": ["big"]}
 
 
 async def test_each_request_uses_the_tier_its_difficulty_calls_for(tmp_path):
-    cfg = Config(cwd=tmp_path, approval=ApprovalPolicy.AUTO, auto_verify=False, check_references=False, routing=ROUTES)
+    cfg = Config(cwd=tmp_path, approval=ApprovalPolicy.AUTO, auto_verify=False, check_references=False, routing=ROUTES, auto_orient=False)
     roles, evs = await run(cfg, [text("ok")], "rename the helper getUser to fetchUser")
     assert roles == ["fast"]
     assert any("fast model" in e.data["message"] for e in evs if e.type == AgentEventType.NOTICE)
@@ -54,7 +54,7 @@ async def test_each_request_uses_the_tier_its_difficulty_calls_for(tmp_path):
 
 
 async def test_pinned_model_or_missing_chains_disable_routing(tmp_path):
-    pinned = Config(cwd=tmp_path, approval=ApprovalPolicy.AUTO, auto_verify=False, check_references=False, routing=ROUTES, model_pinned=True)
+    pinned = Config(cwd=tmp_path, approval=ApprovalPolicy.AUTO, auto_verify=False, check_references=False, routing=ROUTES, auto_orient=False, model_pinned=True)
     assert (await run(pinned, [text("ok")], "rename x to y"))[0] == ["default"]
     no_chains = Config(cwd=tmp_path, approval=ApprovalPolicy.AUTO, auto_verify=False, check_references=False)
     assert (await run(no_chains, [text("ok")], "rename x to y"))[0] == ["default"]
@@ -64,7 +64,7 @@ async def test_failed_verification_escalates_to_the_strong_model(tmp_path):
     import subprocess
 
     subprocess.run(["git", "init", "-q"], cwd=tmp_path, check=True)
-    cfg = Config(cwd=tmp_path, approval=ApprovalPolicy.AUTO, check_references=False, routing=ROUTES,
+    cfg = Config(cwd=tmp_path, approval=ApprovalPolicy.AUTO, check_references=False, routing=ROUTES, auto_orient=False,
                  verify_commands=["test -f ok.txt"])
     script = [call("write_file", {"path": "bad.txt", "content": "1"}), text("done"), call("write_file", {"path": "ok.txt", "content": "1"}, "c2"), text("fixed")]
     roles, _ = await run(cfg, script, "rename x to y")

@@ -9,6 +9,7 @@ from agent.challenge import challenge_request, is_risky, render as render_object
 from agent.brevity import HOLD_CHARS, LONG_ANSWER_WORDS, interim_line
 from agent.events import AgentEvent, AgentEventType
 from agent.root import pick_root
+from agent.orient import orient, repo_map
 from utils.search import hold_listing
 from agent.grounding import REWRITE_PROMPT, correction_prompt, has_file_code, shows_second_thoughts, verify_references, wants_change
 from agent.learn import Learned, judge
@@ -97,6 +98,7 @@ class Agent:
         self._read_only = False
         self._todos_reminded = ""
         self._pipelined = False
+        self._repo_map: str | None = None  # built once per session by _orient
         self._pipeline_answer = ""
         self._budget_warned = False
         self._uncached_streak = 0
@@ -236,11 +238,15 @@ class Agent:
                 yield AgentEvent.notice("Challenger found nothing it could back with evidence")
         async for ev in self._tidy_if_cache_went_cold():
             yield ev
-        difficulty = classify(message)[0]
+        oriented = await self._orient(message)
+        wants = oriented.intent == "change" if oriented else wants_change(message)
+        difficulty = oriented.tier if oriented else classify(message)[0]
+        if oriented and (where := oriented.hint()):
+            message_for_model += "\n\n" + where
         self.session.client.auto_effort = EFFORT[difficulty]
-        if hint := length_hint(message, difficulty, wants_change(message)):
+        if hint := length_hint(message, difficulty, wants):
             message_for_model += f"\n\n[{hint}]"
-        self._broad = wants_change(message) and is_broad(message)
+        self._broad = wants and is_broad(message)
         if self._broad:
             message_for_model += f"\n\n[{SWEEP}]"
         self._sweep_pushed = 0
@@ -258,8 +264,8 @@ class Agent:
         self._fix_nudged = False
         self.capped_last = False
         self._allowance, self.extra_calls = self.extra_calls, 0  # /more applies to this one request
-        self._read_only = not wants_change(message)
-        self._wants_change = not self._read_only
+        self._read_only = not wants
+        self._wants_change = wants
         self._is_review = bool(REVIEWY.search(message))
         self._usage_base = self._spent()  # budget is per request
         self._review_sec = 0.0
@@ -268,7 +274,7 @@ class Agent:
         if self.config.auto_route and not self.config.model_pinned and self.config.model_role == "default" and (
             "fast" in routing or "strong" in routing
         ):
-            self._tier, why = classify(message)
+            self._tier, why = (oriented.tier, "read by the fast model") if oriented else classify(message)
             if self._tier in routing:
                 chain = routing[self._tier][0]
                 self.session.tracer.emit("route", tier=self._tier, reason=why, model=chain)
@@ -361,7 +367,7 @@ class Agent:
             checks = select_checks(self.config, task.changed_files)
             # outside git we can't tell what changed, so only verify when asked to
             if not task.changed_files and before is not None:
-                if not nudged and final_response and wants_change(message) and has_file_code(final_response):
+                if not nudged and final_response and self._wants_change and has_file_code(final_response):
                     # models sometimes paste the solution instead of writing it
                     nudged = True
                     yield AgentEvent.notice("Reply contained code but no file changed; asking the model to apply it")
@@ -793,6 +799,20 @@ class Agent:
             self._prune(remind=True)
         async for ev in self._wrap_up(task, f"Turn limit reached ({max_turns})", "Turn limit reached"):
             yield ev
+
+    async def _orient(self, message: str):
+        """What the request is, how hard, and where to look, read by the fast model next to a map of this repo (agent/orient.py).
+        None means the regex rules decide: no fast model configured, a sub-agent, a trivial message, or a failed call."""
+        cfg, routing = self.config, self.config.routing
+        role = "fast" if "fast" in routing else "summarize" if "summarize" in routing else ""
+        if not (cfg.auto_orient and role and cfg.model_role == "default" and not cfg.sub_agent and len(message.strip()) >= 20 and not message.startswith("/")):
+            return None
+        if self._repo_map is None:
+            self._repo_map = await asyncio.to_thread(repo_map, Path(cfg.cwd), cfg.forbidden_paths)
+        t0 = time.monotonic()
+        found = await orient(self.session.client, role, message, self._repo_map)
+        self.session.tracer.emit("orient", ok=found is not None, sec=round(time.monotonic() - t0, 2), **({"intent": found.intent, "tier": found.tier, "where": found.where, "queries": found.queries} if found else {}))
+        return found
 
     async def _scout(self, message: str) -> str:
         """Search in a throwaway read-only context so the main (pricier, ever-growing)

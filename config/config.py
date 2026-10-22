@@ -186,6 +186,7 @@ class Config(BaseModel):
     disabled_skills: list[str] = Field(default_factory=list)  # e.g. ["ponytail"] to turn the built-in style policy off
     skill_dirs: list[str] = Field(default_factory=list)  # repo-relative dirs holding extra skill .md files
     model_role: str = "default"  # which routing chain this agent's own calls use
+    auto_orient: bool = True  # a fast-model read of the request and a repo map decides intent, difficulty and where to look (needs a [routing] fast or summarize chain)
     sub_agent: bool = False  # a pipeline worker (reviewer, triage, verifier): its answer is parsed, so no rewrite of it and no routing by its brief
     auto_route: bool = True  # classify each request into the fast/default/strong chains when [routing] defines them
     reasoning_effort: Literal["low", "medium", "high"] | None = None  # how hard the model thinks; Codex models only for now
