@@ -76,3 +76,9 @@ def test_a_big_cached_context_stays_on_its_model_unless_the_request_is_ordinary_
     assert keep_cached_model("strong", 90_000) == "default" and keep_cached_model("fast", 25_000) == "default"
     assert keep_cached_model("strong", 3_000) == "strong"  # a small context loses nothing by switching
     assert keep_cached_model("default", 90_000) == "default"
+
+
+def test_a_busy_upstream_is_waited_for_longer_than_a_dropped_connection():
+    from client.llm_client import LLMClient
+    assert LLMClient._backoff(0, 429) >= 2.4 and LLMClient._backoff(2, 503) >= 16
+    assert LLMClient._backoff(0, None) <= 1.0

@@ -66,7 +66,11 @@ class LLMClient:
         self._adapters.clear()
 
     @staticmethod
-    def _backoff(attempt: int) -> float:
+    def _backoff(attempt: int, status: int | None = None) -> float:
+        """Seconds to wait before retrying. A busy upstream (429, 503) needs longer than a dropped connection: the free MiniMax tier
+        answered 429 three times in four seconds, then the harness fell back to another model and lost the prompt cache for nothing."""
+        if status in (429, 503):
+            return (3.0, 8.0, 20.0)[min(attempt, 2)] * random.uniform(0.8, 1.2)
         return min(30.0, 2**attempt) * random.uniform(0.5, 1.0)
 
     async def chat_completion(
@@ -188,7 +192,7 @@ class LLMClient:
                     continue
                 if e.retry and attempt < self._max_retries and not collected.emitted:
                     yield StreamEvent(type=StreamEventType.NOTICE, notice=f"{model} didn't answer ({str(e)[:80]}), trying again ({attempt + 1}/{self._max_retries})")
-                    await asyncio.sleep(self._backoff(attempt))
+                    await asyncio.sleep(self._backoff(attempt, e.status))
                     continue
                 if e.fallback:
                     self.registry.mark_down(model, 3600 if e.status in (403, 404) else 60)

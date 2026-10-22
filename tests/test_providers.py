@@ -108,7 +108,7 @@ def make_client(tmp_path, script, routing=None, monkeypatch=None):
     cfg.model_name = "m1"
     c = LLMClient(cfg)
     c._max_retries = 2
-    c._backoff = lambda attempt: 0
+    c._backoff = lambda attempt, status=None: 0
     fake = FakeAdapter(script)
     c._adapter = lambda endpoint: fake
     for mid in ("m1", "m2", "m3"):
