@@ -163,6 +163,41 @@ def one_reviewer(context: str, security: bool) -> tuple[str, str]:
     return ("review", "Work through every angle below in turn, spending most of your effort where the diff is riskiest:\n\n" + "\n\n".join(t for _, t in parts))
 
 
+TRIAGE_PROMPT = """You are planning a code review, not doing it. Read the change below and decide what is worth checking, so the reviewers
+spend their effort there instead of re-reading everything.
+
+{context}DIFF ({files}):
+{diff}
+
+List the specific things in THIS change that could break something: a changed condition, a moved or removed branch, a new awaited call or
+write, a changed signature or shape someone else consumes, a command that now runs somewhere it did not, a rule from the project notes it may break.
+You may grep or read a file to see who consumes something, but do not review. Skip what only moves text around (comments, copy, formatting).
+Reply with at most 6 lines, EXACTLY:
+CHECK | path:line | the question a reviewer must answer by reading code (name the consumer or caller to read when you know it)
+If nothing in the change can plausibly break anything, reply: NONE"""
+TRIAGE_CHUNK = 3  # questions per reviewer: a reviewer holding more than this drifts into skimming all of them
+
+
+def parse_triage(reply: str) -> list[str]:
+    return [f"{m.group(1).strip()}: {m.group(2).strip()}" for m in re.finditer(r"(?im)^\W*CHECK\s*\|\s*([^|\n]+?)\s*\|\s*(.+)$", reply)][:6]
+
+
+def triage_lenses(checks: list[str]) -> list[tuple[str, str]]:
+    """The questions the triage picked, dealt out TRIAGE_CHUNK at a time. Three questions are one reviewer; six are two."""
+    out = []
+    for i in range(0, len(checks), TRIAGE_CHUNK):
+        rows = "\n".join(f"- {c}" for c in checks[i:i + TRIAGE_CHUNK])
+        out.append(("review" if i == 0 else "focus", "WHAT TO CHECK (a triage read this diff and picked these; answer each by reading the code, "
+                    "then report anything else this diff breaks that they missed):\n" + rows))
+    return out
+
+
+async def triage(config, role: str, diff: str, files: list[str], context: str) -> list[str]:
+    reply = await ask(config, TRIAGE_PROMPT.format(context=context, files=", ".join(files[:25]), diff=diff), role, max_turns=4,
+                      max_tokens=min(config.review_pipeline_tokens, 25_000), disabled_skills=["code-review"])
+    return parse_triage(reply)
+
+
 def pick_lenses(config, diff: str, files: list[str], context: str) -> list[tuple[str, str]]:
     """Auto (review_lenses = 0) is ONE reviewer carrying every angle plus one that only follows producers to consumers. review_lenses = N >= 2 fans out to N separate angle reviewers
     (security is appended when auth, queries or money are touched); 1 pins the behaviour angle alone."""
@@ -688,6 +723,14 @@ async def _run_review(config, request: str, target) -> AsyncGenerator[tuple[str,
     context = checked + review_memory.render(cwd) + review_context(config, request, files)
     context = context + "\n\n" if context else ""
     lenses = pick_lenses(config, whole, files, context) if len(groups) == 1 else [one_reviewer(context, bool(SECURITY_HINT.search(" ".join(files) + "\n" + whole)))]
+    if config.review_lenses == 0 and len(groups) == 1:
+        checks = await triage(config, role, whole, files, context)
+        if checks:
+            lenses = triage_lenses(checks)
+            yield "notice", f"Triage: {len(checks)} thing(s) worth checking, {len(lenses)} reviewer(s) assigned"
+        else:
+            yield "notice", "Triage found nothing specific; one reviewer reads the whole change"
+            lenses = [one_reviewer(context, bool(SECURITY_HINT.search(" ".join(files) + "\n" + whole)))]
     clipped = "[diff clipped]" in whole  # a split diff already multiplies the reviewers
     if len(groups) * len(lenses) > 1:
         angles = ", ".join("every angle" if n == "review" else n for n, _ in lenses)
@@ -718,7 +761,7 @@ async def _run_review(config, request: str, target) -> AsyncGenerator[tuple[str,
     summaries: list[str] = []
     strengths: list[str] = []
     aside: list[str] = []
-    replies = await asyncio.gather(*(review(n, fs, lens, 30 if lname in ("review", "contracts") else 12) for n, fs in groups for lname, lens in lenses))
+    replies = await asyncio.gather(*(review(n, fs, lens, 30 if lname in ("review", "contracts") else 20) for n, fs in groups for lname, lens in lenses))
     review_tokens = sum(_spent_log)
     if all(r is None for r in replies):
         yield "notice", "The reviewer gave no answer; reviewing without the pipeline"
