@@ -40,3 +40,19 @@ def test_slow_foreground_command_moves_to_background_on_its_own(monkeypatch):
         assert len(done) == 1 and "early" in done[0].tail() and "late" in done[0].tail()
     asyncio.run(go())
     JOBS.clear()
+
+
+def test_exit_codes_are_explained_and_grep_finding_nothing_is_not_a_failure(tmp_path):
+    from tools.builtin.shell import exit_meaning
+
+    (tmp_path / "a.txt").write_text("hello\n")
+
+    def sh(cmd):
+        return asyncio.run(ShellTool(Config(cwd=tmp_path)).execute(ToolInvocation(cwd=tmp_path, params={"command": cmd})))
+
+    nothing = sh("grep -n nope a.txt")
+    assert nothing.success and "no matches found" in nothing.output
+    assert sh("true").output == "(command succeeded with no output)"
+    assert not sh("exit 3").success
+    assert exit_meaning("pytest -x", 1) is None  # a failing test run stays a failure
+    assert exit_meaning("make", 137) == "killed by signal 9, often out of memory"

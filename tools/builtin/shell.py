@@ -1,5 +1,6 @@
 import asyncio
 import os
+import re
 from pathlib import Path
 import signal
 import sys
@@ -89,6 +90,32 @@ class ShellParams(BaseModel):
             "after ~15s is moved to the background automatically, and you are told when it finishes."
         ),
     )
+
+
+NO_MATCH, DIFFER, FALSE = "no matches found", "files differ", "condition is false"
+NOT_FAILURES = {NO_MATCH, DIFFER, FALSE}  # exit 1 that answers the question rather than reporting an error
+
+
+def exit_meaning(command: str, code: int | None) -> str | None:
+    """What a non-zero exit means for the program that ran last, so `grep` finding nothing is not read as a failure.
+    e.g. ("rg TODO src", 1) -> "no matches found"; ("pytest -x", 1) -> None; (anything, -9) -> "killed by signal 9"."""
+    if code is None or code == 0:
+        return None
+    if code < 0 or 128 < code < 160:  # bash reports a child killed by signal N as 128+N
+        sig = -code if code < 0 else code - 128
+        return f"killed by signal {sig}" + (", often out of memory" if sig == 9 else "")
+    last = re.split(r"\|\||&&|[|;]", command)[-1].split()
+    prog = os.path.basename(last[0]) if last else ""
+    if code == 1:
+        if prog in ("grep", "egrep", "fgrep", "rg", "ag", "ack", "git") and (prog != "git" or "grep" in last[1:2]):
+            return NO_MATCH
+        if prog in ("diff", "cmp"):
+            return DIFFER
+        if prog in ("test", "["):
+            return FALSE
+        if prog == "find":
+            return "some directories were not readable"
+    return None
 
 
 class ShellTool(Tool):
@@ -221,17 +248,21 @@ class ShellTool(Tool):
             output += "\n--- stderr ---\n"
             output += stderr.rstrip()
 
+        meaning = exit_meaning(params.command, exit_code)
         if exit_code != 0:
-            output += f"\nExit code: {exit_code}"
+            output += f"\nExit code: {exit_code}" + (f" ({meaning})" if meaning else "")
+        elif not output:
+            output = "(command succeeded with no output)"
+        ok = exit_code == 0 or meaning in NOT_FAILURES
 
         # the registry applies the model-facing cap; this only bounds memory
         if len(output) > 400 * 1024:
             output = output[: 400 * 1024] + "\n... [output truncated]"
 
         return ToolResult(
-            success=exit_code == 0,
+            success=ok,
             output=output,
-            error=stderr if exit_code != 0 else None,
+            error=None if ok else stderr,
             exit_code=exit_code,
         )
 
