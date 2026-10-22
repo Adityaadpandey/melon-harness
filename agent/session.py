@@ -2,6 +2,7 @@ from datetime import datetime
 import json
 from typing import Any
 import uuid
+from pathlib import Path
 from agent.skills import load_skills
 from client.llm_client import LLMClient
 from config.config import Config, HookTrigger
@@ -87,6 +88,10 @@ class Session:
         self.context_manager.archive = self.tool_registry.archive
         await self.hook_system.fire(HookTrigger.SESSION_START, session_id=self.session_id)
         self.tool_registry.is_live = self.context_manager.has_live_result
+        if not self.config.sub_agent and self.config.model_role == "default":
+            from utils.rank import warm
+
+            warm(Path(self.config.cwd), self.config.forbidden_paths)  # first search of the session finds the index ready
 
     def _load_memory(self) -> str | None:
         data_dir = get_data_dir()

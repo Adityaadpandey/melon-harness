@@ -122,6 +122,27 @@ def rank_files(root: Path, files: list[Path], query: str, limit: int = 8, snippe
     return result
 
 
+def warm(root: Path, forbidden: list[str] | None = None) -> None:
+    """Build or refresh the index for a whole repo in a background thread at startup, so the first `search` of a
+    session finds it ready (a cold index on Tunyt took 5.6s). Daemon thread: quitting never waits for it."""
+    import threading
+
+    from utils.search import list_files
+
+    def run() -> None:
+        try:
+            _load(root)
+            before = len(_cache)
+            for f in list_files(root, forbidden):
+                _index(root, f)
+            if len(_cache) != before:
+                _save(root)
+        except Exception:
+            pass  # warming is a head start, never a failure
+
+    threading.Thread(target=run, daemon=True, name="melon-index-warm").start()
+
+
 def _store(root: Path) -> Path:
     import hashlib
     from config.loader import get_data_dir
