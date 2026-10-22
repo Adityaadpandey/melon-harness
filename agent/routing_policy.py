@@ -40,6 +40,17 @@ def classify(request: str) -> tuple[str, str]:
     return "default", "ordinary task"
 
 
+CACHE_WORTH_KEEPING = 20_000  # tokens of context
+
+
+def keep_cached_model(tier: str, context_tokens: int) -> str:
+    """Switching model resets the provider's prompt cache, so the next call re-bills the whole context at full price.
+    Example: 90k tokens of context cached on the default model cost about a tenth to continue; a hop to the strong model for one
+    question pays all 90k again, and the hop back pays it a second time. Past CACHE_WORTH_KEEPING a request stays on the model
+    in use; only evidence of trouble (a failed repair, a loop) escalates, and that path does not go through here."""
+    return "default" if tier != "default" and context_tokens >= CACHE_WORTH_KEEPING else tier
+
+
 # fast work needs little thinking, hard work gets the most; "default" leaves the model's own setting alone
 EFFORT = {"fast": "low", "default": None, "strong": "high"}
 

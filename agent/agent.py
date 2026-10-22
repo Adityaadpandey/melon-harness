@@ -17,7 +17,7 @@ from agent import review_fix
 from agent.review_pipeline import run_review_pipeline
 from agent.review import ReviewResult, merge_reviews, review_changes
 from agent.review_fix_verify import verify_fix
-from agent.routing_policy import EFFORT, ONE_AGENT, REVIEWY, classify, length_hint
+from agent.routing_policy import EFFORT, ONE_AGENT, REVIEWY, classify, keep_cached_model, length_hint
 from agent.scope import SWEEP, SWEEP_CHECKPOINT, is_broad, unfinished
 from agent.session import Session
 from agent.skills import match_skills
@@ -275,6 +275,10 @@ class Agent:
             "fast" in routing or "strong" in routing
         ):
             self._tier, why = (oriented.tier, "read by the fast model") if oriented else classify(message)
+            kept = keep_cached_model(self._tier, self.session.context_manager._latest_usage.total_tokens)
+            if kept != self._tier:
+                self.session.tracer.emit("route_kept", wanted=self._tier, kept=kept, reason="prompt cache")
+                self._tier = kept
             if self._tier in routing:
                 chain = routing[self._tier][0]
                 self.session.tracer.emit("route", tier=self._tier, reason=why, model=chain)
