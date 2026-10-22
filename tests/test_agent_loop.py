@@ -304,7 +304,7 @@ async def test_provider_context_overflow_compacts_once_and_retries(cfg):
             agent.session.context_manager.add_user_message(f"old message {i} " * 200)
             agent.session.context_manager.add_assistant_message(f"old reply {i} " * 200, None)
 
-        async def fake_compact():
+        async def fake_compact(**kw):
             agent.session.context_manager.apply_compaction("summary", 20)
             return True
 
@@ -323,7 +323,7 @@ async def test_a_cold_cache_after_a_pause_shrinks_history_before_the_first_call(
         agent.session.client = ScriptedClient([text("done")])
         compacted = []
 
-        async def fake_compact():
+        async def fake_compact(**kw):
             compacted.append(1)
             return True
 

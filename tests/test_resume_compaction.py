@@ -45,7 +45,7 @@ def test_second_compaction_after_resume_keeps_the_first_summary_and_edited_files
     seen = {}
 
     class Spy:
-        async def chat_completion(self, messages, stream=False, role=""):
+        async def chat_completion(self, messages, tools=None, stream=False, role=""):
             seen["prompt"] = messages[-1]["content"]
             return
             yield
@@ -74,7 +74,7 @@ def test_compaction_that_overflows_drops_the_oldest_messages_and_asks_again(tmp_
     sizes = []
 
     class TooLongOnce:
-        async def chat_completion(self, messages, stream=False, role=""):
+        async def chat_completion(self, messages, tools=None, stream=False, role=""):
             sizes.append(len(messages[-1]["content"]))
             if len(sizes) == 1:
                 yield StreamEvent(type=StreamEventType.ERROR, error="prompt is too long")
@@ -98,7 +98,7 @@ def test_a_summary_cut_off_or_without_its_sections_is_not_saved(tmp_path):
     replies = [(GOOD, "length"), ("Sure! The user wants paging fixed.", "stop"), (GOOD, "stop")]
 
     class Summarizer:
-        async def chat_completion(self, messages, stream=False, role=""):
+        async def chat_completion(self, messages, tools=None, stream=False, role=""):
             text, finish = replies.pop(0)
             yield StreamEvent(type=StreamEventType.MESSAGE_COMPLETE, text_delta=TextDelta(text), finish_reason=finish)
 
@@ -114,3 +114,32 @@ def test_resumed_archive_keeps_old_ids_and_never_overwrites_them(tmp_path):
     fresh.move_to(tmp_path / "s1")
     assert fresh.get("r2") == "second"  # a cleared result from before the resume is still recallable
     assert fresh.put("third") == "r3" and fresh.get("r1") == "first"
+
+
+def test_the_summary_is_asked_on_the_cached_prefix_and_falls_back_to_the_trimmed_copy(tmp_path):
+    from client.response import StreamEvent, StreamEventType, TextDelta
+    from context.compaction import FORK_PROMPT
+
+    cfg = Config(cwd=tmp_path, keep_recent_tokens=600)
+    cm = ContextManager(cfg, None, [])
+    for i in range(10):
+        add_pair(cm, i, "read_file", f"app/f{i}.py")
+    asked = []
+
+    class Summarizer:
+        def __init__(self, replies):
+            self.replies = replies
+
+        async def chat_completion(self, messages, tools=None, stream=False, role=""):
+            asked.append((messages, tools, role))
+            yield StreamEvent(type=StreamEventType.MESSAGE_COMPLETE, text_delta=TextDelta(self.replies.pop(0)))
+
+    tools = [{"name": "read_file"}]
+    summary, _, cut = asyncio_run(ChatCompactor(Summarizer([GOOD])).compress(cm, fork=(tools, "strong")))
+    sent, sent_tools, role = asked[0]
+    assert summary == GOOD and sent[:-1] == cm.get_messages()[: cut + 1]  # byte-for-byte the prefix the loop sent
+    assert sent[-1]["content"] == FORK_PROMPT and sent_tools == tools and role == "strong"
+
+    asked.clear()
+    summary, _, _ = asyncio_run(ChatCompactor(Summarizer(["no headings here", GOOD])).compress(cm, fork=(tools, "strong")))
+    assert summary == GOOD and asked[1][2] == "summarize"  # the fork failed, the trimmed copy did the job

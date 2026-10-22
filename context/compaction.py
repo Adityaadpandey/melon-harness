@@ -10,6 +10,16 @@ from utils.precompact import pre_compact
 HEADINGS = ("## ORIGINAL GOAL", "## COMPLETED ACTIONS", "## CURRENT STATE", "## NEXT STEP", "## USER MESSAGES", "## KEY CONTEXT")
 
 
+# sandwiched like Claude Code's: open models given tools mid-conversation reach for them unless told twice
+FORK_PROMPT = (
+    "CRITICAL: Respond with TEXT ONLY. Do not call any tools; a tool call here fails the task.\n\n"
+    "The conversation above is about to be replaced by your summary; the newest messages, which you cannot see, are kept "
+    "word for word after it. If it opens with an earlier summary, carry its facts forward.\n\n"
+    + get_compression_prompt()
+    + "\n\nREMINDER: plain text with the headings above, no tool calls."
+)
+
+
 class ChatCompactor:
     def __init__(self, client: LLMClient):
         self.client = client
@@ -62,11 +72,35 @@ class ChatCompactor:
 
         return "\n\n---\n\n".join(output)
 
+    async def _ask(self, messages, tools=None, role="summarize") -> tuple[str, TokenUsage | None, bool]:
+        """One summary request: (text, usage, ok). Not ok when it failed, stopped at the output limit (the last sections,
+        the user's messages and key context, are gone; pi refuses those too), tried to call a tool, or came back
+        without the handoff sections."""
+        summary, usage, failed = "", None, False
+        try:
+            async for event in self.client.chat_completion(messages, tools=tools, stream=False, role=role):
+                if event.type == StreamEventType.MESSAGE_COMPLETE:
+                    usage = event.usage
+                    summary += event.text_delta.content if event.text_delta else ""
+                    failed = failed or event.finish_reason in ("length", "max_tokens", "max_output_tokens")
+                elif event.type == StreamEventType.TOOL_CALL_COMPLETE:
+                    failed = True  # it tried to act instead of summarising
+                elif event.type == StreamEventType.ERROR:
+                    failed = True
+        except Exception:
+            failed = True
+        return summary, usage, bool(summary) and not failed and sum(h in summary for h in HEADINGS) >= 3
+
     async def compress(
-        self, context_manager: ContextManager
+        self, context_manager: ContextManager, fork: tuple[list, str] | None = None
     ) -> tuple[str | None, TokenUsage | None, int]:
         """Summarise the older part of the history (together with any earlier
-        summary), leaving the recent tail untouched. Returns (summary, usage, cut)."""
+        summary), leaving the recent tail untouched. Returns (summary, usage, cut).
+
+        With `fork` = (tool schemas, role), the summary is first asked the way Claude Code asks it: the exact system
+        prompt, tools and older messages the agent loop sent, plus one instruction at the end. That prefix is already
+        in the provider's cache, so a 150k-token history is billed at the cached rate instead of re-sent as a trimmed
+        copy, and the summarizer sees every tool result whole. If that fails, the trimmed copy below is the fallback."""
         cm = context_manager
         keep = cm.config.keep_recent_tokens
         cut = cm.find_cut(keep)
@@ -74,6 +108,13 @@ class ChatCompactor:
             cut = cm.find_cut(max(1, keep // 4))
         if cut <= 0:
             return None, None, 0
+
+        if fork is not None:
+            tools, role = fork
+            prefix = cm.get_messages()[: cut + 1]  # the system prompt, then messages[:cut] exactly as the loop sent them
+            summary, usage, ok = await self._ask(prefix + [{"role": "user", "content": FORK_PROMPT}], tools or None, role)
+            if ok:
+                return summary, usage, cut
 
         msgs = cm.history_for_summary(cut)
         # Claude Code's trick when the summary request is itself too long: drop the oldest
@@ -86,22 +127,8 @@ class ChatCompactor:
                 {"role": "system", "content": get_compression_prompt()},
                 {"role": "user", "content": history},
             ]
-            summary, usage, failed = "", None, False
-            try:
-                async for event in self.client.chat_completion(compression_messages, stream=False, role="summarize"):
-                    if event.type == StreamEventType.MESSAGE_COMPLETE:
-                        usage = event.usage
-                        summary += event.text_delta.content if event.text_delta else ""
-                        # a summary that stopped at the output limit has lost its last sections (the user's messages,
-                        # key context): pi refuses those rather than saving half a handoff
-                        failed = failed or event.finish_reason in ("length", "max_tokens", "max_output_tokens")
-                    elif event.type == StreamEventType.TOOL_CALL_COMPLETE:
-                        failed = True  # it tried to act instead of summarising
-                    elif event.type == StreamEventType.ERROR:
-                        failed = True
-            except Exception:
-                failed = True
-            if summary and not failed and sum(h in summary for h in HEADINGS) >= 3:
+            summary, usage, ok = await self._ask(compression_messages)
+            if ok:
                 return summary, usage, cut
             if len(msgs) < 5:
                 break

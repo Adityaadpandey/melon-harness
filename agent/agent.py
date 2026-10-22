@@ -106,6 +106,7 @@ class Agent:
         self._escalated = False
         self._budget_hit = False
         self._compact_retry_turn = 0
+        self._last_role = "default"  # routing role of the latest loop call; a cache-reusing compaction must use the same model
         self._last_compact_turn: int | None = None
         self._thrash = 0  # compactions in a row after which the context was full again within 3 turns
         self._overflow_retried = False
@@ -689,6 +690,7 @@ class Agent:
                     yield AgentEvent.notice("Could not summarise the context; pruned old tool output instead")
 
             tool_schemas = self.session.tool_registry.get_schemas()
+            self._last_role = self._role(task)
 
             tool_calls: list[ToolCall] = []
             usage: TokenUsage | None = None
@@ -984,7 +986,7 @@ class Agent:
         self._last_model_call = 0.0
         before = cm._latest_usage.total_tokens
         self._prune(remind=True, force=True)
-        if before > self.config.idle_compact_at_tokens and await self._compact():
+        if before > self.config.idle_compact_at_tokens and await self._compact(reuse_cache=False):  # the cache is cold: the trimmed copy is cheaper
             yield AgentEvent.notice(f"Cache had expired: compacted {before // 1000}k of context before the first call")
 
     FILE_CHARS, FILES_CHARS = 40_000, 150_000  # ~10k tokens a file, ~37k in all: a bit past Claude Code's post-compact budget
@@ -1066,11 +1068,14 @@ class Agent:
             reg.forget_instructions()
             self.session.tracer.emit("prune", **{**cm.last_prune, "read_paths": len(cm.last_prune["read_paths"])})
 
-    async def _compact(self) -> bool:
+    async def _compact(self, reuse_cache: bool = True) -> bool:
         cm = self.session.context_manager
         before = cm._latest_usage.total_tokens
         await self.session.hook_system.fire(HookTrigger.PRE_COMPACT, tokens=before)
-        summary, usage, cut = await self.session.chat_compactor.compress(cm)
+        # with no cheaper summarizer configured, the summary is asked of the same model on the same prefix the
+        # loop just sent, so the provider serves it from cache (context/compaction.py fork)
+        fork = (self.session.tool_registry.get_schemas(), self._last_role) if reuse_cache and "summarize" not in self.config.routing else None
+        summary, usage, cut = await self.session.chat_compactor.compress(cm, fork=fork)
         if not summary:
             return False
         recent = cm.recent_files(cut)

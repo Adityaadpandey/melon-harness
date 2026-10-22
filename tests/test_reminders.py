@@ -54,7 +54,7 @@ async def test_compaction_stops_when_the_context_refills_right_away(tmp_path):
     cfg = Config(cwd=tmp_path, approval=ApprovalPolicy.AUTO, pi_mode=False, compact_at_tokens=1)
     compactions = []
     async with Agent(cfg) as agent:
-        async def fake_compact():
+        async def fake_compact(**kw):
             compactions.append(agent.session.turn_count)
             return True
 

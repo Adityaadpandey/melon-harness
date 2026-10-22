@@ -61,7 +61,7 @@ async def test_agent_compacts_mid_run_and_continues(tmp_path):
     async with Agent(cfg) as a:
         seen = {}
 
-        async def fake_compress(cm):
+        async def fake_compress(cm, **kw):
             seen["called"] = True
             return "FOLDED", TokenUsage(1, 1, 2), cm.find_cut(10)
 
@@ -91,7 +91,7 @@ async def test_failed_compaction_backs_off_instead_of_retrying_every_turn(tmp_pa
     async with Agent(cfg) as a:
         tries = []
 
-        async def failing_compress(cm):
+        async def failing_compress(cm, **kw):
             tries.append(1)
             return None, None, 0
 
@@ -232,7 +232,7 @@ async def test_folder_rules_come_back_after_a_compaction(tmp_path):
     (tmp_path / "web" / "b.ts").write_text("y")
     cfg = Config(pi_mode=False, cwd=tmp_path, approval=ApprovalPolicy.AUTO, auto_verify=False, keep_recent_tokens=10)
     async with Agent(cfg) as a:
-        async def fake_compress(cm):
+        async def fake_compress(cm, **kw):
             return "FOLDED", TokenUsage(1, 1, 2), len(cm._messages)
 
         a.session.chat_compactor.compress = fake_compress
@@ -249,7 +249,7 @@ async def test_files_worked_in_come_back_after_a_compaction_as_they_are_on_disk(
     (tmp_path / "a.ts").write_text("old text")
     cfg = Config(cwd=tmp_path, approval=ApprovalPolicy.AUTO, auto_verify=False, keep_recent_tokens=10)
     async with Agent(cfg) as a:
-        async def fake_compress(cm):
+        async def fake_compress(cm, **kw):
             return "FOLDED", TokenUsage(1, 1, 2), len(cm._messages)
 
         a.session.chat_compactor.compress = fake_compress
@@ -271,7 +271,7 @@ async def test_after_a_compaction_the_context_size_is_the_new_history_not_the_su
     # the summary request itself weighed 20k; reporting that as the context size made /context lie after /compact
     cfg = Config(cwd=tmp_path, approval=ApprovalPolicy.AUTO, auto_verify=False, keep_recent_tokens=10)
     async with Agent(cfg) as a:
-        async def fake_compress(cm):
+        async def fake_compress(cm, **kw):
             return "FOLDED", TokenUsage(19_947, 2_519, 22_466), len(cm._messages)
 
         a.session.chat_compactor.compress = fake_compress
