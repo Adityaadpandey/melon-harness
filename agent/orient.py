@@ -24,6 +24,7 @@ MAP_CHARS = 3500  # about 900 tokens: the whole map rides along with every reque
 class Orientation:
     intent: str = "other"
     tier: str = "default"
+    touches: str = "none"  # what the change should land in: code, docs, config or none
     where: list[str] = field(default_factory=list)
     queries: list[str] = field(default_factory=list)
     note: str = ""
@@ -79,6 +80,7 @@ Fields:
 "intent": "change" (the user wants files edited or created), "review" (check code, a diff or a PR and report), "investigate" (find a cause or trace how something works), "explain" (answer a question about the code), "git" (commit, branch, push, status), or "other".
   Judge by what the user wants done, not by single words: "review the change i have" is a review; "why does checkout double charge" is investigate even though nothing is named.
 "tier": "fast" (trivial and well-defined: rename, typo, where is X, run a command), "default" (ordinary work), or "strong" (hard: a bug with an unknown cause, concurrency, security or money paths, a change across several parts, a design decision).
+"touches": what the finished work should change: "code" (source files: a bug fix or feature), "docs" (markdown, comments or notes only), "config" (CI, build, env or infra files), or "none" (nothing is edited).
 "where": up to 5 paths or folders from the map where the answer most likely lives (only ones that appear in the map; [] if you cannot tell).
 "queries": up to 3 plain-word search queries that would find the relevant code (identifiers, domain words the user used, synonyms a developer would have used in code); [] if the request names exact files.
 "note": at most one short sentence: the one thing worth knowing before starting (for example that the uncommitted change is what the user means), or "".
@@ -98,7 +100,8 @@ def parse(reply: str) -> Orientation | None:
     intent = d.get("intent") if d.get("intent") in INTENTS else "other"
     tier = d.get("tier") if d.get("tier") in ("fast", "default", "strong") else "default"
     clean = lambda v: [str(x)[:120] for x in v if isinstance(x, str)][:5] if isinstance(v, list) else []
-    return Orientation(intent, tier, clean(d.get("where")), clean(d.get("queries"))[:3], str(d.get("note") or "")[:200])
+    touches = d.get("touches") if d.get("touches") in ("code", "docs", "config", "none") else "none"
+    return Orientation(intent, tier, touches, clean(d.get("where")), clean(d.get("queries"))[:3], str(d.get("note") or "")[:200])
 
 
 async def orient(client, role: str, request: str, repo: str) -> Orientation | None:

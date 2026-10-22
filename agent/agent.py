@@ -64,6 +64,7 @@ async def _within(seconds: float, stream):
         await it.aclose()
 
 
+DOC_SUFFIX = (".md", ".mdx", ".txt", ".rst")
 REVIEW_NO_WORKERS = ("parallel_tasks runs coding workers that edit files in their own worktrees; a review only reads. "
                      "Read the files yourself, or use subagent_investigator for a read-only question.")
 OVERFLOW = re.compile(r"context[_ ](length|window)|maximum context|prompt is too long|too many tokens|exceeds? the (model|context)|input (is )?too long", re.I)
@@ -243,6 +244,8 @@ class Agent:
         difficulty = oriented.tier if oriented else classify(message)[0]
         if oriented and (where := oriented.hint()):
             message_for_model += "\n\n" + where
+        self._touches = oriented.touches if oriented and wants else ""
+        self._docs_nudged = False
         self.session.client.auto_effort = EFFORT[difficulty]
         if hint := length_hint(message, difficulty, wants):
             message_for_model += f"\n\n[{hint}]"
@@ -368,10 +371,19 @@ class Agent:
                     yield AgentEvent.notice(f"Working in {self.config.cwd} (where the files you touched live)")
                     before = {}  # nothing known from before: every changed file counts as this request's
             task.changed_files = changed_since(before, await snapshot(self.config.cwd))
+            if self._touches == "code" and not self._docs_nudged and task.changed_files and all(f.lower().endswith(DOC_SUFFIX) for f in task.changed_files):
+                # a bug was reported and only notes changed: the notes do not fix it
+                self._docs_nudged = True
+                yield AgentEvent.notice("Only documentation changed for a code change; asking for the code")
+                self.session.context_manager.add_user_message(
+                    f"Only {', '.join(task.changed_files[:4])} changed, but this request needs the code itself changed. A note in a doc does not fix a bug. "
+                    "Change the code that causes it, or say plainly in one sentence what stopped you."
+                )
+                continue
             checks = select_checks(self.config, task.changed_files)
             # outside git we can't tell what changed, so only verify when asked to
             if not task.changed_files and before is not None:
-                if not nudged and final_response and self._wants_change and has_file_code(final_response):
+                if not nudged and final_response and self._wants_change and (has_file_code(final_response) or self._touches == "code"):
                     # models sometimes paste the solution instead of writing it
                     nudged = True
                     yield AgentEvent.notice("Reply contained code but no file changed; asking the model to apply it")
