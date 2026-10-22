@@ -12,6 +12,7 @@ import logging
 from tools.builtin import ReadFileTool, get_all_builtin_tools
 from tools.builtin.recall import RecallResultTool
 from utils.archive import ResultStore
+from utils.search import forget_listing
 from tools.subagents import SubagentTool, get_default_subagent_definitions
 
 logger = logging.getLogger(__name__)
@@ -104,6 +105,7 @@ class ToolRegistry:
                 tool.last_call_at = self._writes  # the edits so far were put to the advisor (an advisor that is down is not nagged about)
             if tool and tool.is_mutating(params):
                 self._writes += 1
+                forget_listing()
             elif name in REUSABLE and result.success and call_id:
                 self._answered[key] = (call_id, self._writes)
         self._note_file_state(name, params, cwd, result)

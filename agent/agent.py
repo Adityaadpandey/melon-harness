@@ -9,6 +9,7 @@ from agent.challenge import challenge_request, is_risky, render as render_object
 from agent.brevity import HOLD_CHARS, LONG_ANSWER_WORDS, interim_line
 from agent.events import AgentEvent, AgentEventType
 from agent.root import pick_root
+from utils.search import hold_listing
 from agent.grounding import REWRITE_PROMPT, correction_prompt, has_file_code, shows_second_thoughts, verify_references, wants_change
 from agent.learn import Learned, judge
 from agent import review_fix
@@ -990,6 +991,14 @@ class Agent:
         """Run calls in model order. Runs of read-only calls (e.g. five greps
         in a row) execute concurrently; anything that writes or shells out
         acts as a barrier and runs alone, so edits never race with reads."""
+        hold_listing(True)
+        try:
+            async for item in self._run_batches(tool_calls):
+                yield item
+        finally:
+            hold_listing(False)
+
+    async def _run_batches(self, tool_calls: list[ToolCall]):
         i = 0
         while i < len(tool_calls):
             j = i + 1

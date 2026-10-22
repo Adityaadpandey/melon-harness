@@ -14,7 +14,8 @@ import subprocess
 from pathlib import Path, PurePosixPath
 
 SECRET_GLOBS = (".env", ".env.*", "*.pem", "*.key", "id_rsa*", "id_ed25519*")
-SKIP_DIRS = {"node_modules", "__pycache__", ".git", ".venv", "venv", "dist", "build", ".next", ".turbo", "target", ".pytest_cache"}
+# graphify-out holds generated graph files (14.6k of Tunyt's 23.8k tracked files): they bury real matches and cost a stat each, read one directly if needed
+SKIP_DIRS = {"node_modules", "__pycache__", ".git", ".venv", "venv", "dist", "build", ".next", ".turbo", "target", ".pytest_cache", "graphify-out", ".deepsec", "coverage"}
 MAX_FILE_BYTES = 2_000_000
 MAX_LINE_CHARS = 300
 _ODD_BREAKS = re.compile("[\r\x0b\x0c\x1c-\x1e\x85\u2028\u2029]")  # line breaks for splitlines() but not for re's $
@@ -25,8 +26,45 @@ def _is_secret(name: str) -> bool:
     return any(fnmatch.fnmatch(low, g) for g in SECRET_GLOBS)
 
 
+_listed: dict[tuple, tuple[float, list[Path]]] = {}
+LIST_TTL = 20.0  # seconds, a ceiling: the listing is also dropped when a batch ends or anything writes
+_batch_depth = 0
+
+
+def hold_listing(on: bool) -> None:
+    """The agent holds the listing while it runs one round of tool calls, so five parallel greps share one git ls-files and
+    23k stats instead of paying them five times. Dropped when the round ends: files made by anything else show up next round."""
+    global _batch_depth
+    _batch_depth = max(0, _batch_depth + (1 if on else -1))
+    if not _batch_depth:
+        _listed.clear()
+
+
+def forget_listing() -> None:
+    """A write may have added or removed files: the next grep lists again."""
+    _listed.clear()
+
+
 def list_files(root: Path, forbidden: list[str] | None = None) -> list[Path]:
-    """Every searchable file under root, relative order stable (sorted)."""
+    """Every searchable file under root, relative order stable (sorted). A listing is reused for LIST_TTL seconds unless
+    something wrote since (forget_listing) or git's index changed."""
+    import time
+
+    try:
+        stamp = (root / ".git" / "index").stat().st_mtime_ns
+    except OSError:
+        stamp = 0
+    key = (str(root), tuple(forbidden or ()), stamp)
+    hit = _listed.get(key) if _batch_depth else None
+    if hit and time.monotonic() - hit[0] < LIST_TTL:
+        return list(hit[1])
+    files = _list_files(root, forbidden)
+    if _batch_depth:
+        _listed[key] = (time.monotonic(), files)
+    return list(files)
+
+
+def _list_files(root: Path, forbidden: list[str] | None = None) -> list[Path]:
     from safety.guard import is_forbidden_path
 
     forbidden = forbidden or []
