@@ -70,7 +70,7 @@ def get_system_prompt(
 
     optional = [skill for skill in (skills or []) if not getattr(skill, "always", False)]
     if optional:
-        parts.append(_get_skills_section(optional))
+        parts.append(_get_skills_section(optional, skill_budget(config)))
 
     parts.extend([_get_agents_md_section(), _get_security_section()])
 
@@ -178,12 +178,9 @@ def _get_security_section() -> str:
 - Help with authorized defensive security and CTFs; refuse destructive attacks, DoS, mass targeting, credential theft and supply-chain compromise."""
 
 
-def _get_skills_section(skills: list) -> str:
-    rows = "\n".join(
-        f"- **{skill.name}**: {_when(skill.description)}"
-        for skill in skills
-        if getattr(skill, "name", None) and getattr(skill, "description", None)
-    )
+def _get_skills_section(skills: list, budget: int = 10_000) -> str:
+    named = [k for k in skills if getattr(k, "name", None) and getattr(k, "description", None)]
+    rows = _within(lambda cap: "\n".join(f"- **{k.name}**" + (f": {_when(k.description, cap)}" if cap else "") for k in named), budget)
     return f"""# Skills
 
 Playbooks you can load with the use_skill tool (listing one does not load it). Use a matching skill before acting.
@@ -351,7 +348,22 @@ def _when(desc: str, cap: int = 110) -> str:
     return d if len(d) <= cap else d[:cap - 3].rsplit(" ", 1)[0] + "..."
 
 
-def _skill_rows(skills: list) -> str:
+def skill_budget(config: Config) -> int:
+    """Characters the skill list may take: about 1% of the context window, as Claude Code allows (10k chars at 256k).
+    A 32k-window local model gets the 2k floor instead of 13k of skills it has no room for."""
+    return max(2000, int(config.model.context_window * 0.01 * 4))
+
+
+def _within(render, budget: int) -> str:
+    """render(cap) at the longest description cap that fits the budget, down to names only."""
+    for cap in (110, 70, 40, 0):
+        text = render(cap)
+        if len(text) <= budget:
+            return text
+    return text
+
+
+def _skill_rows(skills: list, cap: int = 110) -> str:
     """Skills grouped by folder, so a long plugin path is written once instead of once per skill.
     Example:  ~/.claude/plugins/.../superpowers/6.1.1/skills/
                 - brainstorming/SKILL.md: use this before any creative work - creating features...
@@ -360,7 +372,7 @@ def _skill_rows(skills: list) -> str:
     home, groups = str(Path.home()), {}
     for k in skills:
         base = k.path.parent.parent if k.path.name == "SKILL.md" else k.path.parent
-        row = f"- {k.path.relative_to(base)}" + (f": {_when(k.description)}" if k.description else "")
+        row = f"- {k.path.relative_to(base)}" + (f": {_when(k.description, cap)}" if k.description and cap else "")
         groups.setdefault(str(base).replace(home, "~", 1), []).append(row)
     return "\n".join(f"{base}/\n" + "\n".join(rows) for base, rows in groups.items())
 
@@ -415,6 +427,6 @@ def _pi_prompt(config: Config, tools: list[Tool] | None, skills: list | None) ->
         prompt += (
             "\n\nThe following skills provide specialized instructions for specific tasks.\n"
             "Use the read_file tool to load a skill's file when the task matches its description.\n\n"
-            f"<available_skills>\n{_skill_rows(listed)}\n</available_skills>"
+            f"<available_skills>\n{_within(lambda cap: _skill_rows(listed, cap), skill_budget(config))}\n</available_skills>"
         )
     return prompt + f"\nCurrent working directory: {config.cwd}"
