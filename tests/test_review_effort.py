@@ -28,3 +28,13 @@ async def test_review_sub_agents_are_not_routed_by_the_words_in_their_brief(monk
     monkeypatch.setattr(agent_mod, "Agent", FakeAgent)
     assert await rp.ask(Config(), "check the authorization and security of this", "default", 3, 1000) == ""
     assert seen[0].auto_route is False
+
+
+def test_a_quick_review_is_shown_the_code_around_each_hunk(tmp_path):
+    f = tmp_path / "run.sh"
+    f.write_text("set -euo pipefail\n" + "echo x\n" * 40 + "docker prune\nexit 0\n")
+    diff = "diff --git a/run.sh b/run.sh\n--- a/run.sh\n+++ b/run.sh\n@@ -41,1 +42,2 @@\n+docker prune\n"
+    got = rp.changed_regions(tmp_path, diff, pad=5)
+    assert "run.sh lines 37-43" in got and "42| docker prune" in got
+    assert "set -euo pipefail" not in got  # outside the padding, so only the hunk's neighbourhood is sent
+    assert "set -euo pipefail" in rp.changed_regions(tmp_path, diff, pad=60)

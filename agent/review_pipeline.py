@@ -218,6 +218,43 @@ async def triage(config, role: str, diff: str, files: list[str], context: str) -
     return parse_triage(reply)
 
 
+HUNK = re.compile(r"^@@ -\d+(?:,\d+)? \+(\d+)(?:,(\d+))? @@", re.M)
+REGION_PAD = 30  # lines either side of a changed hunk
+REGION_CHARS = 14_000
+
+
+def changed_regions(cwd: Path, diff: str, pad: int = REGION_PAD, limit: int = REGION_CHARS) -> str:
+    """The current text around every changed hunk, with line numbers, so a quick reviewer sees the shell options, the loop or the
+    function a hunk sits in without spending reads on it. Example: a 6-line edit inside a script shows the `set -euo pipefail`
+    thirty lines above it. Working-tree files only; a file that cannot be read is skipped."""
+    out: list[str] = []
+    used = 0
+    for block in re.split(r"(?m)^diff --git ", diff)[1:]:
+        m = re.match(r"a/(.+?) b/(.+)", block.splitlines()[0])
+        if not m:
+            continue
+        path = m.group(2)
+        try:
+            lines = (cwd / path).read_text(encoding="utf-8", errors="replace").splitlines()
+        except OSError:
+            continue
+        spans: list[list[int]] = []
+        for h in HUNK.finditer(block):
+            start, count = int(h.group(1)), int(h.group(2) or 1)
+            a, b = max(1, start - pad), min(len(lines), start + max(count, 1) - 1 + pad)
+            if spans and a <= spans[-1][1] + 1:
+                spans[-1][1] = max(spans[-1][1], b)
+            else:
+                spans.append([a, b])
+        for a, b in spans:
+            text = f"--- {path} lines {a}-{b} (current version)\n" + "\n".join(f"{n}| {lines[n - 1]}" for n in range(a, b + 1))
+            if used + len(text) > limit:
+                return "\n".join(out) + "\n[more regions cut for size: read the file]"
+            out.append(text)
+            used += len(text)
+    return "\n".join(out)
+
+
 def is_light(diff: str, files: list[str], secure: bool) -> bool:
     """A change this small needs no plan: up to two files, under SMALL_DIFF_LINES of diff, nothing touching auth, queries or money.
     Example: a 16-line edit to one workflow file gets one reviewer, not a triage call plus several."""
@@ -759,6 +796,10 @@ async def _run_review(config, request: str, target) -> AsyncGenerator[tuple[str,
     if config.review_lenses == 0 and len(groups) == 1 and is_light(whole, files, bool(SECURITY_HINT.search(" ".join(files) + "\n" + whole))):
         light = True
         lenses = [(n, t + LIGHT_NOTE) for n, t in [one_reviewer(context, False)]]
+        if not target or target.includes_worktree:
+            around = changed_regions(cwd, whole)
+            if around:
+                context += "SURROUNDING CODE (the current text around each changed hunk; you do not need to read these again):\n" + around + "\n\n"
         yield "notice", "Small change: one quick reviewer, no triage and no verifier"
     elif config.review_lenses == 0 and len(groups) == 1:
         checks = await triage(config, role, whole, files, context)
