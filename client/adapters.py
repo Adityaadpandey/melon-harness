@@ -97,6 +97,7 @@ class OpenAIChatAdapter:
         temperature: float | None,
         max_tokens: int | None = None,
         top_p: float | None = None,
+        extra_body: dict[str, Any] | None = None,
     ) -> AsyncGenerator[StreamEvent, None]:
         kwargs: dict[str, Any] = {
             "model": model,
@@ -110,6 +111,8 @@ class OpenAIChatAdapter:
             kwargs["max_tokens"] = max_tokens
         if top_p is not None:
             kwargs["top_p"] = top_p
+        if extra_body:
+            kwargs["extra_body"] = extra_body  # provider-specific fields, e.g. the thinking switch
         if tools:
             kwargs["tools"] = _tool_defs(tools)
             kwargs["tool_choice"] = "auto"

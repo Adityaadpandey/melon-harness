@@ -194,7 +194,7 @@ class Config(BaseModel):
     auto_orient: bool = True  # a fast-model read of the request and a repo map decides intent, difficulty and where to look (needs a [routing] fast or summarize chain)
     sub_agent: bool = False  # a pipeline worker (reviewer, triage, verifier): its answer is parsed, so no rewrite of it and no routing by its brief
     auto_route: bool = True  # classify each request into the fast/default/strong chains when [routing] defines them
-    reasoning_effort: Literal["low", "medium", "high"] | None = None  # how hard the model thinks; Codex models only for now
+    reasoning_effort: Literal["low", "medium", "high"] | None = None  # how hard the model thinks: Codex, and direct providers or your own server with a thinking switch (client/llm_client.py thinking_body)
     model_pinned: bool = False  # set by -m or /model: the user chose, so never auto-route away from it
     max_parallel_agents: int = 4  # concurrent sub-agents / workers
     enable_parallel_tasks: bool = True  # expose the parallel_tasks tool (off inside workers and sub-agents)

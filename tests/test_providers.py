@@ -335,3 +335,37 @@ def test_sampling_follows_the_family_unless_a_temperature_is_set():
     assert sampling("moonshotai/Kimi-K3", None) == (1.0, 0.95)
     assert sampling("deepseek/deepseek-v4-pro", None) == (None, None)  # the server's own default
     assert sampling("Qwen/Qwen3.8-Max", 0.2) == (0.2, None)
+
+
+def test_thinking_switch_is_worded_for_the_server_it_goes_to():
+    from client.llm_client import thinking_body
+
+    assert thinking_body("deepseek", "deepseek-v4-pro", "low") == {"thinking": {"type": "disabled"}}
+    assert thinking_body("zai", "glm-5.3", "high") == {"thinking": {"type": "enabled", "clear_thinking": False}}
+    assert thinking_body("openrouter", "qwen/qwen3.8-max", "high") == {"reasoning": {"effort": "high"}}
+    assert thinking_body("mybox", "Qwen/Qwen3.8-27B", "low") == {"chat_template_kwargs": {"enable_thinking": False}}  # own vLLM
+    assert thinking_body("groq", "openai/gpt-oss-120b", "high") == {"reasoning_effort": "high"}
+    assert thinking_body("gateway", "deepseek/deepseek-v4-pro", "high") == {}  # the gateway ignores every switch
+    assert thinking_body("deepseek", "deepseek-v4-pro", None) == {}  # an ordinary request keeps the server default
+
+
+class ThinkingFake(OpenAIChatAdapter):
+    def __init__(self):
+        self.bodies = []
+
+    async def stream(self, model, messages, tools, temperature, max_tokens=None, top_p=None, extra_body=None):
+        self.bodies.append(extra_body)
+        if extra_body:
+            raise classify(400, "Unrecognized request argument supplied: thinking")
+        yield StreamEvent(type=StreamEventType.MESSAGE_COMPLETE)
+
+
+async def test_a_server_without_the_switch_is_asked_again_without_it_and_remembered(tmp_path, monkeypatch):
+    c, _ = make_client(tmp_path, {})
+    fake = ThinkingFake()
+    c._adapter = lambda endpoint: fake
+    monkeypatch.setattr(c, "_provider", lambda m: "deepseek")
+    c.auto_effort = "high"
+    await collect(c)
+    await collect(c)
+    assert fake.bodies == [{"thinking": {"type": "enabled"}}, None, None]

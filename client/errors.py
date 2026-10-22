@@ -17,6 +17,7 @@ class ProviderError(Exception):
         fallback: bool = False,
         drop_temperature: bool = False,
         drop_max_tokens: bool = False,
+        drop_thinking: bool = False,
         quota: bool = False,
     ):
         super().__init__(message)
@@ -25,6 +26,7 @@ class ProviderError(Exception):
         self.fallback = fallback
         self.drop_temperature = drop_temperature
         self.drop_max_tokens = drop_max_tokens  # the server refused our output cap (too big, or unknown field)
+        self.drop_thinking = drop_thinking  # the server refused the thinking switch we sent
         self.quota = quota  # the whole provider/plan is out of quota: only another provider can help
 
 
@@ -52,6 +54,8 @@ def classify(status: int | None, message: str) -> ProviderError:
         return ProviderError(message, status=status, fallback=True)
     if TRANSIENT.search(m):
         return ProviderError(message, status=status, retry=True, fallback=True)
+    if status in (400, 422) and re.search(r"\bthinking\b|enable_thinking|chat_template_kwargs|reasoning_effort|\breasoning\b", m) and "reasoning_content" not in m:
+        return ProviderError(message, status=status, drop_thinking=True)
     if status == 400 and re.search(r"max_(completion_)?tokens", m):
         return ProviderError(message, status=status, drop_max_tokens=True)
     if status == 400 and re.search(r"temperature|top_p", m):

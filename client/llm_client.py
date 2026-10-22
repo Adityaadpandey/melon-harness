@@ -10,7 +10,7 @@ from typing import Any, AsyncGenerator
 
 from client.adapters import AnthropicAdapter, CodexResponsesAdapter, OpenAIChatAdapter
 from client.errors import ProviderError, classify
-from client.providers import split
+from client.providers import PRESETS, split
 from client.response import StreamEvent, StreamEventType, TextDelta, TokenUsage, ToolCall
 from client.routing import ModelRegistry, Router
 from config.config import Config
@@ -31,6 +31,34 @@ def sampling(model: str, configured: float | None) -> tuple[float | None, float 
     return next(((t, p) for key, t, p in SAMPLING if key in low), (None, None))
 
 
+def thinking_body(provider: str, model: str, effort: str | None) -> dict:
+    """The switch that turns a model's thinking down for an easy request and up for a hard one, in the wording of the
+    server it goes to (pi's and opencode's tables). `effort` is "low" (easy), "high" (hard) or None (leave the
+    server's default alone, which is what most requests get). e.g. ("zai", "glm-5.3", "high") ->
+    {"thinking": {"type": "enabled", "clear_thinking": False}}: thinking on, and kept across turns.
+    The Command Code gateway ignores all of these (probed 2026-10-22), so nothing is sent there."""
+    if not effort or provider in ("gateway", "codex"):
+        return {}
+    on, low = effort != "low", model.lower()
+    if "gpt-oss" in low:
+        return {"reasoning_effort": effort}
+    if provider == "deepseek":
+        return {"thinking": {"type": "enabled" if on else "disabled"}}
+    if provider == "zai":
+        return {"thinking": {"type": "enabled", "clear_thinking": False} if on else {"type": "disabled"}}
+    if provider == "openrouter":
+        return {"reasoning": {"effort": effort}}
+    if provider == "together":
+        return {"reasoning": {"enabled": on}}
+    if provider not in PRESETS or provider == "lmstudio":
+        # your own vLLM / SGLang / LM Studio server: the switch lives in the model's chat template
+        if "deepseek" in low:
+            return {"chat_template_kwargs": {"thinking": on}}
+        if any(f in low for f in ("qwen", "glm")):
+            return {"chat_template_kwargs": {"enable_thinking": on}}
+    return {}
+
+
 class LLMClient:
     """One entry point for every model call. Picks candidates through the
     router, talks to the right wire protocol, retries transient failures with
@@ -44,6 +72,7 @@ class LLMClient:
         self._adapters: dict[str, Any] = {}
         self._no_temperature: set[str] = set()
         self._max_out: dict[str, int] = {}  # model -> output cap its server accepts (0 = send none)
+        self._no_thinking: set[str] = set()  # models whose server refused the thinking switch
         self.registry = ModelRegistry(config, get_data_dir())
         self.router = Router(config, self.registry)
         self.last_model: str | None = None
@@ -156,15 +185,18 @@ class LLMClient:
         adapter = self._direct_adapter(direct[0]) if direct else self._adapter(info.endpoint)
         wire_model = direct[1] if direct else model  # the provider wants its own name, without our "groq:" prefix
         temperature, top_p = (None, None) if model in self._no_temperature else sampling(model, self.config.temperature)
-        if hasattr(adapter, "_effort"):  # Codex only: summaries never need deep thinking, everything else follows the request
-            adapter._effort = "low" if role == "summarize" else (self.config.reasoning_effort or self.auto_effort)
+        # summaries never need deep thinking; everything else follows the request (an explicit config value wins)
+        effort = "low" if role == "summarize" else (self.config.reasoning_effort or self.auto_effort)
+        if hasattr(adapter, "_effort"):  # Codex takes it as a setting rather than a request field
+            adapter._effort = effort
 
         for attempt in range(self._max_retries + 1):
             started = time.perf_counter()
             first_token: float | None = None
             text, calls, usage, finish, reasoning = "", [], None, None, None
             cap = self._output_cap(model, info.context_length, est_tokens) if isinstance(adapter, OpenAIChatAdapter) else None
-            extra = {k: v for k, v in (("max_tokens", cap), ("top_p", top_p)) if v and isinstance(adapter, OpenAIChatAdapter)}
+            body = {} if model in self._no_thinking else thinking_body(self._provider(model), wire_model, effort)
+            extra = {k: v for k, v in (("max_tokens", cap), ("top_p", top_p), ("extra_body", body)) if v and isinstance(adapter, OpenAIChatAdapter)}
             try:
                 async for ev in adapter.stream(wire_model, messages, tools, temperature, **extra):
                     if first_token is None and ev.type in (
@@ -209,6 +241,9 @@ class LLMClient:
                     status=e.status, error=str(e)[:300],
                     sec=round(time.perf_counter() - started, 3),
                 )
+                if e.drop_thinking and body and not collected.emitted:
+                    self._no_thinking.add(model)  # this server has no such switch: leave thinking at its default
+                    continue
                 if e.drop_max_tokens and cap and not collected.emitted:
                     # "valid range of max_tokens is [1, 8192]" -> 8192; no usable number -> stop sending one
                     self._max_out[model] = max([n for n in map(int, re.findall(r"\d+", str(e))) if 1024 <= n < cap], default=0)
