@@ -638,20 +638,25 @@ async def ask(config, prompt: str, role: str, max_turns: int, max_tokens: int, d
         "model_role": role,
         "allowed_tools": tools or ["read_file", "grep", "glob", "list_dir", "graph", "search", "outline", "git", "use_skill"],
         "auto_review": False, "auto_verify": False, "verify_commands": [], "verify_rules": [], "subagents": [],
-        "enable_parallel_tasks": False, "mcp_servers": {}, "review_pipeline": False, "auto_challenge": False, "auto_scout": False, "auto_route": False,  # the prompt is a review brief, not a user request: its words ("authorization", "security") must not send it to the strong tier
+        "enable_parallel_tasks": False, "mcp_servers": {}, "review_pipeline": False, "auto_challenge": False, "auto_scout": False, "sub_agent": True, "auto_route": False,  # the prompt is a review brief, not a user request: its words ("authorization", "security") must not send it to the strong tier
          # a challenger per sub-agent cost 80k tokens and 4 minutes
         "max_turns": max_turns, "max_total_tokens": max_tokens, "max_seconds": 300, "approval": approval,
         "disabled_skills": [*config.disabled_skills, *(disabled_skills or [])],
     })
     texts: list[str] = []
-    try:
+
+    async def run_it() -> None:
         async with Agent(cfg) as sub:
             async for ev in sub.run(prompt):
                 if ev.type == AgentEventType.TEXT_COMPLETE and ev.data.get("content"):
                     texts.append(ev.data["content"])
             _spent_log.append(sub._spent())
-    except Exception:  # a broken reviewer must not stop the review
-        return ""
+
+    try:
+        # the agent's own 300s budget only covers model waits; a stall anywhere else (startup, a backup, closing a stream) must not hang the review
+        await asyncio.wait_for(run_it(), timeout=cfg.max_seconds + 60)
+    except Exception:  # a broken or stalled reviewer must not stop the review (a timeout is an empty answer too)
+        return texts[-1] if texts else ""
     return texts[-1] if texts else ""
 
 
