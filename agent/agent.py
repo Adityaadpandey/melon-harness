@@ -562,7 +562,7 @@ class Agent:
         yield AgentEvent.notice("Checks paused for your note; the whole diff is checked once it is done")
         while self.steering:
             note = self.steering.pop(0)
-            self.session.context_manager.add_user_message(f"[the user added, while you were working:] {note}")
+            self.session.context_manager.add_user_message(f"[the user added, while you were working; it steers the task in progress, not a new task:] {note}")
             yield AgentEvent.notice(f"steering received: {note[:80]}")
 
     async def _agentic_loop(self, task: TaskState) -> AsyncGenerator[AgentEvent, None]:

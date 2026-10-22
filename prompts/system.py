@@ -14,6 +14,38 @@ from config.config import Config
 from tools.base import Tool
 
 
+# Families whose habits the rest of the prompt already assumes. Everything else (DeepSeek, Qwen, GLM, Kimi, MiniMax,
+# MiMo, gpt-oss, ...) gets the open-model notes below.
+_TUNED = ("claude", "codex/", "gpt-", "o1", "o3", "o4", "gemini", "google/gemini")
+
+# What open models get wrong most in an agent loop, in Claude Code's own words where it has them.
+_OPEN_MODEL_NOTES = [
+    "Call tools only through the tool-calling interface. A tool call written as text, XML or JSON in your reply is not run, "
+    "and code shown only in your reply is not saved: change files with the edit tools.",
+    "Before ending your turn, check your last paragraph: if it is a plan or a promise of work not done (\"I will...\", "
+    "\"next I would...\"), do that work now with tool calls. A question or a bug report is the exception: there the "
+    "deliverable is your assessment, so answer and stop.",
+    "When you have enough to act, act: do not re-derive what is already established in the conversation, re-read a file "
+    "you just edited to check it (the edit result says what changed and reports new errors), or narrate options you will not pursue.",
+]
+
+# Per family, from the vendor's own coding-agent prompt (Moonshot's kimi-cli, via opencode)
+_FAMILY_NOTES = {
+    "kimi": ["Make minimal changes; be thorough in your actions, not in your explanations. Keep it simple."],
+}
+
+
+def model_notes(model: str) -> list[str]:
+    """Extra rules for the model this session runs on, e.g. "moonshotai/Kimi-K3" -> open-model notes + the Kimi line."""
+    low = (model or "").lower()
+    tuned = any(low.startswith(t) or f"/{t}" in low for t in _TUNED) and "gpt-oss" not in low
+    notes = [] if tuned else list(_OPEN_MODEL_NOTES)
+    for family, lines in _FAMILY_NOTES.items():
+        if family in low and "gpt-oss" not in low:
+            notes += lines
+    return notes
+
+
 def get_system_prompt(
     config: Config,
     user_memory: str | None = None,
@@ -77,6 +109,8 @@ def get_system_prompt(
         pass  # notes are a convenience; they never block a session
 
     parts.append(_get_operational_section())
+    if notes := model_notes(config.model_name):
+        parts.append("# Notes for this model\n\n" + "\n".join(f"- {n}" for n in notes))
     return "\n\n".join(part for part in parts if part.strip())
 
 
@@ -350,12 +384,14 @@ def _pi_prompt(config: Config, tools: list[Tool] | None, skills: list | None) ->
         "If the requested approach looks wrong (insecure, unscalable, duplicates existing code), say so in one line with the better option; use it when it clearly serves the same goal, else ask.",
         *(["Wider than 2-3 files: ask the searcher; do not redo its searches."] if explorer else []),
         "Keep existing callers working: don't drop or rename a parameter or export unless the request asks for it.",
+        "Never revert changes you did not make: the user or another tool may be editing the same files.",
         "Start from what the user describes touching (the button, route or call) and read that code path before searching wide; name the root cause in one line before editing.",
         "Do what the request names. If you hold part of it back, end with one concrete question about it, never a silent skip.",
         "Ask before anything hard to undo (deleting, force-push, dropping data); a denied action is a boundary.",
         "Be concise: open with the result, then only what the user must know or decide. Don't recap what the tool lines above already showed, don't restate diffs, no headings on short answers.",
         "When the user has to run commands themselves, give them in ONE fenced sh block that copies and runs as is: bare commands only, no $ prompt, no comments, no diff or UI characters inside; multi-line text goes in a heredoc. Explain outside the block.",
         "Show file paths clearly when working with files",
+        *model_notes(config.model_name),
     ]
     prompt = (
         "You are an expert coding assistant operating inside melon, a coding agent harness. You help users by reading "
