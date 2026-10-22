@@ -121,6 +121,7 @@ class ToolRegistry:
             elif name in REUSABLE and result.success and call_id:
                 self._answered[key] = (call_id, self._writes)
         self._note_file_state(name, params, cwd, result)
+        await self._attach_diagnostics(name, result, cwd)
         self._cap_output(result, name)
         # after the cap, so a 2000-line read can't cut the folder's rules off its tail
         if name in {"read_file", "edit", "write_file"} and result.success and (path := self._target(params, cwd)):
@@ -137,6 +138,20 @@ class ToolRegistry:
                 error=(result.error or "")[:200] if not result.success else None,
             )
         return result
+
+    async def _attach_diagnostics(self, name: str, result: ToolResult, cwd) -> None:
+        """A broken edit is reported in its own result, while the model still has the change in mind (utils/diagnostics.py)."""
+        diff = result.diff
+        if name not in {"edit", "write_file"} or not result.success or diff is None or diff.new_content is None:
+            return
+        from utils.diagnostics import new_problems, render
+
+        found = await new_problems(Path(diff.path), None if diff.is_new_file else diff.old_content, diff.new_content, Path(cwd))
+        if found:
+            rel = os.path.relpath(diff.path, cwd)
+            result.output = (result.output or "") + render(rel, found)
+            if self.tracer:
+                self.tracer.emit("diagnostics", path=rel, count=len(found))
 
     def _repeat(self, name: str, key: tuple) -> ToolResult | None:
         """The same lookup again, with nothing written since and the first answer still in
