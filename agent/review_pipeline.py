@@ -35,7 +35,10 @@ runtime and say what the user sees then (a button disabled while isFetching, and
 Compare the new version of each component, page or function with the old one (`git show HEAD:<file>` or the base revision): list what the
 old one offered (actions, states, copy, guards, escape hatches) and say what the user can no longer do. A one-time secret or irreversible
 result that a stray click, Escape or backdrop tap can dismiss is a defect. Check wrong operands, inverted conditions, stale state, async ordering, races, leaks, off-by-one, null paths. Read what the diff deleted
-before saying a replacement is missing: the new code often leans on a library doing that work."""),
+before saying a replacement is missing: the new code often leans on a library doing that work.
+Removed behaviour: for every line the diff deletes or replaces, name the invariant it enforced (a guard, an error path, a validation, a
+cleanup, an early exit), then find where the new code establishes it again. If you cannot find it, that is a finding. Also ask what a
+line that moved into a new branch does now when the branch is not taken."""),
     ("approach", """LENS: approach. Judge the change the way the owner of this system would, not line by line. Is this the right fix at the right layer,
 or a patch on the symptom while the cause stays (a guard in one caller when every caller shares the broken function)? Is there a simpler
 change that does the same job (delete the branch, reuse the helper that already exists a few files over, change the data instead of the code)?
@@ -169,7 +172,7 @@ spend their effort there instead of re-reading everything.
 {context}DIFF ({files}):
 {diff}
 
-List the specific things in THIS change that could break something: a changed condition, a moved or removed branch, a new awaited call or
+List the specific things in THIS change that could break something: a changed condition, a deleted or moved guard, error path or exit whose job the new code may not do any more, a new awaited call or
 write, a changed signature or shape someone else consumes, a command that now runs somewhere it did not, a rule from the project notes it may break.
 You may grep or read a file to see who consumes something, but do not review. Skip what only moves text around (comments, copy, formatting).
 Reply with at most 6 lines, EXACTLY:
