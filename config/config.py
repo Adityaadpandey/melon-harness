@@ -12,7 +12,9 @@ DEFAULT_BASE_URL = "https://api.commandcode.ai/provider/v1"
 
 class ModelConfig(BaseModel):
     name: str = "codex/gpt-5.6-luna"  # your ChatGPT/Codex login; override per project/profile or with -m
-    temperature: float = Field(default=1, ge=0.0, le=2.0)
+    # None: the model family's tested setting (client/llm_client.py SAMPLING), else the server's own default,
+    # which on vLLM/SGLang is the model author's generation_config. Set a number to force one for every model.
+    temperature: float | None = Field(default=None, ge=0.0, le=2.0)
     context_window: int = 256_000
     # sent as max_tokens to OpenAI-style servers: DeepSeek defaults to 4k, which silently cut long writes in half.
     # Shrunk to the room left in the context; a server that wants less says so and gets its own number next time.
@@ -301,11 +303,11 @@ class Config(BaseModel):
         self.model.name = value
 
     @property
-    def temperature(self) -> float:
+    def temperature(self) -> float | None:
         return self.model.temperature
 
     @temperature.setter
-    def temperature(self, value: float) -> None:
+    def temperature(self, value: float | None) -> None:
         self.model.temperature = value
 
     def missing_key(self, model_id: str | None = None) -> str | None:

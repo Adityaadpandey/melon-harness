@@ -96,6 +96,7 @@ class OpenAIChatAdapter:
         tools: list[dict[str, Any]] | None,
         temperature: float | None,
         max_tokens: int | None = None,
+        top_p: float | None = None,
     ) -> AsyncGenerator[StreamEvent, None]:
         kwargs: dict[str, Any] = {
             "model": model,
@@ -107,6 +108,8 @@ class OpenAIChatAdapter:
             kwargs["temperature"] = temperature
         if max_tokens:
             kwargs["max_tokens"] = max_tokens
+        if top_p is not None:
+            kwargs["top_p"] = top_p
         if tools:
             kwargs["tools"] = _tool_defs(tools)
             kwargs["tool_choice"] = "auto"

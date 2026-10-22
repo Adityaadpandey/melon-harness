@@ -701,7 +701,7 @@ class CLI:
         elif command == "/config":
             console.print("\n[bold]Current Configuration[/bold]")
             console.print(f"  Model: {self.config.model_name}")
-            console.print(f"  Temperature: {self.config.temperature}")
+            console.print(f"  Temperature: {self.config.temperature if self.config.temperature is not None else 'per model family'}")
             console.print(f"  Approval: {self.config.approval.value}")
             console.print(f"  Working Dir: {self.config.cwd}")
             console.print(f"  Max Turns: {self.config.max_turns}")

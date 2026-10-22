@@ -193,6 +193,7 @@ async def test_permanent_error_does_not_fall_back(tmp_path):
 
 async def test_temperature_is_dropped_once_then_remembered(tmp_path):
     c, fake = make_client(tmp_path, {"m1": [classify(400, "temperature unsupported"), "ok", "ok2"]})
+    c.config.temperature = 0.7
     await collect(c)
     await collect(c)
     assert [t is None for _, t in fake.calls] == [False, True, True]
@@ -323,3 +324,12 @@ def test_context_overflow_is_recognised_across_providers(msg, overflow):
 
 def test_quota_text_blocks_the_provider_whatever_the_status():
     assert classify(403, "You exceeded your current quota").quota
+
+
+def test_sampling_follows_the_family_unless_a_temperature_is_set():
+    from client.llm_client import sampling
+
+    assert sampling("Qwen/Qwen3.8-Max", None) == (0.55, 1.0)
+    assert sampling("moonshotai/Kimi-K3", None) == (1.0, 0.95)
+    assert sampling("deepseek/deepseek-v4-pro", None) == (None, None)  # the server's own default
+    assert sampling("Qwen/Qwen3.8-Max", 0.2) == (0.2, None)

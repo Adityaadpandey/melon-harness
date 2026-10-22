@@ -18,6 +18,19 @@ from config.loader import get_data_dir
 from utils.trace import Tracer
 
 
+# Sampling each open-model family was tuned for, from opencode's per-provider defaults (first match on the model id
+# wins). Qwen drifts and repeats itself at 1.0; Kimi, MiniMax and Gemini want top_p 0.95 with it.
+SAMPLING = [("qwen", 0.55, 1.0), ("kimi", 1.0, 0.95), ("minimax", 1.0, 0.95), ("gemini", 1.0, 0.95), ("glm", 1.0, None)]
+
+
+def sampling(model: str, configured: float | None) -> tuple[float | None, float | None]:
+    """(temperature, top_p) for one call: a configured temperature wins, then the family table, then the server default."""
+    if configured is not None:
+        return configured, None
+    low = model.lower()
+    return next(((t, p) for key, t, p in SAMPLING if key in low), (None, None))
+
+
 class LLMClient:
     """One entry point for every model call. Picks candidates through the
     router, talks to the right wire protocol, retries transient failures with
@@ -142,7 +155,7 @@ class LLMClient:
             return
         adapter = self._direct_adapter(direct[0]) if direct else self._adapter(info.endpoint)
         wire_model = direct[1] if direct else model  # the provider wants its own name, without our "groq:" prefix
-        temperature = None if model in self._no_temperature else self.config.temperature
+        temperature, top_p = (None, None) if model in self._no_temperature else sampling(model, self.config.temperature)
         if hasattr(adapter, "_effort"):  # Codex only: summaries never need deep thinking, everything else follows the request
             adapter._effort = "low" if role == "summarize" else (self.config.reasoning_effort or self.auto_effort)
 
@@ -151,8 +164,9 @@ class LLMClient:
             first_token: float | None = None
             text, calls, usage, finish, reasoning = "", [], None, None, None
             cap = self._output_cap(model, info.context_length, est_tokens) if isinstance(adapter, OpenAIChatAdapter) else None
+            extra = {k: v for k, v in (("max_tokens", cap), ("top_p", top_p)) if v and isinstance(adapter, OpenAIChatAdapter)}
             try:
-                async for ev in adapter.stream(wire_model, messages, tools, temperature, **({"max_tokens": cap} if cap else {})):
+                async for ev in adapter.stream(wire_model, messages, tools, temperature, **extra):
                     if first_token is None and ev.type in (
                         StreamEventType.TEXT_DELTA,
                         StreamEventType.TOOL_CALL_START,
@@ -199,9 +213,9 @@ class LLMClient:
                     # "valid range of max_tokens is [1, 8192]" -> 8192; no usable number -> stop sending one
                     self._max_out[model] = max([n for n in map(int, re.findall(r"\d+", str(e))) if 1024 <= n < cap], default=0)
                     continue
-                if e.drop_temperature and temperature is not None and not collected.emitted:
+                if e.drop_temperature and (temperature is not None or top_p) and not collected.emitted:
                     self._no_temperature.add(model)
-                    temperature = None
+                    temperature, top_p = None, None
                     continue
                 if e.retry and attempt < self._max_retries and not collected.emitted:
                     yield StreamEvent(type=StreamEventType.NOTICE, notice=f"{model} didn't answer ({str(e)[:80]}), trying again ({attempt + 1}/{self._max_retries})")
