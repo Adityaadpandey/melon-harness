@@ -4,7 +4,7 @@
 
 <p align="center">
   <img alt="python" src="https://img.shields.io/badge/python-3-c3a6ff?style=flat-square">
-  <img alt="tests" src="https://img.shields.io/badge/tests-453%20passing-8ff0c4?style=flat-square">
+  <img alt="tests" src="https://img.shields.io/badge/tests-529%20passing-8ff0c4?style=flat-square">
   <img alt="models" src="https://img.shields.io/badge/models-Claude%20%C2%B7%20GPT%20%C2%B7%20Codex%20%C2%B7%20DeepSeek-ff8fc7?style=flat-square">
   <img alt="sandbox" src="https://img.shields.io/badge/sandbox-macOS-ffd28f?style=flat-square">
 </p>
@@ -67,6 +67,8 @@ don't like what it did.
 | Die when a provider's quota runs out | **Fail over** to another provider and tell you |
 | Forget what you told them | Turn your corrections into **lessons in your own `AGENTS.md`** |
 | Break an old caller while "refactoring" | **Signature guard** sends it back if a public parameter disappeared |
+| Hand a weak model the same rails as a strong one | **Repair what open models get almost right**: `Read` becomes `read_file`, `old_str` becomes `old_string`, a stringified edit list is parsed, a cut-off reply is continued |
+| Find a type error at the end of the run | **Per-edit diagnostics**: the project's own `tsserver`, `ruff`, `gofmt`, `node --check` report only the problems that edit introduced |
 
 And one rule under all of it: **every token and every tool call should earn its place.**
 
@@ -96,10 +98,10 @@ Measured from this repo. Where a figure is an estimate, it says so.
 
 <table>
 <tr>
-<td align="center"><h3>~0.7k</h3>tokens in the system prompt<br><sub>was ~3k, <b>4x smaller</b></sub></td>
+<td align="center"><h3>~3-4k</h3>tokens in the system prompt<br><sub>3k for a 32k-window model, 4.1k with skills</sub></td>
 <td align="center"><h3>87%</h3>of input from cache<br><sub>11-task benchmark above</sub></td>
 <td align="center"><h3>5.6s</h3>cold search index of a 24k-file repo<br><sub>was 11.1s; warm: 1.2s</sub></td>
-<td align="center"><h3>453</h3>offline tests<br><sub>all passing in ~30s</sub></td>
+<td align="center"><h3>529</h3>offline tests<br><sub>all passing in ~30s</sub></td>
 </tr>
 <tr>
 <td align="center"><h3>~22%</h3>of tool output still in context<br><sub>last request of a 32-call replay</sub></td>
@@ -407,13 +409,22 @@ flowchart LR
     ARCH -. recall_result .-> CTX
 ```
 
-- **Tiny system prompt.** About 0.7k tokens (it was ~3k). Always-on skills add about 450 more.
+- **Small system prompt.** About 3k tokens for a small-window model, 4.1k with the skill list (measured). The skill list is capped at
+  ~1% of the context window and shortens its descriptions to fit. Open models get a few extra rules for their known habits.
 - **Prompt caching that actually hits.** Claude calls cache the system prompt and the conversation prefix. The Codex backend only
   caches when `session_id` and `prompt_cache_key` are sent, so melon sends both. A model that isn't caching triggers a warning, and
   `/cost` says why a miss happened (idle gap, model changed, prefix changed).
 - **Incremental reads.** Only new lines, or a diff since the last copy the model saw.
 - **Output caps and archive.** Over-broad `grep` collapses into a summary; every result is capped; the full text is recallable.
 - **Pruning inside a task.** Old results are dropped once the prompt passes 180k tokens, with a hint of what was cleared.
+- **Compaction that reuses the cache.** With no separate summarizer configured, the summary is asked of the same model on the exact
+  prefix the loop just sent (system prompt, tools, older messages) plus one text-only instruction, so the provider serves it from
+  cache and every tool result is seen whole. The trimmed copy is the fallback, and is used after an idle pause (cold cache). If the
+  context refills within 3 turns of each of 3 compactions in a row, melon prunes old output and stops summarising for 10 turns.
+- **Thinking stays cache-stable.** A model's reasoning goes back on every turn of the model that wrote it and is dropped only when
+  the model changes, so the history only grows and the cache keeps hitting.
+- **Reminders, not rewrites.** Files changed on disk by something else, a todo list idle for 10 rounds, and text that looks like a
+  tool call are flagged with a short `<system-reminder>` message.
 - **Compaction that keeps facts.** A summary with a `FILES AND CODE` section of verbatim snippets, every user message kept
   (lists and `file:line` whole), an errors-and-fixes section, and the replaced messages saved to
   `transcripts/<session>.jsonl` so nothing is truly lost. Terminal noise is stripped for free before the summarizer sees it.
@@ -638,6 +649,13 @@ flowchart LR
 - **Difficulty tiers.** Each request is classified without a model call: small, well-defined work goes `fast`; debugging,
   concurrency, security, architecture and multi-file work go `strong`. A failed repair or a loop escalates to `strong`. `-m` or
   `/model` pins a model. `/effort low|medium|high|auto` sets how hard it thinks.
+- **Per-family sampling and output caps.** Temperature and top_p follow the model family unless you set `temperature`. `max_tokens` is
+  clamped to the window and learned from a provider's 400 message; a reply cut off by the limit is continued, and a tool call cut
+  mid-arguments is never run.
+- **Thinking switches.** Easy requests turn thinking down, hard ones up, in each server's own wording: DeepSeek `thinking.type`,
+  z.ai `thinking` (with `clear_thinking` off), OpenRouter `reasoning.effort`, Together `reasoning.enabled`, `chat_template_kwargs` on
+  your own vLLM/SGLang/LM Studio, `reasoning_effort` for gpt-oss. A server that refuses the switch gets the request again without
+  it. Nothing is sent to the Command Code gateway, which ignores them (probed).
 - `python scripts/probe_models.py --json out.json` shows which models your key can really call.
 - **Any provider, directly.** `provider:model` skips the gateway and calls that API with its own key:
   `melon -m groq:llama-3.3-70b`, `-m anthropic:claude-sonnet-5-5`, `-m ollama:qwen3:8b`. Built in: openai, anthropic, gemini,
@@ -761,14 +779,14 @@ Commands: `/help /clear /compact /context /cost /model /effort /approval /plan /
   `stop` (exit 2 sends stderr back and keeps the agent working), `subagent_stop`. Gated by project trust.
 - **Custom slash commands:** markdown files in `.claude/commands` and `.melon/commands` (repo and home); folders become
   `name:sub`, descriptions come from front matter and show in tab completion. Prompt templates support `$1`, `$@`, `${1:-default}`.
-- **Built-in tools:** `read_file`, `write_file`, `edit_file` (multi-edit, fuzzy match, CRLF-preserving), `list_dir`, `glob`, `grep`,
-  `search`, `outline`, `git`, `graph`, `shell`, `web_search`, `web_fetch`, `memory`, `notes`, `todo`, `ask_user`, `advisor`,
+- **Built-in tools:** `read_file`, `write_file`, `edit` (multi-edit, fuzzy match, CRLF- and BOM-preserving, line-number prefixes stripped), `list_dir`, `glob`, `grep`,
+  `search`, `outline`, `git`, `graph`, `shell`, `web_search`, `web_fetch`, `memory`, `notes`, `todos`, `ask_user`, `advisor`,
   `recall_result`, `use_skill`, `parallel_tasks`.
 
 ## Tests and benchmarks
 
 ```bash
-.venv/bin/python -m pytest -q                       # 453 offline unit tests
+.venv/bin/python -m pytest -q                       # 529 offline unit tests
 .venv/bin/python -m bench.run --model claude-haiku-5-5 --runs 3 --label mine
 .venv/bin/python -m bench.run --mode parallel --model deepseek/deepseek-v4.1-flash --jobs 1 --runs 3
 .venv/bin/python -m bench.run --agent claude-code --model claude-sonnet-5-5   # same tasks and hidden tests, driven by `claude -p`
@@ -788,7 +806,9 @@ Said plainly, so you know what you are getting:
 
 - No image input (pasting a screenshot).
 - The OS sandbox is macOS only; on Linux you get the confined tools and shell path checks, not the kernel layer.
-- `/rewind` restores files to before one of the last 20 file-changing requests, but it does not rewind the conversation to an earlier message. No LSP diagnostics, no IDE extension.
+- `/rewind` restores files to before one of the last 20 file-changing requests, but it does not rewind the conversation to an earlier message. No IDE extension. Diagnostics come from `tsserver` for TypeScript and quick checkers elsewhere, not a general language server.
+- The last round of harness changes (open-model prompt notes, reminders, thinking switches, tsserver diagnostics, cache-reusing
+  compaction) is covered by unit tests but not yet benchmarked.
 - Several results above are tuned on one real repo; treat the defaults as measured there, not universal.
 
 ### On "better than the others"
