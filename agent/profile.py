@@ -21,7 +21,7 @@ JS_FRAMEWORKS = {
     "vitest": "Vitest", "jest": "Jest", "playwright": "Playwright", "@playwright/test": "Playwright",
 }
 PY_FRAMEWORKS = {"django": "Django", "fastapi": "FastAPI", "flask": "Flask", "sqlalchemy": "SQLAlchemy", "pytest": "pytest", "pydantic": "Pydantic"}
-SCRIPTS = ("test", "lint", "typecheck", "check", "build")
+SCRIPTS = ("test", "lint", "typecheck", "check")  # no build: a build is the user's to run, listing it invites the slow call
 RULE_FILES = ("AGENTS.md", "CLAUDE.md", "CONTRIBUTING.md")
 MONOREPO = (("pnpm-workspace.yaml", "pnpm workspace"), ("turbo.json", "turbo"), ("nx.json", "nx"), ("lerna.json", "lerna"))
 
