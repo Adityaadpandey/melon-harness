@@ -94,6 +94,7 @@ SECURITY_HINT = re.compile(r"\b(auth\w*|token|password|passwd|secret|permission\
                            r"role|admin|rbac|acl|sanitiz\w*|escape|exec|eval|innerHTML|queryRaw|\$queryRaw|SELECT|INSERT|DELETE)\b", re.I)
 BIG_DIFF_LINES = 200
 GAP_MIN_LINES = 80
+LIGHT_TURNS = 12  # a small change has little to read; a reviewer that needs more than this is wandering
 SMALL_DIFF_LINES = 80  # one file this small gets one reviewer: a second one re-reads the same few lines
 
 REVIEWER_PROMPT = """You are a principal engineer reviewing {scope}. You did not write it, and you will be accountable if it ships broken.
@@ -204,6 +205,12 @@ async def triage(config, role: str, diff: str, files: list[str], context: str) -
     reply = await ask(config, TRIAGE_PROMPT.format(context=context, files=", ".join(files[:25]), diff=diff), role, max_turns=4,
                       max_tokens=min(config.review_pipeline_tokens, 25_000), disabled_skills=["code-review"])
     return parse_triage(reply)
+
+
+def is_light(diff: str, files: list[str], secure: bool) -> bool:
+    """A change this small needs no plan: up to two files, under SMALL_DIFF_LINES of diff, nothing touching auth, queries or money.
+    Example: a 16-line edit to one workflow file gets one reviewer, not a triage call plus several."""
+    return len(files) <= 2 and diff.count("\n") < SMALL_DIFF_LINES and not secure
 
 
 def pick_lenses(config, diff: str, files: list[str], context: str) -> list[tuple[str, str]]:
@@ -731,7 +738,12 @@ async def _run_review(config, request: str, target) -> AsyncGenerator[tuple[str,
     context = checked + review_memory.render(cwd) + review_context(config, request, files)
     context = context + "\n\n" if context else ""
     lenses = pick_lenses(config, whole, files, context) if len(groups) == 1 else [one_reviewer(context, bool(SECURITY_HINT.search(" ".join(files) + "\n" + whole)))]
-    if config.review_lenses == 0 and len(groups) == 1:
+    light = False
+    if config.review_lenses == 0 and len(groups) == 1 and is_light(whole, files, bool(SECURITY_HINT.search(" ".join(files) + "\n" + whole))):
+        light = True
+        lenses = [one_reviewer(context, False)]
+        yield "notice", "Small change: one reviewer, no triage"
+    elif config.review_lenses == 0 and len(groups) == 1:
         checks = await triage(config, role, whole, files, context)
         if checks:
             lenses = triage_lenses(checks)
@@ -769,7 +781,7 @@ async def _run_review(config, request: str, target) -> AsyncGenerator[tuple[str,
     summaries: list[str] = []
     strengths: list[str] = []
     aside: list[str] = []
-    replies = await asyncio.gather(*(review(n, fs, lens, 30 if lname in ("review", "contracts") else 20) for n, fs in groups for lname, lens in lenses))
+    replies = await asyncio.gather(*(review(n, fs, lens, LIGHT_TURNS if light else 30 if lname in ("review", "contracts") else 20) for n, fs in groups for lname, lens in lenses))
     review_tokens = sum(_spent_log)
     if all(r is None for r in replies):
         yield "notice", "The reviewer gave no answer; reviewing without the pipeline"
