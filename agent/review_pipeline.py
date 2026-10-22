@@ -91,6 +91,7 @@ SECURITY_HINT = re.compile(r"\b(auth\w*|token|password|passwd|secret|permission\
                            r"role|admin|rbac|acl|sanitiz\w*|escape|exec|eval|innerHTML|queryRaw|\$queryRaw|SELECT|INSERT|DELETE)\b", re.I)
 BIG_DIFF_LINES = 200
 GAP_MIN_LINES = 80
+SMALL_DIFF_LINES = 80  # one file this small gets one reviewer: a second one re-reads the same few lines
 
 REVIEWER_PROMPT = """You are a principal engineer reviewing {scope}. You did not write it, and you will be accountable if it ships broken.
 The request: {request}
@@ -167,6 +168,8 @@ def pick_lenses(config, diff: str, files: list[str], context: str) -> list[tuple
     (security is appended when auth, queries or money are touched); 1 pins the behaviour angle alone."""
     secure = bool(SECURITY_HINT.search(" ".join(files) + "\n" + diff))
     if config.review_lenses == 0:
+        if len(files) == 1 and diff.count("\n") < SMALL_DIFF_LINES:
+            return [one_reviewer(context, secure)]
         return [one_reviewer(context, secure), CONTRACT_LENS]
     picked = LENSES[: config.review_lenses]
     if config.review_lenses != 1 and secure:
