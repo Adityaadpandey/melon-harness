@@ -292,7 +292,7 @@ async def test_thinking_is_collected_from_the_stream():
     assert evs[-1].reasoning == "check the callers first"
 
 
-def test_thinking_goes_back_only_to_its_own_model_and_only_for_the_current_request():
+def test_thinking_goes_back_only_to_its_own_model_and_the_history_stays_append_only():
     from client.adapters import _wire_messages
 
     msgs = [
@@ -303,7 +303,9 @@ def test_thinking_goes_back_only_to_its_own_model_and_only_for_the_current_reque
         {"role": "tool", "tool_call_id": "c1", "content": "x"},
     ]
     same = _wire_messages(msgs, "deepseek-v4")
-    assert "reasoning_content" not in same[1] and same[3]["reasoning_content"] == "plan"
+    assert same[1]["reasoning_content"] == "old" and same[3]["reasoning_content"] == "plan"
+    # a harness note (a user message) must not rewrite earlier turns: that would miss the cache from there on
+    assert _wire_messages(msgs + [{"role": "user", "content": "<system-reminder>x</system-reminder>"}], "deepseek-v4")[:5] == same
     assert not any("reasoning_model" in m for m in same)  # our bookkeeping never reaches the server
     assert "reasoning_content" not in _wire_messages(msgs, "kimi-k3")[3]  # another model can't use it
     assert msgs[3]["reasoning_model"] == "deepseek-v4"  # the stored history is not modified

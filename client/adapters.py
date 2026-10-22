@@ -46,16 +46,16 @@ REASONING_FIELDS = ("reasoning_content", "reasoning", "reasoning_text")
 
 
 def _wire_messages(messages: list[dict[str, Any]], model: str) -> list[dict[str, Any]]:
-    """History as this server should see it. Thinking goes back only to the model that wrote it, and only for the
-    current request (after the last user message): DeepSeek, Kimi and GLM lose the thread of a tool loop, or answer
-    400, without it, while older thinking is dead weight and another model can't read it anyway."""
-    last_user = max((i for i, m in enumerate(messages) if m.get("role") == "user"), default=-1)
+    """History as this server should see it. Thinking goes back to the model that wrote it, on every turn: DeepSeek,
+    Kimi and GLM lose the thread of a tool loop, or answer 400, without it. It is never dropped by position, because
+    every harness note is a user message and dropping older thinking there rewrote the history and missed the prompt
+    cache from that point on. Another model can't read it, so a switch drops it."""
     out = []
-    for i, m in enumerate(messages):
+    for m in messages:
         if "reasoning_model" in m:
             m = dict(m)
             by = m.pop("reasoning_model")
-            if i < last_user or not (by == model or by.endswith(":" + model)):
+            if not (by == model or by.endswith(":" + model)):
                 m.pop("reasoning_content", None)
         out.append(m)
     return out
