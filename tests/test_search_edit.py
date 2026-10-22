@@ -277,3 +277,20 @@ def test_a_report_s_missing_paths_are_flagged_with_the_real_file_of_that_name(tm
     assert "apps/web/src/info/Rows.tsx: not on disk; locate it" in notes
     assert "Page.tsx" not in notes and "example.com" not in notes
     assert check_paths(tmp_path, "all good: apps/web/src/app/(detail)/[id]/Page.tsx") == ""
+
+
+def test_edit_copied_with_read_file_line_numbers_still_applies():
+    from utils.edits import plan_edits
+
+    src = "def a():\n    return 1\n\n\ndef b():\n    return 2\n"
+    new, err, n = plan_edits(src, [("5|def b():\n6|    return 2", "5|def b():\n6|    return 3")])
+    assert err is None and new.endswith("def b():\n    return 3\n")
+    # code that merely starts with digits is not mistaken for a prefix
+    assert plan_edits("x = 1\n", [("1|x = 2", "y")])[1] is not None
+
+
+def test_byte_order_mark_does_not_block_a_first_line_edit():
+    from utils.edits import plan_edits
+
+    new, err, _ = plan_edits("﻿import os  \nprint(1)\n", [("import os\nprint(1)", "import sys\nprint(1)")])
+    assert err is None and new.startswith("\ufeffimport sys")  # matched, and the mark is kept

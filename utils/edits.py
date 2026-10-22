@@ -12,6 +12,18 @@ import re
 import unicodedata
 
 _TRANS = str.maketrans({"‘": "'", "’": "'", "“": '"', "”": '"', "–": "-", "—": "-", " ": " "})
+# "12|code" as read_file shows it (or "12\tcode", "12→code" from other tools): the number is not in the file
+_NUMBERED = re.compile(r"^\s*\d+(\||\t|→|│|:\s)")
+
+
+def _strip_numbers(text: str) -> str | None:
+    """old_string with read_file's line-number prefixes removed, or None when not every line carries one.
+    e.g. "4|    return 1\n5|}" -> "    return 1\n}"; ordinary code that merely starts with a number is left alone."""
+    lines = text.split("\n")
+    body = [ln for ln in lines if ln.strip()]
+    if not body or not all(_NUMBERED.match(ln) for ln in body):
+        return None
+    return "\n".join(_NUMBERED.sub("", ln, count=1) for ln in lines)
 
 
 def _norm(line: str) -> str:
@@ -68,7 +80,8 @@ def _hint(text: str, old: str) -> str:
 def plan_edits(content: str, edits: list[tuple[str, str]], replace_all: bool = False) -> tuple[str | None, str | None, int]:
     """Returns (new_content, error, replacements). Exactly one of the first two is None."""
     eol = "\r\n" if "\r\n" in content else "\n"
-    text = content.replace("\r\n", "\n")
+    bom = "\ufeff" if content.startswith("\ufeff") else ""  # invisible, never in old_string; kept on write
+    text = content.removeprefix(bom).replace("\r\n", "\n")
     spans: list[tuple[int, int, str]] = []
 
     for n, (old, new) in enumerate(edits, 1):
@@ -77,6 +90,10 @@ def plan_edits(content: str, edits: list[tuple[str, str]], replace_all: bool = F
         if not old:
             return None, f"{label}old_string is empty; use write_file to create or replace a file.", 0
         hits = [(i, i + len(old)) for i in _find_all(text, old)]
+        if not hits and (bare := _strip_numbers(old)) is not None:
+            # copied with the line numbers from read_file: drop them, and from new_string too when it carries them
+            old, new = bare, _strip_numbers(new) if _strip_numbers(new) is not None else new
+            hits = [(i, i + len(old)) for i in _find_all(text, old)]
         if not hits:
             hits = _fuzzy_span(text, old)
             if len(hits) > 1:
@@ -101,4 +118,4 @@ def plan_edits(content: str, edits: list[tuple[str, str]], replace_all: bool = F
         return None, "No change: old_string equals new_string.", 0
     if eol == "\r\n":
         out = out.replace("\n", "\r\n")
-    return out, None, len(spans)
+    return bom + out, None, len(spans)
