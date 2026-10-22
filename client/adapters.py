@@ -114,7 +114,9 @@ class OpenAIChatAdapter:
                     prompt_tokens=u.prompt_tokens or 0,
                     completion_tokens=u.completion_tokens or 0,
                     total_tokens=u.total_tokens or 0,
-                    cached_tokens=(getattr(details, "cached_tokens", 0) or 0),
+                    # OpenAI nests it; DeepSeek says prompt_cache_hit_tokens; Kimi puts cached_tokens at the top level
+                    cached_tokens=(getattr(details, "cached_tokens", 0) or getattr(u, "prompt_cache_hit_tokens", 0)
+                                   or getattr(u, "cached_tokens", 0) or 0),
                 )
             if not chunk.choices:
                 continue

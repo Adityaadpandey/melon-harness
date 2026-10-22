@@ -79,6 +79,19 @@ async def test_parallel_calls_without_an_index_stay_separate():
     ]
 
 
+@pytest.mark.parametrize("usage", [
+    NS(prompt_tokens=100, completion_tokens=5, total_tokens=105, prompt_tokens_details=NS(cached_tokens=80)),
+    NS(prompt_tokens=100, completion_tokens=5, total_tokens=105, prompt_cache_hit_tokens=80),  # DeepSeek
+    NS(prompt_tokens=100, completion_tokens=5, total_tokens=105, cached_tokens=80),  # Kimi
+])
+async def test_cache_hits_are_counted_on_every_provider(usage):
+    async def gen():
+        yield chunk(content="hi", finish="stop", usage=usage)
+
+    evs = [e async for e in OpenAIChatAdapter("k", "http://x")._consume(gen())]
+    assert evs[-1].usage.cached_tokens == 80
+
+
 @pytest.mark.parametrize(
     "status,msg,retry,fallback",
     [
