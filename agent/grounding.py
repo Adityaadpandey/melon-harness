@@ -8,6 +8,8 @@ import re
 from dataclasses import dataclass
 from pathlib import Path
 
+from agent.routing_policy import REVIEWY
+
 EXTS = (
     "ts|tsx|js|jsx|mjs|cjs|py|json|md|yml|yaml|toml|sql|prisma|css|scss|html|sh|go|rs|java|kt|swift|ejs|"
     "conf|tf|rb|php|c|h|cpp|vue|svelte"
@@ -105,11 +107,15 @@ _EDIT_VERBS = re.compile(
     r"split|convert|migrate|rewrite|patch|build|set up|wire)\b", re.I)
 _READONLY = re.compile(r"\b(read[- ]only|do not (modify|change|edit)|don't (modify|change|edit)|without (modifying|changing)|"
                        r"no (changes|edits)|just (explain|tell|show|answer)|investigate|explain|what is|where is|why)\b", re.I)
+_FIX_ASKED = re.compile(r"\b(fix|patch|apply|implement)\b", re.I)
 _SHELLISH = {"bash", "sh", "shell", "zsh", "console", "sql", "text", "txt", "output", "log", "diff", "http", "curl"}
 
 
 def wants_change(request: str) -> bool:
-    """Does the request ask for a change to files? Read-only questions must not be nudged to write."""
+    """Does the request ask for a change to files? Read-only questions must not be nudged to write.
+    "review the change i have" is a review: the word "change" there is the thing reviewed, not a verb. Only "review and fix" edits."""
+    if REVIEWY.search(request) and not _FIX_ASKED.search(request):
+        return False
     return bool(_EDIT_VERBS.search(request)) and not _READONLY.search(request)
 
 
