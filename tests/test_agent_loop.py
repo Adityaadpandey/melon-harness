@@ -657,3 +657,14 @@ async def test_a_cut_off_answer_is_asked_to_continue(cfg):
         agent.session.client = ScriptedClient([cut, text(", three.")])
         await run(agent)
         assert "cut off" in agent.session.client.requests[1][-1]["content"]
+
+
+async def test_a_claude_code_style_call_still_runs(cfg):
+    # `Read` with file_path is how Claude Code spells read_file(path); open models trained on its transcripts send it
+    (cfg.cwd / "a.txt").write_text("hello there")
+    async with Agent(cfg) as agent:
+        agent.session.client = ScriptedClient([call("Read", {"file_path": "a.txt"}), text("done")])
+        events = await run(agent)
+        done = next(e for e in events if e.type == AgentEventType.TOOL_CALL_COMPLETE)
+        assert done.data["success"] is True
+        assert "hello there" in next(m for m in agent.session.client.requests[1] if m["role"] == "tool")["content"]

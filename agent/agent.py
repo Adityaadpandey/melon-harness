@@ -705,6 +705,7 @@ class Agent:
                     usage = event.usage
                     cut = event.finish_reason in CUT_OFF
 
+            tool_calls = [self.session.tool_registry.repair(tc) for tc in tool_calls]  # `Read` -> read_file, old_str -> old_string
             if held and not overflowed:
                 yield AgentEvent.text_delta(interim_line(held) if tool_calls else held)
 

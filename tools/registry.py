@@ -89,6 +89,18 @@ class ToolRegistry:
 
         return tools
 
+    def repair(self, call):
+        """The model's call with a near-miss tool name or argument fixed (tools/repair.py), before anything acts on it."""
+        from client.response import ToolCall
+        from tools.repair import fix_arguments, fix_tool_name
+
+        name = fix_tool_name(call.name, {t.name for t in self.get_tools()})
+        tool = self.get(name) if name else None
+        args = call.arguments
+        if tool and isinstance(args, dict) and "raw_arguments" not in args:
+            args = fix_arguments(tool.schema, args)
+        return call if (name, args) == (call.name, call.arguments) else ToolCall(call.call_id, name, args)
+
     def get_schemas(self) -> list[dict[str, Any]]:
         return [tool.to_openai_schema() for tool in self.get_tools()]
 
@@ -246,7 +258,7 @@ class ToolRegistry:
         tool = self.get(name)
         if tool is None:
             result = ToolResult.error_result(
-                f"Unknown tool: {name}",
+                f"Unknown tool: {name}. The tools you can call are: {', '.join(sorted(t.name for t in self.get_tools()))}",
                 metadata={"tool_name": name},
             )
             await hook_system.trigger_after_tool(name, params, result)
@@ -265,7 +277,7 @@ class ToolRegistry:
         validation_errors = tool.validate_params(params)
         if validation_errors:
             result = ToolResult.error_result(
-                f"Invalid parameters: {'; '.join(validation_errors)}",
+                f"Invalid parameters: {'; '.join(validation_errors)}. Received: {json.dumps(params, default=str)[:300]}",
                 metadata={
                     "tool_name": name,
                     "validation_errors": validation_errors,
