@@ -529,7 +529,9 @@ class CodexResponsesAdapter:
                         arguments=parse_tool_call_arguments(it.get("arguments", "")),
                     ),
                 )
-            elif kind == "response.completed":
+            elif kind in ("response.completed", "response.incomplete"):
+                if kind == "response.incomplete" and (ev["response"].get("incomplete_details") or {}).get("reason") == "max_output_tokens":
+                    finish = "length"  # cut off: the agent must not run a half-written call
                 u = ev["response"].get("usage") or {}
                 cached = (u.get("input_tokens_details") or {}).get("cached_tokens", 0) or 0
                 usage = TokenUsage(

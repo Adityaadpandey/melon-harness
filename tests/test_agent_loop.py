@@ -628,3 +628,32 @@ async def test_review_with_one_single_agent_skips_the_parallel_reviewers(cfg, mo
         agent.session.client = ScriptedClient([text("No issues found.")])
         events = await run(agent, "pls review the last two commits with one single agent")
         assert any("one agent, as asked" in str(e.data) for e in events)
+
+
+async def test_a_cut_off_tool_call_is_not_run_and_the_model_is_told_why(cfg):
+    from client.response import StreamEvent, StreamEventType, ToolCall
+
+    cut = [
+        StreamEvent(type=StreamEventType.TOOL_CALL_COMPLETE,
+                    tool_call=ToolCall(call_id="c1", name="write_file", arguments={"path": "big.py", "content": "def half("})),
+        StreamEvent(type=StreamEventType.MESSAGE_COMPLETE, finish_reason="length"),
+    ]
+    async with Agent(cfg) as agent:
+        agent.session.client = ScriptedClient([cut, text("done")])
+        await run(agent)
+        assert not (cfg.cwd / "big.py").exists()  # half a file never reaches the disk
+        result = next(m for m in agent.session.client.requests[1] if m["role"] == "tool")
+        assert "output token limit" in result["content"]
+
+
+async def test_a_cut_off_answer_is_asked_to_continue(cfg):
+    from client.response import StreamEvent, StreamEventType, TextDelta
+
+    cut = [
+        StreamEvent(type=StreamEventType.TEXT_DELTA, text_delta=TextDelta("The three causes are: one, two")),
+        StreamEvent(type=StreamEventType.MESSAGE_COMPLETE, finish_reason="length"),
+    ]
+    async with Agent(cfg) as agent:
+        agent.session.client = ScriptedClient([cut, text(", three.")])
+        await run(agent)
+        assert "cut off" in agent.session.client.requests[1][-1]["content"]

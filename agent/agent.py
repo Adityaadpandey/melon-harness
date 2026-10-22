@@ -67,6 +67,11 @@ async def _within(seconds: float, stream):
 DOC_SUFFIX = (".md", ".mdx", ".txt", ".rst")
 REVIEW_NO_WORKERS = ("parallel_tasks runs coding workers that edit files in their own worktrees; a review only reads. "
                      "Read the files yourself, or use subagent_investigator for a read-only question.")
+CUT_OFF = {"length", "max_tokens", "max_output_tokens"}  # finish reasons meaning "ran out of room", per protocol
+CUT_CALL = (
+    "Not run: your reply hit the output token limit, so this call's arguments may be truncated. Re-issue it in smaller "
+    "pieces: write a long file as a short first version and grow it with edits, or split one big edit into several."
+)
 OVERFLOW = re.compile(r"context[_ ](length|window)|maximum context|prompt is too long|too many tokens|exceeds? the (model|context)|input (is )?too long", re.I)
 
 
@@ -253,6 +258,7 @@ class Agent:
         if self._broad:
             message_for_model += f"\n\n[{SWEEP}]"
         self._sweep_pushed = 0
+        self._cut_continues = 0  # replies cut off at the output limit that were asked to carry on
         self.session.context_manager.add_user_message(message_for_model)
         self._unsent = ""
 
@@ -657,6 +663,7 @@ class Agent:
 
             tool_calls: list[ToolCall] = []
             usage: TokenUsage | None = None
+            cut = False  # the reply stopped at the output token limit, not because the model was done
             failed = False
             overflowed = False
             held, streaming = "", False  # text waits until we know whether tool calls follow (then it shows as one line)
@@ -696,6 +703,7 @@ class Agent:
                     break
                 elif event.type == StreamEventType.MESSAGE_COMPLETE:
                     usage = event.usage
+                    cut = event.finish_reason in CUT_OFF
 
             if held and not overflowed:
                 yield AgentEvent.text_delta(interim_line(held) if tool_calls else held)
@@ -748,6 +756,12 @@ class Agent:
                     self.session.context_manager.set_latest_usage(usage)
                     self.session.context_manager.add_usage(usage)
 
+                if cut and self._cut_continues < 2:
+                    self._cut_continues += 1
+                    self.session.context_manager.add_user_message(
+                        "Your last reply was cut off by the output token limit. Continue exactly where it stopped, without repeating what you already wrote."
+                    )
+                    continue
                 left = unfinished(self.session.tool_registry.get("todos")) if self._broad else []
                 if left and self._sweep_pushed < 2:
                     # a sweep that ends with open steps stops after the first few files, which is what this guards against
@@ -762,11 +776,17 @@ class Agent:
 
             tool_call_results: list[ToolResultMessage] = []
 
-            async for item in self._run_tool_calls(tool_calls):
-                if isinstance(item, AgentEvent):
-                    yield item
-                else:
-                    tool_call_results.append(item)
+            if cut:
+                # the last call's arguments are probably truncated: running it would write half a file, and "not valid JSON"
+                # made the model resend the same oversized call. Run none of them and say why.
+                yield AgentEvent.notice("The reply hit the output token limit; its tool calls were not run")
+                tool_call_results = [ToolResultMessage(tc.call_id, CUT_CALL, is_error=True) for tc in tool_calls]
+            else:
+                async for item in self._run_tool_calls(tool_calls):
+                    if isinstance(item, AgentEvent):
+                        yield item
+                    else:
+                        tool_call_results.append(item)
 
             for tool_result in tool_call_results:
                 self.session.context_manager.add_tool_result(
