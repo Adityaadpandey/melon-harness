@@ -1,6 +1,6 @@
 # melon: everything we built and decided, written for the blog
 
-Raw material for a blog post (or three). Everything here comes from the git history (357 commits), the code, and the saved
+Raw material for a blog post (or three). Everything here comes from the git history (426 commits), the code, and the saved
 benchmark files. Where a number is an estimate it says so, and where something was never measured it says that too.
 
 Repo: https://github.com/Adityaadpandey/melon-harness (package `melon-harness`, command `melon`).
@@ -9,7 +9,7 @@ Repo: https://github.com/Adityaadpandey/melon-harness (package `melon-harness`, 
 
 ## 1. The one-paragraph story
 
-In nine days (2026-10-13 to 2026-10-21, 357 commits) one person built a terminal coding agent from an empty folder. It started as
+In ten days (2026-10-13 to 2026-10-22, 426 commits) one person built a terminal coding agent from an empty folder. It started as
 a way to get a strong harness for a real product repo (Tunyt), and it ended up being about one idea: **an agent should prove its
 work instead of announcing it.** Checks run on the changed files, a second model reviews the real diff, a third agent tries to
 disprove every finding, and every file path in the answer is looked up on disk. The rest (cheap context, a sandbox, routing,
@@ -18,13 +18,13 @@ learning from your corrections) exists to make that proof affordable and safe.
 **Possible titles**
 - "I built a coding agent in a week. The best part is the one that argues with itself."
 - "Agents say 'done'. Mine has to show its work."
-- "What 357 commits taught me about agent harnesses"
+- "What 426 commits taught me about agent harnesses"
 - "I benchmarked my homemade agent against Claude Code. It tied, and the misses taught me more than the wins."
 - "Every token should earn its place: building a coding agent that never sends the same thing twice"
 
 ## 2. The timeline
 
-Commits per day: Oct 13 (29), Oct 14 (96), Oct 15 (72), Oct 16 (36), Oct 17 (26), Oct 18 (19), Oct 19 (56), Oct 20 (20), Oct 21 (3).
+Commits per day: Oct 13 (29), Oct 14 (96), Oct 15 (72), Oct 16 (36), Oct 17 (26), Oct 18 (19), Oct 19 (56), Oct 20 (20), Oct 21 (3), Oct 22 (57).
 
 | Day | What happened |
 |---|---|
@@ -37,6 +37,7 @@ Commits per day: Oct 13 (29), Oct 14 (96), Oct 15 (72), Oct 16 (36), Oct 17 (26)
 | **Oct 19** | Context quality (compaction keeps every user message, a `FILES AND CODE` section, restores working files). Then **learning**: lessons from corrections, written into `AGENTS.md`, and `learn_import --deep` that mines old Claude Code sessions. A context-replay and review benchmark saved to disk. |
 | **Oct 20** | README rewritten with diagrams and decisions. The project's code, CLI text, env vars and folders all say melon (`melon --resume`, `MELON_PLAIN`, `~/.melon`, `.melon/`, `refs/melon/backup`). Then a day of **measuring and trimming**: transcript redraws, idle redraws, grep and search index speed. `resume` brings back the whole session. A head-to-head against Claude Code on 11 tasks, and the two things it taught: the **signature guard** and **fewer todo-only turns**. |
 | **Oct 21** | `pyproject.toml` and a `melon` command (`uv tool install -e .`), the API key is also read from melon's data folder so it works from any directory. README rewritten to be read, not just kept. |
+| **Oct 22** | A research day. Claude Code 2.1.301 (binary plus saved transcripts), pi and opencode were read side by side, and the best ideas were ported. **Provider robustness:** `max_tokens` sent and shrunk to the room left, a cut-off reply continued instead of its half-written tool call being run, `reasoning_content` passed back to the model that wrote it, almost-JSON arguments repaired, errors judged by their text, cache hits read from DeepSeek and Kimi's own fields, a different temperature per model family. **Tool results:** shell exit codes explained (grep finding nothing is not a failure), `Read` and `old_str` style near-misses fixed before they run, `12|` line-number prefixes tolerated in an edit, per-edit diagnostics (Python, JSON, TOML, JS, Go, and TypeScript through the project's own `tsserver`). **Context:** `<system-reminder>` notes, summary guards, a compaction thrash breaker, a compaction that reuses the cached prefix, per-provider thinking switches, per-model prompt notes, a skill list capped at 1% of the window. |
 
 ## 3. Architecture in plain words
 
@@ -144,6 +145,24 @@ every file line by line (now once per file, and a whole-file miss skips the line
 the search index was built line by line (11.1s to 5.6s). None of this is model quality, and all of it is what makes a long
 session feel fast.
 
+### 4.17 Borrow the boring parts of the biggest harness
+The Oct 22 research read the Claude Code binary for the things users never see: it clamps `max_tokens`, treats a cut-off reply
+as "continue" and never runs half a tool call, explains exit code 1 from `grep` as "no matches", puts harness notes in
+`<system-reminder>` tags after the history, and breaks a compaction loop that keeps refilling. None of it is glamorous, and all of
+it is what open models trip on first. The rule used to pick work: port what a weak model fails at, skip what only a strong model needs.
+
+### 4.18 Make the summary ride the cache
+Compaction used to send a trimmed copy of the conversation to a summarizer, which pays full price for a prompt the provider
+has never seen. Now, when no separate summarizer model is set, the same model is asked on the exact prefix the loop just sent
+(system prompt, tools, history) plus one text-only instruction. The provider serves almost all of it from cache, and the
+summary sees every tool result whole. The old trimmed path stays as the fallback and for a cold cache after an idle pause.
+
+### 4.19 Check what the edit changed, not what the file has
+A language server reports every problem in a file, including the ones that were there before. Diagnostics compare the old and
+new text and report only what the edit introduced, with its code (`TS2322`). The effect is that a model never goes off fixing
+lint nobody asked about. TypeScript uses the project's own `tsserver` kept running for the session: 3.7s for the first check on
+a large repo, instant after.
+
 ## 5. Mistakes, reversals and things we got wrong
 
 Good blog posts need these. All are visible in the commit history.
@@ -171,15 +190,22 @@ Good blog posts need these. All are visible in the commit history.
 - **A test suite that quietly doubled.** Creating an agent downloaded the real model list, taking the suite to 60s and failing
   a timing test. Tests now start with an empty cached catalog.
 - **"Verified" was true and still wrong.** `unique_by` dropped a parameter, every check passed, status said `verified` (4.14).
+- **A cache regression I introduced (Oct 22).** To keep thinking out of old turns, it was dropped from everything before the last
+  user message. But every reminder and nudge is itself a user message, so each one rewrote the history behind it and the prompt
+  cache missed from that point. Fix: keep thinking for the model that wrote it, drop only when the model changes.
+- **tsserver answers could cross.** A timeout used to kill the server, so a slow first check could leave a late reply to be read as
+  the answer to the next file. Now one reader task hands each reply to whoever asked by sequence number, and a timeout skips that one check.
+- **A switch the gateway ignores.** Thinking switches were written for six providers, then three tiny probe calls showed the
+  Command Code gateway accepts and ignores them. They apply to direct providers and your own servers only, and nothing is sent to the gateway.
 - **The benchmark's other miss was Claude Code's:** asked to delete the repository's history and data, it did.
 
 ## 6. Real numbers (and where each comes from)
 
 | Number | Source |
 |---|---|
-| 357 commits in 9 days; ~17k lines of Python and ~5.9k lines of tests in 56 test files | `git rev-list --count HEAD`, `wc -l` |
-| 453 offline tests passing in ~32s | `pytest -q`, run on 2026-10-21 |
-| System prompt ~3k → ~0.7k tokens (earlier: ~1,990 → ~1,140 in one pass) | README / commit messages |
+| 426 commits in 10 days; ~17k lines of Python and ~5.9k lines of tests in 56 test files | `git rev-list --count HEAD`, `wc -l` |
+| 529 offline tests passing in ~38s | `pytest -q`, run on 2026-10-22 |
+| System prompt on 2026-10-22, measured: ~3.0k tokens for a 32k-window model, 4.1k with the real skill list (was 4.7k before trimming), 4.3k for Kimi with its extra notes. The older "~0.7k" figure no longer matches the pi-mode default | token counts printed while building the model notes |
 | Search index of a large repo: 13.7s cold → 1.2s warm | commit message |
 | Context replay: 32 model calls, 64 tool runs, 453k chars of tool output; last request ~25k tokens (~22% of what was ingested) | `bench/results/context-replay-baseline.json` (estimate) |
 | ~75% of input served from cache in that replay | same file, estimated from shared prefix |
@@ -189,6 +215,7 @@ Good blog posts need these. All are visible in the commit history.
 | 3,000-line transcript redraw: ~109ms → ~3ms per streamed write | commit message, Oct 14 |
 | Review sub-agent spawning its own challenger: 80k tokens, 4 minutes | commit message, Oct 15 |
 | Skills list was half of a 26k-char system prompt | commit message, Oct 16 |
+| Kimi-K2.7-Code on the 11-task bench after the provider and tool-result work: 11/11 with 85 calls and 799k input tokens, against 7/11 with 45 calls and 233k on Oct 13. **Not a clean A/B**: the harness differed a lot between the runs, one run each. The open-model prompt notes, reminders, thinking switches, tsserver and cache-reusing compaction have unit tests but are not benchmarked. | `bench/results/` Kimi runs |
 | **melon vs Claude Code, 11 tasks, one run each: 10/11 and 10/11** | `bench/results/vs-melon-codex_gpt-5.6-luna.json`, `bench/results/vs-cc-claude-code.json` |
 | Prompt tokens 1.01M (melon) vs 1.31M (Claude Code); cached share 87% vs 76% | same files, summed |
 | Model calls 113 vs 42; wall time 355s vs 273s (melon is slower and chattier here) | same files, summed |
@@ -255,4 +282,11 @@ several runs per task, rerun the model comparison on a day with free quota, and 
 | Learning | `agent/learn.py`, `agent/learn_import.py` |
 | Parallel worktrees | `agent/orchestrator.py` |
 | Signature guard | `agent/verify.py` (wired in `agent/agent.py`) |
+| Tool-call repair (`Read` to `read_file`, `old_str` to `old_string`) | `tools/repair.py`, `client/response.py` |
+| Per-edit diagnostics, tsserver | `utils/diagnostics.py` |
+| Per-family sampling, `max_tokens`, thinking switches | `client/llm_client.py` |
+| Error classification by text | `client/errors.py` |
+| Cache-reusing compaction, summary guards | `context/compaction.py`, `agent/agent.py` (`_compact`) |
+| Per-model prompt notes, skill budget | `prompts/system.py` |
+| Shell exit-code meanings | `tools/builtin/shell.py` |
 | Benchmarks | `bench/context_replay.py`, `bench/review_bench.py`, `bench/run.py` (`--agent claude-code` for the head-to-head) |
