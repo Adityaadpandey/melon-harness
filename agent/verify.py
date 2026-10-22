@@ -59,9 +59,9 @@ async def snapshot(cwd: Path) -> dict[str, str] | None:
 def changed_since(before: dict[str, str] | None, after: dict[str, str] | None) -> list[str]:
     if before is None or after is None:
         return []
-    return sorted(p for p, h in after.items() if before.get(p) != h) + sorted(
-        p for p in before if p not in after  # reverted to clean = also a change
-    )
+    # a file that went from dirty to clean is not listed: after "commit this" every committed file looks reverted,
+    # and listing them sent a plain commit through checks, a review and a repair that edited code
+    return sorted(p for p, h in after.items() if before.get(p) != h)
 
 
 JS_SUFFIX = {".ts", ".tsx", ".js", ".jsx", ".mjs", ".cjs"}
