@@ -94,6 +94,13 @@ SECURITY_HINT = re.compile(r"\b(auth\w*|token|password|passwd|secret|permission\
                            r"role|admin|rbac|acl|sanitiz\w*|escape|exec|eval|innerHTML|queryRaw|\$queryRaw|SELECT|INSERT|DELETE)\b", re.I)
 BIG_DIFF_LINES = 200
 GAP_MIN_LINES = 80
+LIGHT_NOTE = """
+
+QUICK PASS: this change is small and the whole diff is above. Do not explore. Read the changed region's file once if you need the lines
+around it (and the script header or config it runs under), at most 3 reads in all, then answer. Cover: a failure the new code can cause
+(a command that can exit non-zero under the shell options in force, an await that can throw), anything it deletes or widens (a flag that
+removes more than before), a second copy of something the file already does, and a project rule the edit breaks (quote it).
+Where you did not check something, say so in the finding ("unverified: the script header was not read")."""
 LIGHT_TURNS = 12  # a small change has little to read; a reviewer that needs more than this is wandering
 SMALL_DIFF_LINES = 80  # one file this small gets one reviewer: a second one re-reads the same few lines
 
@@ -741,8 +748,8 @@ async def _run_review(config, request: str, target) -> AsyncGenerator[tuple[str,
     light = False
     if config.review_lenses == 0 and len(groups) == 1 and is_light(whole, files, bool(SECURITY_HINT.search(" ".join(files) + "\n" + whole))):
         light = True
-        lenses = [one_reviewer(context, False)]
-        yield "notice", "Small change: one reviewer, no triage"
+        lenses = [(n, t + LIGHT_NOTE) for n, t in [one_reviewer(context, False)]]
+        yield "notice", "Small change: one quick reviewer, no triage and no verifier"
     elif config.review_lenses == 0 and len(groups) == 1:
         checks = await triage(config, role, whole, files, context)
         if checks:
@@ -799,7 +806,7 @@ async def _run_review(config, request: str, target) -> AsyncGenerator[tuple[str,
     await fix_paths(found, cwd)
     found = drop_missing_files(found, files)
     to_check, extra = found[:MAX_VERIFIED], found[MAX_VERIFIED:]
-    if to_check:
+    if to_check and not light:  # a quick pass on a small change is shown as the reviewer's claims, marked unverified, like Claude Code's low effort
         yield "notice", f"Verifying {len(to_check)} finding(s); the verifier tries to refute and score each"
         await verify(config, role, to_check)
     found = merge_same_cause(to_check) + extra
