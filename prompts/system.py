@@ -152,7 +152,7 @@ def _get_skills_section(skills: list) -> str:
     )
     return f"""# Skills
 
-Playbooks you can load with the skill tool (listing one does not load it). Use a matching skill before acting.
+Playbooks you can load with the use_skill tool (listing one does not load it). Use a matching skill before acting.
 
 {rows}""" if rows else ""
 

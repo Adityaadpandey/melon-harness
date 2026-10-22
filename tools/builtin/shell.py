@@ -95,8 +95,8 @@ class ShellTool(Tool):
     name = "shell"
     kind = ToolKind.SHELL
     description = (
-        "Run a shell command (builds, tests, git, scripts). The working directory persists between calls; shell state "
-        "(variables, aliases) does not. Do not use it to read, search or edit files: read_file, grep, glob and edit "
+        "Run a shell command (builds, tests, git, scripts). Every call starts fresh in the workspace root (or `cwd`): a `cd`, "
+        "variables and aliases do not carry over to the next call. Do not use it to read, search or edit files: read_file, grep, glob and edit "
         "exist for that and are cheaper to review. Quote paths with spaces. Prefer absolute paths over cd. Chain "
         "dependent steps with && and put independent ones in separate parallel calls. Do not poll with sleep; a slow "
         "command moves to the background and you are told when it ends. Never skip git hooks or force-push unless asked, "

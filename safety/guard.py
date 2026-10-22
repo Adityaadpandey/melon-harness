@@ -46,7 +46,7 @@ def _tokens(command: str) -> list[str]:
 # tools that only look: they may open skill files outside the workspace, nothing else
 READ_TOOLS = {"read_file", "list_dir", "grep", "glob", "outline"}
 
-BUILTIN_TOOLS = {"read_file", "write_file", "edit", "shell", "list_dir", "grep", "search", "outline", "git", "glob", "web_search", "web_fetch", "todos", "memory", "use_skill", "graph", "parallel_tasks", "ask_user"}
+BUILTIN_TOOLS = {"read_file", "write_file", "edit", "shell", "list_dir", "grep", "search", "outline", "git", "glob", "web_search", "web_fetch", "todos", "memory", "use_skill", "graph", "parallel_tasks", "ask_user", "notes", "advisor", "recall_result"}
 
 
 def _in_skill_dir(path: str, config) -> bool:
@@ -71,7 +71,7 @@ def violation(tool_name: str, params: dict[str, Any], config) -> str | None:
                 if hit := is_forbidden_path(v, paths):
                     return f"path '{v}' matches protected pattern '{hit}'"
 
-    if tool_name not in BUILTIN_TOOLS:
+    if tool_name not in BUILTIN_TOOLS and not tool_name.startswith("subagent_"):
         # MCP and other external tools: scan every string argument for paths
         for v in params.values():
             if isinstance(v, str) and (why := ws.shell_violation(v)):
