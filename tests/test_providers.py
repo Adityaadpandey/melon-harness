@@ -64,6 +64,21 @@ async def test_openai_stream_accumulates_arguments_across_chunks():
     ]
 
 
+async def test_parallel_calls_without_an_index_stay_separate():
+    # some open-model servers send index=None on every delta; they used to merge into one garbled call
+    async def gen():
+        yield chunk(tcs=[tc(None, "c1", "read_file", '{"path": ')])
+        yield chunk(tcs=[tc(None, None, None, '"a"}')])
+        yield chunk(tcs=[tc(None, "c2", "grep", '{"pattern": "x"}')], finish="tool_calls")
+
+    evs = [e async for e in OpenAIChatAdapter("k", "http://x")._consume(gen())]
+    done = [e.tool_call for e in evs if e.type == StreamEventType.TOOL_CALL_COMPLETE]
+    assert [(c.call_id, c.name, c.arguments) for c in done] == [
+        ("c1", "read_file", {"path": "a"}),
+        ("c2", "grep", {"pattern": "x"}),
+    ]
+
+
 @pytest.mark.parametrize(
     "status,msg,retry,fallback",
     [

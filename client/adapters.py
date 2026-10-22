@@ -42,6 +42,20 @@ def _tool_defs(tools: list[dict[str, Any]]) -> list[dict[str, Any]]:
     ]
 
 
+def _call_slot(calls: dict[int, dict[str, str]], d) -> int:
+    """Which streamed tool call a delta belongs to. Most servers number them; some open-model servers send
+    index=None, and keying on that merged two parallel calls into one call with garbled arguments.
+    e.g. deltas (id=a, read), (args), (id=b, grep), (args) -> two calls, each with its own arguments."""
+    if d.index is not None:
+        return d.index
+    for slot, c in calls.items():
+        if d.id and c["id"] == d.id:
+            return slot
+    if d.id or not calls:
+        return max(calls, default=-1) + 1  # a new id starts a new call
+    return max(calls)  # no id and no index: a continuation of the latest call
+
+
 class OpenAIChatAdapter:
     endpoint = "/chat/completions"
 
@@ -113,7 +127,7 @@ class OpenAIChatAdapter:
                     type=StreamEventType.TEXT_DELTA, text_delta=TextDelta(delta.content)
                 )
             for d in delta.tool_calls or []:
-                call = calls.setdefault(d.index, {"id": "", "name": "", "arguments": ""})
+                call = calls.setdefault(_call_slot(calls, d), {"id": "", "name": "", "arguments": ""})
                 if d.id:
                     call["id"] = d.id
                 fn = d.function
