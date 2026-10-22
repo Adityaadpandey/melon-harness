@@ -3,6 +3,7 @@ from dataclasses import dataclass
 from enum import Enum
 from typing import Any
 import json
+import re
 
 
 @dataclass
@@ -83,10 +84,26 @@ class ToolResultMessage:
 
 
 def parse_tool_call_arguments(arguments_str: str) -> dict[str, Any]:
-    if not arguments_str:
+    """The model's argument string as a dict. Open models often send almost-JSON, so a few safe repairs run before
+    giving up: raw newlines or tabs inside strings, a regex backslash left unescaped (a pattern like \\d+ sent with one backslash), a ```json fence,
+    or the whole object encoded twice. Anything else comes back as raw_arguments and the model is asked to re-send."""
+    if not arguments_str or not arguments_str.strip():
         return {}
-
-    try:
-        return json.loads(arguments_str)
-    except json.JSONDecodeError:
-        return {"raw_arguments": arguments_str}
+    text = arguments_str.strip()
+    if text.startswith("```"):
+        text = re.sub(r"^```\w*\s*|\s*```$", "", text)
+    # escape pairs are read left to right: a proper double backslash stays, a lone one before a letter is doubled
+    lone = re.sub(r"\\(.)", lambda m: m.group(0) if m.group(1) in '"\\/bfnrtu' else "\\\\" + m.group(1), text, flags=re.S)
+    for attempt in (text, lone):
+        try:
+            value = json.loads(attempt, strict=False)
+        except json.JSONDecodeError:
+            continue
+        if isinstance(value, str):  # '"{\"path\": \"a\"}"': the object was serialised twice
+            try:
+                value = json.loads(value, strict=False)
+            except json.JSONDecodeError:
+                pass
+        if isinstance(value, dict):
+            return value
+    return {"raw_arguments": arguments_str}
