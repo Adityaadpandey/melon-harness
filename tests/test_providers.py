@@ -103,6 +103,10 @@ async def test_cache_hits_are_counted_on_every_provider(usage):
         (404, "model not found", False, True),
         (401, "bad key", False, False),
         (400, "invalid tool schema", False, False),
+        (400, "Model is overloaded, try again later", True, True),  # odd status, transient text
+        (422, "upstream timed out", True, True),
+        (402, "Payment required", False, True),
+        (403, "insufficient balance on this account", False, True),
     ],
 )
 def test_error_classification(status, msg, retry, fallback):
@@ -302,3 +306,20 @@ def test_thinking_goes_back_only_to_its_own_model_and_only_for_the_current_reque
     assert not any("reasoning_model" in m for m in same)  # our bookkeeping never reaches the server
     assert "reasoning_content" not in _wire_messages(msgs, "kimi-k3")[3]  # another model can't use it
     assert msgs[3]["reasoning_model"] == "deepseek-v4"  # the stored history is not modified
+
+
+@pytest.mark.parametrize("msg,overflow", [
+    ("This model's maximum context length is 131072 tokens. However, you requested 140000 tokens", True),
+    ("the request exceeds the available context size, try increasing it", True),  # llama.cpp
+    ("Your request exceeded model token limit: 262144 (requested: 270000)", True),  # Kimi
+    ("Range of input length should be [1, 129024]", True),  # DashScope / Qwen
+    ("ThrottlingException: Too many tokens, please wait before trying again.", False),  # a rate limit
+])
+def test_context_overflow_is_recognised_across_providers(msg, overflow):
+    from agent.agent import NOT_OVERFLOW, OVERFLOW
+
+    assert bool(OVERFLOW.search(msg) and not NOT_OVERFLOW.search(msg)) is overflow
+
+
+def test_quota_text_blocks_the_provider_whatever_the_status():
+    assert classify(403, "You exceeded your current quota").quota

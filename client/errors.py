@@ -28,9 +28,16 @@ class ProviderError(Exception):
         self.quota = quota  # the whole provider/plan is out of quota: only another provider can help
 
 
+# out of money or plan, whatever the status code: retrying the same provider can't help
+QUOTA = re.compile(r"usage limit|limit resets|upgrade your plan|insufficient[_ ]quota|exceeded your current quota|insufficient (balance|credit)|out of credits|billing")
+# busy or flaky upstream reported with an odd status (some open-model hosts send 400 or 422 for these)
+TRANSIENT = re.compile(r"overloaded|temporarily unavailable|try again (later|shortly)|timed? ?out|rate.?limit|too many requests"
+                       r"|connection (reset|refused|error|closed)|stream (ended|closed) unexpectedly|bad gateway|service unavailable")
+
+
 def classify(status: int | None, message: str) -> ProviderError:
     m = message.lower()
-    if status == 429 and ("usage limit" in m or "limit resets" in m or "upgrade your plan" in m):
+    if status == 402 or (QUOTA.search(m) and status not in (400, 404)):
         # plan-wide quota, not a burst limit: retrying or switching model on the same provider can't help
         return ProviderError(message, status=status, fallback=True, quota=True)
     if status == 429:
@@ -43,6 +50,8 @@ def classify(status: int | None, message: str) -> ProviderError:
         return ProviderError(message, status=status)
     if status == 404 or "no available providers" in m or "unsupported_model" in m:
         return ProviderError(message, status=status, fallback=True)
+    if TRANSIENT.search(m):
+        return ProviderError(message, status=status, retry=True, fallback=True)
     if status == 400 and re.search(r"max_(completion_)?tokens", m):
         return ProviderError(message, status=status, drop_max_tokens=True)
     if status == 400 and re.search(r"temperature|top_p", m):

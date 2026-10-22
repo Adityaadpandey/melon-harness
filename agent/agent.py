@@ -72,7 +72,16 @@ CUT_CALL = (
     "Not run: your reply hit the output token limit, so this call's arguments may be truncated. Re-issue it in smaller "
     "pieces: write a long file as a short first version and grow it with edits, or split one big edit into several."
 )
-OVERFLOW = re.compile(r"context[_ ](length|window)|maximum context|prompt is too long|too many tokens|exceeds? the (model|context)|input (is )?too long", re.I)
+# "the prompt is too big", as each provider words it (pi's list: OpenAI, Gemini, Groq, OpenRouter, Together, llama.cpp,
+# LM Studio, MiniMax, Kimi, Mistral, z.ai, DashScope, Ollama...). A rate limit saying "too many tokens" is not one.
+OVERFLOW = re.compile(
+    r"context[_ ](length|window)|maximum context|prompt (is )?too long|prompt exceeds max length|request_too_large|too many tokens"
+    r"|exceeds? the (model|context)|input (is )?too long|maximum prompt length|reduce the length of the messages"
+    r"|exceeds the available context size|greater than the context length|exceeded model token limit|configured context size"
+    r"|range of input length should be|token limit exceeded|longer than the model'?s context length|maximum allowed input length",
+    re.I,
+)
+NOT_OVERFLOW = re.compile(r"rate.?limit|too many requests|throttl|please wait", re.I)
 
 
 class Agent:
@@ -692,7 +701,7 @@ class Agent:
                     if event.tool_call:
                         tool_calls.append(event.tool_call)
                 elif event.type == StreamEventType.ERROR:
-                    if OVERFLOW.search(event.error or "") and not self._overflow_retried:
+                    if OVERFLOW.search(event.error or "") and not NOT_OVERFLOW.search(event.error or "") and not self._overflow_retried:
                         overflowed = True  # the provider says the prompt is too big: compact and ask again, once
                         break
                     failed = True
