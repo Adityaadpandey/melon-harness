@@ -409,7 +409,7 @@ def test_a_finding_that_cites_a_file_nobody_has_is_dropped_but_a_deleted_file_is
     assert [x.where for x in rp.drop_missing_files(f, ["x/gone.ts", "a.ts"])] == ["x/gone.ts:1 (file not found)", "a.ts:2"]
 
 
-async def test_verifier_reads_claims_in_batches_retries_the_unclear_ones_and_leaves_out_what_stays_unclear(monkeypatch):
+async def test_verifier_reads_claims_in_batches_retries_the_unclear_ones_and_keeps_what_stays_unclear_as_plausible(monkeypatch):
     calls = []
 
     async def fake_ask(config, prompt, role, max_turns, max_tokens, disabled_skills=None):
@@ -425,7 +425,7 @@ async def test_verifier_reads_claims_in_batches_retries_the_unclear_ones_and_lea
     findings += [rp.Finding("HIGH", "z.ts:1", "seventh", "f")]
     await rp.verify(Config(), "default", findings)
     assert len(calls) == 3  # two batches (6 + 1), then one retry for the unclear ones
-    assert [f.verdict for f in findings] == ["CONFIRMED"] + ["REJECTED"] * 5 + ["CONFIRMED"]
+    assert [f.verdict for f in findings] == ["CONFIRMED"] + ["PLAUSIBLE"] * 5 + ["CONFIRMED"]
     assert findings[1].evidence == "could not be settled by reading the code"
 
 

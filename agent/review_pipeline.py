@@ -130,7 +130,7 @@ SUMMARY: <one or two sentences saying what the change does, in plain words>
 STRENGTH: <one specific thing the change does well, with file:line; leave the line out if nothing stands out, never flatter>
 ASIDE: <a behaviour you looked at and set aside as out of scope or intended, and why; at most 2 such lines, none if none>"""
 
-VERIFIER_PROMPT = """Another agent claims these defects exist in the working tree. Your job is to refute each one if you can.
+VERIFIER_PROMPT = """Another agent claims these defects exist in the working tree. Decide each one. Your default is PLAUSIBLE: refuting a real defect costs more than keeping a doubtful one a reader can discard.
 
 CLAIMS:
 {claims}
@@ -151,11 +151,16 @@ general quality complaint (missing tests, docs, "poor design") the project rules
 If two claims are the same cause (one missing guard hit from several callers), write SAME_AS <the lower number> on the later one.
 
 Think each claim through before you answer: what input or state triggers it, who gets there, and what they see. Reply with one line per claim, EXACTLY:
-N | CONFIRMED or REJECTED or UNCLEAR | path:line what you read that decides it | who is actually affected (n/a if rejected) | ONGOING or TEMPORARY (in under 10 words, e.g. "cache entries before deploy, 15 min") | NEW or ALREADY_AT_HEAD | NONE or SAME_AS <number> | CONF <0-100>
+N | CONFIRMED or PLAUSIBLE or REJECTED or UNCLEAR | path:line what you read that decides it | who is actually affected (n/a if rejected) | ONGOING or TEMPORARY (in under 10 words, e.g. "cache entries before deploy, 15 min") | NEW or ALREADY_AT_HEAD | NONE or SAME_AS <number> | CONF <0-100>
 CONF is how sure you are the defect is real AND will be hit in practice: 0 a false positive or pre-existing, 25 maybe, 50 real but rare or minor,
 75 verified and will be hit, 100 certain and frequent. A function whose documented contract the change breaks is 75 or more even when this repo
 has no other caller: callers are outside the diff, and the next one gets the wrong answer. Judge it as a senior engineer would.
-CONFIRMED means you read the code that proves it. REJECTED means the code contradicts it or already handles it (say where).
+CONFIRMED means you can name the input or state that triggers it and the wrong result, and you read the code that proves it.
+PLAUSIBLE means the mechanism is real but the trigger is uncertain (timing, environment, config, a rare but reachable path); say what would confirm it.
+Do not reject a claim for being "speculative" or "depends on runtime state" when that state is realistic: races, a failing command under `set -e`,
+null on an error path, a cold cache, a boundary the code does not exclude, a partial failure are PLAUSIBLE.
+REJECTED only when you can show it: the code contradicts the claim (quote the line), the case is provably impossible (type, constant, invariant),
+the diff already guards it (cite the guard), or it is pure style with no observable effect. Say where.
 UNCLEAR means you could not decide with the files available. Nothing else."""
 
 
@@ -342,7 +347,7 @@ def parse_verdicts(text: str, count: int) -> dict[int, tuple[str, str, str, str,
     """One `N | VERDICT | evidence | reach | ONGOING/TEMPORARY (how long) | NEW/ALREADY_AT_HEAD | SAME_AS | CONF n` line per claim.
     A claim the verifier skipped stays UNCLEAR; the trailing fields are optional (an older reply without them reads as ongoing, new, sure)."""
     out = {n: ("UNCLEAR", "", "", "", False, 0, 100) for n in range(1, count + 1)}
-    for m in re.finditer(r"^\W*(\d+)\s*\|\s*(CONFIRMED|REJECTED|UNCLEAR)\s*\|(.*)$", text or "", re.I | re.M):
+    for m in re.finditer(r"^\W*(\d+)\s*\|\s*(CONFIRMED|PLAUSIBLE|REJECTED|UNCLEAR)\s*\|(.*)$", text or "", re.I | re.M):
         n = int(m.group(1))
         if n not in out:
             continue
@@ -405,7 +410,7 @@ def merge_duplicates(findings: list[Finding]) -> list[Finding]:
 
 def compose(findings: list[Finding], reviewers: int) -> str:
     """The block the main agent answers from. Rejected findings are listed so it can say what was ruled out, but never as findings."""
-    live = sorted((f for f in findings if f.verdict in ("CONFIRMED", "UNCLEAR", "UNCHECKED")), key=lambda f: SEVERITY_ORDER[shown_severity(f)])
+    live = sorted((f for f in findings if f.verdict in ("CONFIRMED", "PLAUSIBLE", "UNCLEAR", "UNCHECKED")), key=lambda f: SEVERITY_ORDER[shown_severity(f)])
     rejected = [f for f in findings if f.verdict == "REJECTED"]
     lines = [f"{reviewers} reviewer(s) read the change in parallel, each through its own angle; each finding was then checked by a separate agent that tried to refute it."]
     if not live and not rejected:
@@ -432,7 +437,7 @@ def apply_verdicts(batch: list[Finding], reply: str, min_confidence: int, positi
             f.same_as = position[id(batch[f.same_as - 1])] if f.same_as <= len(batch) else 0
         if f.verdict != "REJECTED" and f.at_head:  # the old code failed the same way: not this change's defect
             f.verdict, f.evidence = "REJECTED", "already present before this change"
-        if f.verdict != "REJECTED" and f.confidence < min_confidence:
+        if f.verdict not in ("REJECTED", "PLAUSIBLE") and f.confidence < min_confidence:  # a plausible claim is low confidence by definition
             f.verdict, f.evidence = "REJECTED", f"low confidence ({f.confidence}/100): {f.evidence}"
 
 
@@ -442,8 +447,8 @@ def claim_lines(batch: list[Finding]) -> str:
 
 async def verify(config, role: str, findings: list[Finding]) -> None:
     """Claims go to verifiers six at a time (in parallel), so each claim gets turns of its own. A claim the verifier could not decide gets one
-    more look from a fresh verifier with a bigger budget; if it is still undecided it is left out, because an answer the reviewer
-    could not stand behind is noise to the reader. Example: "the extra fetch is redundant" stays UNCLEAR until someone opens the
+    more look from a fresh verifier with a bigger budget; if it is still undecided it stays as PLAUSIBLE (shown as unverified, at most MEDIUM),
+    because only a refutation the verifier can show should remove a claim. Example: "the extra fetch is redundant" stays UNCLEAR until someone opens the
     detail query and finds what it returns that the list payload lacks."""
     position = {id(f): n for n, f in enumerate(findings, 1)}
     batches = [findings[i:i + VERIFY_BATCH] for i in range(0, len(findings), VERIFY_BATCH)]
@@ -458,7 +463,7 @@ async def verify(config, role: str, findings: list[Finding]) -> None:
         await one(unclear, 30, "A first verifier could not decide these. Settle each: open the files it would have needed, follow the call chain to the end, and answer CONFIRMED or REJECTED.\n\n")
         for f in unclear:
             if f.verdict == "UNCLEAR":
-                f.verdict, f.evidence = "REJECTED", "could not be settled by reading the code"
+                f.verdict, f.evidence = "PLAUSIBLE", "could not be settled by reading the code"  # only a proven refutation drops a claim
 
 
 async def reproduce(config, role: str, cwd: Path, findings: list[Finding], files: list[str], target) -> None:
