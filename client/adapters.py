@@ -42,6 +42,25 @@ def _tool_defs(tools: list[dict[str, Any]]) -> list[dict[str, Any]]:
     ]
 
 
+REASONING_FIELDS = ("reasoning_content", "reasoning", "reasoning_text")
+
+
+def _wire_messages(messages: list[dict[str, Any]], model: str) -> list[dict[str, Any]]:
+    """History as this server should see it. Thinking goes back only to the model that wrote it, and only for the
+    current request (after the last user message): DeepSeek, Kimi and GLM lose the thread of a tool loop, or answer
+    400, without it, while older thinking is dead weight and another model can't read it anyway."""
+    last_user = max((i for i, m in enumerate(messages) if m.get("role") == "user"), default=-1)
+    out = []
+    for i, m in enumerate(messages):
+        if "reasoning_model" in m:
+            m = dict(m)
+            by = m.pop("reasoning_model")
+            if i < last_user or not (by == model or by.endswith(":" + model)):
+                m.pop("reasoning_content", None)
+        out.append(m)
+    return out
+
+
 def _call_slot(calls: dict[int, dict[str, str]], d) -> int:
     """Which streamed tool call a delta belongs to. Most servers number them; some open-model servers send
     index=None, and keying on that merged two parallel calls into one call with garbled arguments.
@@ -80,7 +99,7 @@ class OpenAIChatAdapter:
     ) -> AsyncGenerator[StreamEvent, None]:
         kwargs: dict[str, Any] = {
             "model": model,
-            "messages": messages,
+            "messages": _wire_messages(messages, model),
             "stream": True,
             "stream_options": {"include_usage": True},
         }
@@ -108,6 +127,7 @@ class OpenAIChatAdapter:
         finish_reason: str | None = None
         usage: TokenUsage | None = None
         calls: dict[int, dict[str, str]] = {}
+        reasoning = ""
 
         async for chunk in response:
             if getattr(chunk, "usage", None):
@@ -127,6 +147,9 @@ class OpenAIChatAdapter:
             delta = choice.delta
             if choice.finish_reason:
                 finish_reason = choice.finish_reason
+            # DeepSeek, Kimi, GLM and Qwen stream their thinking beside the answer, under one of these names
+            think = next((t for f in REASONING_FIELDS if isinstance(t := getattr(delta, f, None), str) and t), "")
+            reasoning += think
             if delta.content:
                 yield StreamEvent(
                     type=StreamEventType.TEXT_DELTA, text_delta=TextDelta(delta.content)
@@ -165,6 +188,7 @@ class OpenAIChatAdapter:
             type=StreamEventType.MESSAGE_COMPLETE,
             finish_reason=finish_reason,
             usage=usage,
+            reasoning=reasoning or None,
         )
 
 

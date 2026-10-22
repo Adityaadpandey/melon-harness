@@ -608,7 +608,7 @@ class Agent:
                     )
                 self.session.context_manager.add_user_message(warning)
             if self._quiet_rounds >= 8:
-                # reasoning is dropped between turns and old tool results get cleared: only written text survives
+                # thinking lasts one request and old tool results get cleared: only written text survives
                 self._quiet_rounds = 0
                 self.session.context_manager.add_user_message(
                     SWEEP_CHECKPOINT if self._broad else
@@ -664,6 +664,7 @@ class Agent:
             tool_calls: list[ToolCall] = []
             usage: TokenUsage | None = None
             cut = False  # the reply stopped at the output token limit, not because the model was done
+            reasoning = None
             failed = False
             overflowed = False
             held, streaming = "", False  # text waits until we know whether tool calls follow (then it shows as one line)
@@ -704,6 +705,7 @@ class Agent:
                 elif event.type == StreamEventType.MESSAGE_COMPLETE:
                     usage = event.usage
                     cut = event.finish_reason in CUT_OFF
+                    reasoning = event.reasoning
 
             tool_calls = [self.session.tool_registry.repair(tc) for tc in tool_calls]  # `Read` -> read_file, old_str -> old_string
             if held and not overflowed:
@@ -739,6 +741,8 @@ class Agent:
                     if tool_calls
                     else None
                 ),
+                reasoning=reasoning,
+                model=self.session.client.last_model,
             )
             if response_text:
                 yield AgentEvent.text_complete(response_text)

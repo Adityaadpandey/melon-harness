@@ -19,6 +19,8 @@ class MessageItem:
     tool_calls: list[dict[str, Any]] = field(default_factory=list)
     token_count: int | None = None
     pruned_at: datetime | None = None
+    reasoning: str = ""  # thinking text, sent back to the same model while its tool loop runs
+    reasoning_model: str = ""
 
     def to_dict(self) -> dict[str, Any]:
         result: dict[str, Any] = {"role": self.role}
@@ -37,6 +39,10 @@ class MessageItem:
             result["content"] = "(no output)"
         elif self.role == "assistant":
             result["content"] = ""
+        if self.reasoning:
+            # the adapter keeps it only for the model that wrote it (client/adapters.py _wire_messages)
+            result["reasoning_content"] = self.reasoning
+            result["reasoning_model"] = self.reasoning_model
 
         return result
 
@@ -99,13 +105,17 @@ class ContextManager:
         self,
         content: str,
         tool_calls: list[dict[str, any]] | None = None,
+        reasoning: str | None = None,
+        model: str | None = None,
     ) -> None:
         item = MessageItem(
             role="assistant",
             content=content or "",
             # the call arguments count too: an edit or write_file carrying 5k of code is not a 0-token message
-            token_count=count_tokens((content or "") + (json.dumps(tool_calls) if tool_calls else ""), self._model_name),
+            token_count=count_tokens((content or "") + (reasoning or "") + (json.dumps(tool_calls) if tool_calls else ""), self._model_name),
             tool_calls=tool_calls or [],
+            reasoning=reasoning or "",
+            reasoning_model=model or "" if reasoning else "",
         )
 
         self._messages.append(item)

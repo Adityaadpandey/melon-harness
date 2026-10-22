@@ -67,6 +67,7 @@ class StreamEvent:
     tool_call_delta: ToolCallDelta | None = None
     tool_call: ToolCall | None = None
     usage: TokenUsage | None = None
+    reasoning: str | None = None  # the model's thinking text, on MESSAGE_COMPLETE, for models that must get it back
 
 
 @dataclass

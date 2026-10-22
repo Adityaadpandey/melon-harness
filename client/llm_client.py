@@ -149,7 +149,7 @@ class LLMClient:
         for attempt in range(self._max_retries + 1):
             started = time.perf_counter()
             first_token: float | None = None
-            text, calls, usage, finish = "", [], None, None
+            text, calls, usage, finish, reasoning = "", [], None, None, None
             cap = self._output_cap(model, info.context_length, est_tokens) if isinstance(adapter, OpenAIChatAdapter) else None
             try:
                 async for ev in adapter.stream(wire_model, messages, tools, temperature, **({"max_tokens": cap} if cap else {})):
@@ -163,7 +163,7 @@ class LLMClient:
                     elif ev.type == StreamEventType.TOOL_CALL_COMPLETE:
                         calls.append(ev.tool_call)
                     elif ev.type == StreamEventType.MESSAGE_COMPLETE:
-                        usage, finish = ev.usage, ev.finish_reason
+                        usage, finish, reasoning = ev.usage, ev.finish_reason, ev.reasoning
                         continue  # re-emitted below, in the requested shape
                     if stream:
                         collected.emitted = True
@@ -177,14 +177,14 @@ class LLMClient:
                     request_chars=request_chars(messages),
                 )
                 if stream:
-                    yield StreamEvent(type=StreamEventType.MESSAGE_COMPLETE, finish_reason=finish, usage=usage)
+                    yield StreamEvent(type=StreamEventType.MESSAGE_COMPLETE, finish_reason=finish, usage=usage, reasoning=reasoning)
                 else:
                     for c in calls:
                         yield StreamEvent(type=StreamEventType.TOOL_CALL_COMPLETE, tool_call=c)
                     yield StreamEvent(
                         type=StreamEventType.MESSAGE_COMPLETE,
                         text_delta=TextDelta(text) if text else None,
-                        finish_reason=finish, usage=usage,
+                        finish_reason=finish, usage=usage, reasoning=reasoning,
                     )
                 return
             except Exception as e:

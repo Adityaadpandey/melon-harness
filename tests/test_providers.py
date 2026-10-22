@@ -272,3 +272,33 @@ def test_output_cap_shrinks_to_the_room_left(tmp_path):
     c, _ = make_client(tmp_path, {})
     assert c._output_cap("m1", 128_000, 110_000) == 128_000 - 110_000 - 4096
     assert c._output_cap("m1", 1_000_000, 1000) == 32_000
+
+
+async def test_thinking_is_collected_from_the_stream():
+    def think(text):
+        return NS(usage=None, choices=[NS(delta=NS(content=None, tool_calls=None, reasoning_content=text), finish_reason=None)])
+
+    async def gen():
+        yield think("check the ")
+        yield think("callers first")
+        yield chunk(content="ok", finish="stop")
+
+    evs = [e async for e in OpenAIChatAdapter("k", "http://x")._consume(gen())]
+    assert evs[-1].reasoning == "check the callers first"
+
+
+def test_thinking_goes_back_only_to_its_own_model_and_only_for_the_current_request():
+    from client.adapters import _wire_messages
+
+    msgs = [
+        {"role": "user", "content": "old question"},
+        {"role": "assistant", "content": "a", "reasoning_content": "old", "reasoning_model": "deepseek-v4"},
+        {"role": "user", "content": "fix it"},
+        {"role": "assistant", "content": "", "reasoning_content": "plan", "reasoning_model": "deepseek-v4", "tool_calls": []},
+        {"role": "tool", "tool_call_id": "c1", "content": "x"},
+    ]
+    same = _wire_messages(msgs, "deepseek-v4")
+    assert "reasoning_content" not in same[1] and same[3]["reasoning_content"] == "plan"
+    assert not any("reasoning_model" in m for m in same)  # our bookkeeping never reaches the server
+    assert "reasoning_content" not in _wire_messages(msgs, "kimi-k3")[3]  # another model can't use it
+    assert msgs[3]["reasoning_model"] == "deepseek-v4"  # the stored history is not modified

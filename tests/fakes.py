@@ -54,6 +54,7 @@ class ScriptedClient:
         self.turns = list(turns)
         self.requests = []
         self.registry = _Registry()
+        self.last_model = "scripted"
 
     async def chat_completion(self, messages, tools=None, stream=True, role="default"):
         self.requests.append(messages)
