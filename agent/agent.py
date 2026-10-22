@@ -62,6 +62,8 @@ async def _within(seconds: float, stream):
         await it.aclose()
 
 
+REVIEW_NO_WORKERS = ("parallel_tasks runs coding workers that edit files in their own worktrees; a review only reads. "
+                     "Read the files yourself, or use subagent_investigator for a read-only question.")
 OVERFLOW = re.compile(r"context[_ ](length|window)|maximum context|prompt is too long|too many tokens|exceeds? the (model|context)|input (is )?too long", re.I)
 
 
@@ -284,6 +286,8 @@ class Agent:
         if advisor:
             advisor.calls = 0  # the limit is per request
         registry.gate = review_fix.edit_gate(registry, advisor) if self._fix_run and advisor else None  # a fix run may not edit before the advisor has been consulted
+        if self._is_review and self._read_only and not registry.gate:
+            registry.gate = lambda name: REVIEW_NO_WORKERS if name == "parallel_tasks" else None
         base_writes, advisor_nudges = registry._writes, 0
         self._waited_base = self.session.approval_manager.waited
         before = await snapshot(self.config.cwd)

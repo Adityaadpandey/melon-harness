@@ -24,3 +24,8 @@ async def test_a_stalled_sub_agent_is_cut_off_and_answers_empty(monkeypatch):
 
 def test_sub_agents_are_marked_so_their_answer_is_not_rewritten():
     assert Config().sub_agent is False
+
+
+def test_review_requests_refuse_the_coding_worker_tool():
+    from agent.agent import REVIEW_NO_WORKERS
+    assert "parallel_tasks" in REVIEW_NO_WORKERS
