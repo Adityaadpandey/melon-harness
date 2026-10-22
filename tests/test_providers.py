@@ -244,3 +244,31 @@ async def test_quota_exhausted_gateway_falls_over_to_codex_and_stays_off_the_gat
     assert [m for m, _ in fake.calls] == ["m1", "codex/x"]
     evs = await collect(c)  # next request does not touch the gateway again
     assert not any("Falling back" in (e.notice or "") for e in evs)
+
+
+class CappedFake(OpenAIChatAdapter):
+    """Looks like a DeepSeek server: refuses any max_tokens above 8192."""
+
+    def __init__(self):
+        self.caps = []
+
+    async def stream(self, model, messages, tools, temperature, max_tokens=None):
+        self.caps.append(max_tokens)
+        if max_tokens and max_tokens > 8192:
+            raise classify(400, f"Invalid max_tokens value, the valid range of max_tokens is [1, 8192]")
+        yield StreamEvent(type=StreamEventType.MESSAGE_COMPLETE)
+
+
+async def test_output_cap_is_sent_and_a_server_limit_is_learned(tmp_path):
+    c, _ = make_client(tmp_path, {})
+    fake = CappedFake()
+    c._adapter = lambda endpoint: fake
+    await collect(c)
+    await collect(c)
+    assert fake.caps == [32_000, 8192, 8192]  # refused once, then its own number every time
+
+
+def test_output_cap_shrinks_to_the_room_left(tmp_path):
+    c, _ = make_client(tmp_path, {})
+    assert c._output_cap("m1", 128_000, 110_000) == 128_000 - 110_000 - 4096
+    assert c._output_cap("m1", 1_000_000, 1000) == 32_000

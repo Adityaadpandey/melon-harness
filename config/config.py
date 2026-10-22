@@ -14,6 +14,9 @@ class ModelConfig(BaseModel):
     name: str = "codex/gpt-5.6-luna"  # your ChatGPT/Codex login; override per project/profile or with -m
     temperature: float = Field(default=1, ge=0.0, le=2.0)
     context_window: int = 256_000
+    # sent as max_tokens to OpenAI-style servers: DeepSeek defaults to 4k, which silently cut long writes in half.
+    # Shrunk to the room left in the context; a server that wants less says so and gets its own number next time.
+    max_output_tokens: int = 32_000
 
 
 class ShellEnvironmentPolicy(BaseModel):

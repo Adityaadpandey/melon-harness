@@ -16,6 +16,7 @@ class ProviderError(Exception):
         retry: bool = False,
         fallback: bool = False,
         drop_temperature: bool = False,
+        drop_max_tokens: bool = False,
         quota: bool = False,
     ):
         super().__init__(message)
@@ -23,6 +24,7 @@ class ProviderError(Exception):
         self.retry = retry
         self.fallback = fallback
         self.drop_temperature = drop_temperature
+        self.drop_max_tokens = drop_max_tokens  # the server refused our output cap (too big, or unknown field)
         self.quota = quota  # the whole provider/plan is out of quota: only another provider can help
 
 
@@ -41,6 +43,8 @@ def classify(status: int | None, message: str) -> ProviderError:
         return ProviderError(message, status=status)
     if status == 404 or "no available providers" in m or "unsupported_model" in m:
         return ProviderError(message, status=status, fallback=True)
+    if status == 400 and re.search(r"max_(completion_)?tokens", m):
+        return ProviderError(message, status=status, drop_max_tokens=True)
     if status == 400 and re.search(r"temperature|top_p", m):
         return ProviderError(message, status=status, drop_temperature=True)
     return ProviderError(message, status=status)

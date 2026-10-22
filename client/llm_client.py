@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import json
 import random
+import re
 import time
 from pathlib import Path
 from typing import Any, AsyncGenerator
@@ -29,6 +30,7 @@ class LLMClient:
         self._max_retries = 3
         self._adapters: dict[str, Any] = {}
         self._no_temperature: set[str] = set()
+        self._max_out: dict[str, int] = {}  # model -> output cap its server accepts (0 = send none)
         self.registry = ModelRegistry(config, get_data_dir())
         self.router = Router(config, self.registry)
         self.last_model: str | None = None
@@ -104,7 +106,7 @@ class LLMClient:
             prev = model
             outcome: ProviderError | None = None
             collected = _Collector()
-            async for ev in self._call_model(model, role, messages, tools, stream, collected):
+            async for ev in self._call_model(model, role, messages, tools, stream, collected, est_tokens):
                 if isinstance(ev, ProviderError):
                     outcome = ev
                 else:
@@ -126,7 +128,13 @@ class LLMClient:
                 return
         yield StreamEvent(type=StreamEventType.ERROR, error=f"All candidate models failed. Last: {last_error}")
 
-    async def _call_model(self, model, role, messages, tools, stream, collected):
+    def _output_cap(self, model: str, window: int, est_tokens: int) -> int | None:
+        """max_tokens for this call: the configured cap, what the server said it accepts, and the room left in the
+        context, whichever is smallest. e.g. a 128k window with 110k of prompt leaves 128k-110k-4k = 14k to write."""
+        cap = min(self._max_out.get(model, self.config.model.max_output_tokens), max(1024, window - est_tokens - 4096))
+        return cap or None
+
+    async def _call_model(self, model, role, messages, tools, stream, collected, est_tokens=0):
         info = self.registry.get(model)
         direct = split(self.config, model)
         if direct and not direct[0].api_key:  # say which env var is missing instead of a bare 401 from the provider
@@ -142,8 +150,9 @@ class LLMClient:
             started = time.perf_counter()
             first_token: float | None = None
             text, calls, usage, finish = "", [], None, None
+            cap = self._output_cap(model, info.context_length, est_tokens) if isinstance(adapter, OpenAIChatAdapter) else None
             try:
-                async for ev in adapter.stream(wire_model, messages, tools, temperature):
+                async for ev in adapter.stream(wire_model, messages, tools, temperature, **({"max_tokens": cap} if cap else {})):
                     if first_token is None and ev.type in (
                         StreamEventType.TEXT_DELTA,
                         StreamEventType.TOOL_CALL_START,
@@ -186,6 +195,10 @@ class LLMClient:
                     status=e.status, error=str(e)[:300],
                     sec=round(time.perf_counter() - started, 3),
                 )
+                if e.drop_max_tokens and cap and not collected.emitted:
+                    # "valid range of max_tokens is [1, 8192]" -> 8192; no usable number -> stop sending one
+                    self._max_out[model] = max([n for n in map(int, re.findall(r"\d+", str(e))) if 1024 <= n < cap], default=0)
+                    continue
                 if e.drop_temperature and temperature is not None and not collected.emitted:
                     self._no_temperature.add(model)
                     temperature = None
