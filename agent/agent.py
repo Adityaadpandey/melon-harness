@@ -1,6 +1,7 @@
 from __future__ import annotations
 import asyncio
 import json
+import os
 import re
 import time
 from pathlib import Path
@@ -67,6 +68,11 @@ async def _within(seconds: float, stream):
 DOC_SUFFIX = (".md", ".mdx", ".txt", ".rst")
 REVIEW_NO_WORKERS = ("parallel_tasks runs coding workers that edit files in their own worktrees; a review only reads. "
                      "Read the files yourself, or use subagent_investigator for a read-only question.")
+# a tool call the model typed into its answer instead of making it (Qwen, GLM, DeepSeek and Hermes-style templates)
+TEXT_CALL = re.compile(
+    r"<tool_call>|<function=\w|<invoke name=|<\|tool_call|\[TOOL_CALLS\]|<\|tool_calls_section_begin\|>"
+    r"|```(?:json)?\s*\{\s*\"(?:name|tool|function)\"\s*:\s*\"(?:read_file|write_file|edit|shell|grep|glob|list_dir|todos)\""
+)
 CUT_OFF = {"length", "max_tokens", "max_output_tokens"}  # finish reasons meaning "ran out of room", per protocol
 CUT_CALL = (
     "Not run: your reply hit the output token limit, so this call's arguments may be truncated. Re-issue it in smaller "
@@ -268,6 +274,8 @@ class Agent:
             message_for_model += f"\n\n[{SWEEP}]"
         self._sweep_pushed = 0
         self._cut_continues = 0  # replies cut off at the output limit that were asked to carry on
+        self._text_calls = 0  # replies that wrote a tool call as text instead of making it
+        self._todo_idle = 0  # tool rounds since the todo list was last touched
         self.session.context_manager.add_user_message(message_for_model)
         self._unsent = ""
 
@@ -651,6 +659,7 @@ class Agent:
                 self.session.context_manager.add_user_message(
                     f"[background job {job.id} `{job.command}` {state}; last output:]\n{job.tail()}"
                 )
+            self._remind_each_turn()
             self.session.increment_turn()
             response_text = ""
 
@@ -761,6 +770,7 @@ class Agent:
                 )
 
             self._quiet_rounds = 0 if response_text else self._quiet_rounds + 1
+            self._todo_idle = 0 if any(tc.name == "todos" for tc in tool_calls) else self._todo_idle + 1
             self._edited = self._edited or any(tc.name in {"edit", "write_file"} for tc in tool_calls)
             self._calls_used += 1  # one round trip however many calls it holds: reading 5 files at once costs what reading 1 does
             if any(tc.name in {"edit", "write_file"} for tc in tool_calls):
@@ -770,6 +780,13 @@ class Agent:
                     self.session.context_manager.set_latest_usage(usage)
                     self.session.context_manager.add_usage(usage)
 
+                if TEXT_CALL.search(response_text or "") and self._text_calls < 2:
+                    self._text_calls += 1
+                    self._remind(
+                        "Your last reply wrote a tool call as text. Text is not run, so nothing happened. "
+                        "Make the call through the tool-calling interface."
+                    )
+                    continue
                 if cut and self._cut_continues < 2:
                     self._cut_continues += 1
                     self.session.context_manager.add_user_message(
@@ -981,6 +998,28 @@ class Agent:
             self.session.context_manager.add_user_message(
                 "Files you were working in before the compaction, as they are on disk now (no need to read them again):\n\n"
                 + "\n\n".join(parts)
+            )
+
+    def _remind(self, text: str) -> None:
+        """Harness context the model should act on but not reply to, marked so it never reads as the user talking."""
+        self.session.context_manager.add_user_message(f"<system-reminder>\n{text}\n</system-reminder>")
+
+    def _remind_each_turn(self) -> None:
+        """Small facts that changed since the last call, as Claude Code attaches them. Appended after the history, so
+        the cached prefix (system prompt, earlier turns) is untouched."""
+        reg, cwd = self.session.tool_registry, str(self.config.cwd)
+        if changed := reg.changed_on_disk():
+            names = ", ".join(f"`{os.path.relpath(p, cwd)}`" for p in changed[:8])
+            self._remind(
+                f"Changed on disk since you last read or wrote them: {names} (by the user, a formatter or a command you ran). "
+                "That is usually deliberate: take it as the current state rather than reverting it, and re-read before editing."
+            )
+        open_steps = unfinished(reg.get("todos"))
+        if open_steps and self._todo_idle >= 10:
+            self._todo_idle = 0
+            self._remind(
+                "Your task list has not been touched in 10 rounds. Still open: " + "; ".join(open_steps[:8])
+                + ". Tick what is done with `todos` alongside your next real call, and drop steps that no longer apply."
             )
 
     def _remind_todos(self) -> None:

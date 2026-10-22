@@ -38,6 +38,7 @@ class ToolRegistry:
         self._mcp_tools: dict[str, Tool] = {}
         self._instructions_seen: set = set()  # folders whose AGENTS.md / CLAUDE.md were already attached to a result
         self._read_state: dict[str, tuple[int, int]] = {}  # path -> (mtime_ns, size) when last seen by the agent
+        self._announced: dict[str, tuple[int, int] | None] = {}  # path -> the changed stamp already reported to the model
         self.config = config
         self._answered: dict[tuple, tuple[str, int]] = {}  # (tool, args, workspace) -> (call id that got the answer, write generation)
         self._writes = 0  # bumps after every call that can change the workspace
@@ -208,6 +209,17 @@ class ToolRegistry:
                 metadata={"tool_name": name, "needs_read": True},
             )
         return None
+
+    def changed_on_disk(self) -> list[str]:
+        """Files the agent read or wrote that something else has changed since: the user in their editor, a formatter,
+        a command the agent ran. Each change is reported once; the edit tools still insist on a fresh read."""
+        out = []
+        for path, seen in self._read_state.items():
+            now = self._stamp(Path(path))
+            if now != seen and self._announced.get(path, seen) != now:
+                self._announced[path] = now
+                out.append(path if now else f"{path} (deleted)")
+        return out
 
     def _note_file_state(self, name: str, params: dict[str, Any], cwd: Path, result: ToolResult) -> None:
         if name in {"read_file", "edit", "write_file"} and result.success:
