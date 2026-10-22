@@ -168,7 +168,7 @@ class Tool(abc.ABC):
 
         if isinstance(schema, type) and issubclass(schema, BaseModel):
 
-            json_schema = model_json_schema(schema, mode="serialization")
+            json_schema = inline_refs(model_json_schema(schema, mode="serialization"))
 
             return {
                 "name": self.name,
@@ -194,3 +194,27 @@ class Tool(abc.ABC):
             return result
 
         raise ValueError(f"Invalid schema type for tool {self.name}: {type(schema)}")
+
+
+def inline_refs(schema: dict[str, Any]) -> dict[str, Any]:
+    """Replace every `{"$ref": "#/$defs/Name"}` with the definition itself and drop `$defs`.
+    A tool schema is sent as its properties only, so a nested model (the edit tool's items) left a `$ref` pointing at a `$defs`
+    that was not sent, and strict providers such as deepseek rejected the whole request with "Pointer '/$defs/EditItem' does not exist"."""
+    defs = schema.get("$defs", {})
+
+    def walk(node: Any, seen: tuple = ()) -> Any:
+        if isinstance(node, dict):
+            ref = node.get("$ref")
+            if isinstance(ref, str) and ref.startswith("#/$defs/"):
+                name = ref.rsplit("/", 1)[-1]
+                if name in defs and name not in seen:  # a self-referencing model stays a plain object rather than looping
+                    merged = {**walk(defs[name], seen + (name,)), **{k: walk(v, seen) for k, v in node.items() if k != "$ref"}}
+                    return merged
+                return {"type": "object"}
+            return {k: walk(v, seen) for k, v in node.items() if k != "$defs"}
+        if isinstance(node, list):
+            return [walk(v, seen) for v in node]
+        return node
+
+    return walk(schema)
+
