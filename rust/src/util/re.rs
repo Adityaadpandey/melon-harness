@@ -76,12 +76,26 @@ impl Re {
     }
 }
 
-/// Compile a pattern that is known to be valid (a literal in the source).
+/// Compile a pattern that is known to be valid (a literal in the source). Compiled once per pattern: the call sites sit
+/// inside loops (every tool call, every streamed line), and a regex build costs far more than the lookup here.
 pub fn lit(pattern: &str) -> Re {
-    Re::new(pattern, false).unwrap_or_else(|e| panic!("bad built-in pattern {pattern}: {e}"))
+    cached(pattern, false)
 }
 
 /// Same, case-insensitive.
 pub fn lit_i(pattern: &str) -> Re {
-    Re::new(pattern, true).unwrap_or_else(|e| panic!("bad built-in pattern {pattern}: {e}"))
+    cached(pattern, true)
+}
+
+fn cached(pattern: &str, ignore_case: bool) -> Re {
+    use std::collections::HashMap;
+    use std::sync::{Mutex, OnceLock};
+    static CACHE: OnceLock<Mutex<HashMap<(String, bool), Re>>> = OnceLock::new();
+    let cache = CACHE.get_or_init(|| Mutex::new(HashMap::new()));
+    if let Some(r) = cache.lock().unwrap().get(&(pattern.to_string(), ignore_case)) {
+        return r.clone();
+    }
+    let r = Re::new(pattern, ignore_case).unwrap_or_else(|e| panic!("bad built-in pattern {pattern}: {e}"));
+    cache.lock().unwrap().insert((pattern.to_string(), ignore_case), r.clone());
+    r
 }

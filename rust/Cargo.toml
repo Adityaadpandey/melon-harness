@@ -39,3 +39,13 @@ unicode-width = "0.2.2"
 uuid = { version = "1.29.0", features = ["v4"] }
 walkdir = "2.5.0"
 which = "8.0.6"
+
+[profile.release]
+opt-level = 3
+lto = "fat"
+codegen-units = 1
+strip = true
+
+# Tests and dev builds stay quick to compile; dependencies are optimised so scripted agent runs don't crawl.
+[profile.dev.package."*"]
+opt-level = 2
