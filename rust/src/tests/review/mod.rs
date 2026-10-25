@@ -16,6 +16,7 @@ mod review_small_file;
 mod review_sub_agent;
 mod review_triage;
 mod rpc_mode;
+mod tui;
 
-/// The sub-agent and worker hooks are process-wide, so tests that set them take turns.
-pub(crate) static SERIAL: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
+/// The sub-agent, worker and chat hooks and the output sink are process-wide, so tests that set them take turns.
+pub(crate) use crate::ui::sink::TEST_LOCK as SERIAL;
