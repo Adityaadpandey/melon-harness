@@ -242,7 +242,7 @@ pub fn chunks(tasks: &[Task], size: usize) -> Vec<String> {
 
 /// What the repo already tells agents: every AGENTS.md (minus melon's own section, which is under review), Command Code
 /// taste, and each skill's name and description.
-fn rulebook(repo: &Path) -> String {
+pub(crate) fn rulebook(repo: &Path) -> String {
     let mut parts = vec![];
     let mut agents: Vec<PathBuf> = walkdir::WalkDir::new(repo).into_iter().filter_entry(|e| !matches!(e.file_name().to_string_lossy().as_ref(), "node_modules" | ".git" | ".deepsec")).flatten().filter(|e| e.file_name() == "AGENTS.md").map(|e| e.into_path()).collect();
     agents.sort();
@@ -304,7 +304,7 @@ Write each rule as one short imperative line (max 25 words) in plain English. Fi
 Leave out anything already in \"Already known\". Return at most {n} rules as a JSON array of strings, nothing else.";
 
 /// The text the model reads. Long briefs and pasted docs are cut short, since rules are said in a line.
-fn evidence(tasks: &[Task], hooks: &BTreeMap<String, usize>, known: &[String]) -> String {
+pub(crate) fn evidence(tasks: &[Task], hooks: &BTreeMap<String, usize>, known: &[String]) -> String {
     let mut said: Vec<String> = vec![];
     for t in tasks.iter().filter(|t| !t.request.is_empty()) {
         let l = one_line(&t.request, 300);
