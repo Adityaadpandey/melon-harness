@@ -1,7 +1,6 @@
 //! Model registry (what exists, what it supports) and router (which one to use for a given job). Adding a model needs
 //! no code: it shows up in /models, and a role's chain in config decides when it gets used.
 use super::providers::split;
-use crate::config::Config;
 use serde_json::Value;
 use std::collections::HashMap;
 use std::path::PathBuf;

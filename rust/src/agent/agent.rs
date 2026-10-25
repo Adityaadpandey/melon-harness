@@ -436,7 +436,7 @@ impl Agent {
             {
                 let fut = run_review_pipeline((*self.config.get()).clone(), message.to_string(), ptx);
                 tokio::pin!(fut);
-                let mut handle = |ev: PipelineEvent, this: &mut Agent, results: &mut String| match ev {
+                let handle = |ev: PipelineEvent, this: &mut Agent, results: &mut String| match ev {
                     PipelineEvent::Notice(n) => notice(&tx, n),
                     PipelineEvent::Answer(a) => this.pipeline_answer = a,
                     PipelineEvent::Findings(f) => this.shown = f, // what "fix 2" will point at

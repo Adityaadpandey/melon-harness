@@ -177,7 +177,7 @@ impl Orchestrator {
             {
                 let run = agent.run(&prompt, tx);
                 tokio::pin!(run);
-                let mut handle = |ev: AgentEvent, last: &mut String, ts: &mut Option<String>| match ev {
+                let handle = |ev: AgentEvent, last: &mut String, ts: &mut Option<String>| match ev {
                     AgentEvent::ToolCallStart { name, arguments, tokens, .. } => say(json!({"kind": "tool", "name": name, "args": arguments, "tokens": tokens})),
                     AgentEvent::TextComplete(c) => *last = c,
                     AgentEvent::AgentEnd { report, .. } => *ts = report["status"].as_str().map(String::from),

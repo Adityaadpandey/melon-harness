@@ -1,3 +1,4 @@
+#![allow(dead_code)] // kept for parity with the Python modules; some helpers are not used by any mode yet
 mod agent;
 mod client;
 mod config;

@@ -1,6 +1,7 @@
 //! The tool layer: the `Tool` trait, parameter validation, results, and the registry that every call goes through.
 pub mod builtin;
 pub mod mcp;
+pub mod discovery;
 pub mod registry;
 pub mod repair;
 pub mod subagents;

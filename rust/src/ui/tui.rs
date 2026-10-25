@@ -1,12 +1,11 @@
 //! The live view of a turn: assistant text as rail-marked blocks, one line (or a framed block) per tool call, a
 //! shimmering status line while the agent works, sub-agent rows and the task list.
-use crate::{uprint, uprintln};
 use super::md::{render_block, split_blocks};
 use super::style::*;
 use crate::tools::ToolConfirmation;
 use serde_json::{json, Map, Value};
 use std::collections::{HashMap, VecDeque};
-use std::io::{IsTerminal, Write};
+use std::io::IsTerminal;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};

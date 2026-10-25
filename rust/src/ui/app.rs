@@ -365,7 +365,7 @@ impl Cli {
             let run = agent.run(message, tx);
             tokio::pin!(run);
             let mut report = None;
-            let mut handle = |ev: AgentEvent, ok: &mut bool, report: &mut Option<Value>| {
+            let handle = |ev: AgentEvent, ok: &mut bool, report: &mut Option<Value>| {
                 uprintln!("{}", ev.to_value());
                 let _ = std::io::stdout().flush();
                 match ev {
@@ -940,7 +940,7 @@ impl Cli {
             let agent = self.agent.as_mut().unwrap();
             let run = agent.run(message, tx);
             tokio::pin!(run);
-            let mut handle = |ev: AgentEvent, final_response: &mut Option<String>, report: &mut Option<Value>| match ev {
+            let handle = |ev: AgentEvent, final_response: &mut Option<String>, report: &mut Option<Value>| match ev {
                 AgentEvent::TextDelta(c) => tui.assistant_delta(&c),
                 AgentEvent::TextComplete(c) => {
                     *final_response = Some(c);

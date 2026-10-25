@@ -116,7 +116,7 @@ impl Tool for SubagentTool {
             {
             let run = agent.run(&prompt, tx);
             tokio::pin!(run);
-            let mut handle = |ev: AgentEvent, tool_calls: &mut Vec<String>, final_response: &mut Option<String>, error: &mut Option<String>, terminate: &mut &str, tokens: &mut i64| -> bool {
+            let handle = |ev: AgentEvent, tool_calls: &mut Vec<String>, final_response: &mut Option<String>, error: &mut Option<String>, terminate: &mut &str, tokens: &mut i64| -> bool {
                 match ev {
                     AgentEvent::ToolCallStart { name, arguments, tokens: t, .. } => {
                         *tokens = t;

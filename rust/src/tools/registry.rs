@@ -489,6 +489,11 @@ pub fn create_default_registry(config: ConfigHandle) -> Arc<ToolRegistry> {
     if crate::util::codegraph::locate(&cfg.cwd).is_some() || crate::util::importgraph::tracked(&cfg.cwd).len() >= 15 {
         registry.register(Arc::new(super::builtin::graph::GraphTool::new(config.clone())));
     }
+    for dir in [cfg.cwd.join(".melon").join("tools"), crate::config::loader::get_config_dir().join("tools")] {
+        for t in super::discovery::discover(&dir) {
+            registry.register(t);
+        }
+    }
     for d in subagents::default_definitions(&cfg) {
         registry.register(Arc::new(subagents::SubagentTool::new(config.clone(), d)));
     }
