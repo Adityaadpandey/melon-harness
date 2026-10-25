@@ -1,4 +1,6 @@
 //! Review pipeline, orchestrator, advisor, modes and TUI tests (ports of the matching tests/*.py files).
+mod orchestrator;
+mod parallel_agents;
 mod review_commit_detect;
 mod review_effort;
 mod review_pipeline;
