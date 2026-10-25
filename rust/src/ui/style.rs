@@ -13,6 +13,9 @@ pub const FG: &str = "#e7e2d6";
 pub const MUTED: &str = "#8b857a";
 pub const INK: &str = "#1a1917";
 pub const BG_BOX: &str = "#22201d";
+pub const BG_PANEL: &str = "#171614";
+pub const BG_RAISED: &str = "#2e2b26";
+pub const BG_GLOW: &str = "#3a2d20";
 pub const RULE: &str = "#3b3730";
 pub const FAINT: &str = "#5a554c";
 pub const ADD_BG: &str = "#1b2616";
@@ -87,6 +90,9 @@ pub fn width(s: &str) -> usize {
 }
 
 pub fn term_width() -> usize {
+    if let Some(w) = super::sink::width_override() {
+        return w;
+    }
     crossterm::terminal::size().map(|(w, _)| w as usize).unwrap_or(100).clamp(40, 200)
 }
 

@@ -50,7 +50,7 @@ pub const COMMANDS: &[(&str, &str)] = &[
     ("/exit", "quit"),
 ];
 
-pub struct MelonHelper {
+pub struct Completions {
     cwd: PathBuf,
     forbidden: Vec<String>,
     models: Box<dyn Fn() -> Vec<String> + Send + Sync>,
@@ -58,7 +58,7 @@ pub struct MelonHelper {
     files: Mutex<(Instant, Vec<String>)>,
 }
 
-impl MelonHelper {
+impl Completions {
     fn file_list(&self) -> Vec<String> {
         let mut f = self.files.lock().unwrap();
         if f.1.is_empty() || f.0.elapsed().as_secs() > 20 {
@@ -69,10 +69,13 @@ impl MelonHelper {
     }
 }
 
-impl Completer for MelonHelper {
-    type Candidate = Pair;
+impl Completions {
+    pub fn new(cwd: PathBuf, forbidden: Vec<String>, models: Box<dyn Fn() -> Vec<String> + Send + Sync>, skills: Arc<Mutex<Vec<(String, String)>>>) -> Completions {
+        Completions { cwd, forbidden, models, skills, files: Mutex::new((Instant::now(), vec![])) }
+    }
 
-    fn complete(&self, line: &str, pos: usize, _ctx: &rustyline::Context<'_>) -> rustyline::Result<(usize, Vec<Pair>)> {
+    /// (start of the text being completed, candidates) for `line` with the cursor at byte `pos`.
+    pub fn complete(&self, line: &str, pos: usize) -> rustyline::Result<(usize, Vec<Pair>)> {
         let text = &line[..pos];
         let pair = |display: String, replacement: String| Pair { display, replacement };
         if text.starts_with('/') && !text.contains(' ') {
@@ -103,6 +106,18 @@ impl Completer for MelonHelper {
     }
 }
 
+pub struct MelonHelper {
+    inner: Arc<Completions>,
+}
+
+impl Completer for MelonHelper {
+    type Candidate = Pair;
+
+    fn complete(&self, line: &str, pos: usize, _ctx: &rustyline::Context<'_>) -> rustyline::Result<(usize, Vec<Pair>)> {
+        self.inner.complete(line, pos)
+    }
+}
+
 impl Hinter for MelonHelper {
     type Hint = String;
 }
@@ -129,7 +144,7 @@ impl Input {
         let cfg = Config::builder().completion_type(CompletionType::List).auto_add_history(false).history_ignore_dups(true).unwrap().build();
         let skills = Arc::new(Mutex::new(vec![]));
         let mut ed: Editor<MelonHelper, FileHistory> = Editor::with_config(cfg).expect("line editor");
-        ed.set_helper(Some(MelonHelper { cwd, forbidden, models, skills: skills.clone(), files: Mutex::new((Instant::now(), vec![])) }));
+        ed.set_helper(Some(MelonHelper { inner: Arc::new(Completions::new(cwd, forbidden, models, skills.clone())) }));
         ed.bind_sequence(KeyEvent::ctrl('J'), EventHandler::Simple(Cmd::Newline));
         if let Some(h) = &history_file {
             if let Some(d) = h.parent() {

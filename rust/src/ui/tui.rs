@@ -1,5 +1,6 @@
 //! The live view of a turn: assistant text as rail-marked blocks, one line (or a framed block) per tool call, a
 //! shimmering status line while the agent works, sub-agent rows and the task list.
+use crate::{uprint, uprintln};
 use super::md::{render_block, split_blocks};
 use super::style::*;
 use crate::tools::ToolConfirmation;
@@ -68,7 +69,7 @@ fn kind_color(name: &str) -> &'static str {
     }
 }
 
-fn agent_title(agent: &str) -> String {
+pub fn agent_title(agent: &str) -> String {
     match agent {
         "investigator" | "codebase_investigator" => "Scout".into(),
         "code_reviewer" => "Reviewer".into(),
@@ -256,6 +257,17 @@ pub fn summarize_result(name: &str, success: bool, output: &str, error: Option<&
     }
 }
 
+/// A copy of what the side panel lists.
+pub struct SideData {
+    pub read: Vec<(String, usize)>,
+    pub written: Vec<(String, (usize, usize, bool))>,
+    pub commands: Vec<(String, bool)>,
+    /// Keys ("read:path", "write:path", "cmd:3") touched in the last two seconds.
+    pub fresh: std::collections::HashSet<String>,
+    pub running: Vec<(String, String, String)>,
+    pub finished: Vec<(String, bool, String)>,
+}
+
 struct AgentRow {
     agent: String,
     goal: String,
@@ -303,6 +315,14 @@ struct State {
     last_reply: String,
     paused: bool,
     status_rows: usize,
+    /// The side panel is on screen and already lists every file read.
+    side_panel: bool,
+    /// What the side panel lists: files read (with counts), files written (+, -, new), commands run (ok).
+    read_files: Vec<(String, usize)>,
+    written: Vec<(String, (usize, usize, bool))>,
+    commands: Vec<(String, bool)>,
+    /// "kind:name" -> when it last changed, so the panel can glow.
+    touched: HashMap<String, Instant>,
 }
 
 pub struct Tui {
@@ -312,9 +332,7 @@ pub struct Tui {
 }
 
 fn out(s: &str) {
-    let mut o = std::io::stdout().lock();
-    let _ = o.write_all(s.as_bytes());
-    let _ = o.flush();
+    super::sink::write(s);
 }
 
 impl Tui {
@@ -339,11 +357,16 @@ impl Tui {
                 last_reply: String::new(),
                 paused: false,
                 status_rows: 0,
+                side_panel: false,
+                read_files: vec![],
+                written: vec![],
+                commands: vec![],
+                touched: HashMap::new(),
             }),
             cwd: Mutex::new(cwd.to_path_buf()),
             stop: Arc::new(AtomicBool::new(false)),
         });
-        if std::io::stdout().is_terminal() {
+        if std::io::stdout().is_terminal() && !super::sink::active() {
             // the spinner redraws the status block ten times a second while a turn is active
             let weak = Arc::downgrade(&t);
             let stop = t.stop.clone();
@@ -392,6 +415,10 @@ impl Tui {
         s.results.clear();
         s.buf.clear();
         s.first_block = true;
+        s.read_files.clear();
+        s.written.clear();
+        s.commands.clear();
+        s.touched.clear();
     }
 
     // -- the status block ---------------------------------------------------------------------------------------
@@ -439,7 +466,7 @@ impl Tui {
     }
 
     fn draw_status(s: &mut State) {
-        if !s.turn_active || s.paused || !std::io::stdout().is_terminal() {
+        if !s.turn_active || s.paused || super::sink::active() || !std::io::stdout().is_terminal() {
             return;
         }
         let rows = Self::status_text(s);
@@ -598,6 +625,13 @@ impl Tui {
                     a.tools += 1;
                     a.tokens = info["tokens"].as_i64().unwrap_or(a.tokens);
                 }
+                if info["name"] == "read_file" {
+                    if let Some(p) = info["args"]["path"].as_str() {
+                        // files a sub-agent opens count as read too
+                        let path = crate::util::paths::rel_display(Path::new(p), &cwd);
+                        Self::note_read(&mut s, path);
+                    }
+                }
             }
             "done" => {
                 if let Some(mut a) = s.agents.remove(call_id) {
@@ -633,7 +667,11 @@ impl Tui {
             }
             (args, s.quiet, s.expand, s.header_done)
         };
+        self.track(name, &args, success, metadata, diff);
         let (summary, preview) = summarize_result(name, success, output, error, metadata, exit_code, &args);
+        if quiet && success && name == "read_file" && self.st.lock().unwrap().side_panel {
+            return; // the panel's READ list shows it
+        }
         let is_edit = matches!(name, "edit" | "write_file") && success && diff.is_some();
         let plain_summary = summary.trim_start_matches("✗ ").to_string();
         if quiet && !is_edit {
@@ -668,6 +706,76 @@ impl Tui {
             }
         }
         self.print_above(&rows.iter().map(|r| format!(" {} {r}", paint("│", color))).collect::<Vec<_>>().join("\n"));
+    }
+
+    fn note_read(s: &mut State, path: String) {
+        match s.read_files.iter_mut().find(|r| r.0 == path) {
+            Some(r) => r.1 += 1,
+            None => s.read_files.push((path.clone(), 1)),
+        }
+        s.touched.insert(format!("read:{path}"), Instant::now());
+    }
+
+    /// Feeds the side panel: files read, files written, commands run.
+    fn track(&self, name: &str, args: &Map<String, Value>, success: bool, md: &Map<String, Value>, diff: Option<&str>) {
+        let cwd = self.cwd();
+        let mut s = self.st.lock().unwrap();
+        let cmd = args.get("command").and_then(Value::as_str).unwrap_or("").trim().to_string();
+        let loud = |c: &str| c.split_whitespace().next().map_or(false, |w| !QUIET_COMMANDS.contains(&w));
+        if !success {
+            if name == "shell" && !cmd.is_empty() && loud(&cmd) {
+                s.commands.push((cmd, false));
+                let k = format!("cmd:{}", s.commands.len() - 1);
+                s.touched.insert(k, Instant::now());
+            }
+            return;
+        }
+        let raw = md.get("path").and_then(Value::as_str).or_else(|| args.get("path").and_then(Value::as_str)).unwrap_or("");
+        let path = if raw.is_empty() { String::new() } else { crate::util::paths::rel_display(Path::new(raw), &cwd) };
+        if name == "read_file" && !path.is_empty() {
+            Self::note_read(&mut s, path);
+        } else if matches!(name, "edit" | "write_file") && !path.is_empty() {
+            let (_, adds, dels) = diff.map(parse_unified_diff).unwrap_or((vec![], 0, 0));
+            let new = md.get("is_new_file").and_then(Value::as_bool).unwrap_or(false);
+            match s.written.iter_mut().find(|w| w.0 == path) {
+                Some(w) => w.1 = (w.1 .0 + adds, w.1 .1 + dels, w.1 .2 || new),
+                None => s.written.push((path.clone(), (adds, dels, new))),
+            }
+            s.touched.insert(format!("write:{path}"), Instant::now());
+        } else if name == "shell" && !cmd.is_empty() && loud(&cmd) {
+            s.commands.push((cmd, true));
+            let k = format!("cmd:{}", s.commands.len() - 1);
+            s.touched.insert(k, Instant::now());
+        }
+    }
+
+    pub fn set_side_panel(&self, on: bool) {
+        self.st.lock().unwrap().side_panel = on;
+    }
+
+    /// Does the side panel have anything to show yet?
+    pub fn side_has(&self) -> [bool; 4] {
+        let s = self.st.lock().unwrap();
+        [!(s.agents.is_empty() && s.agent_log.is_empty()), !s.read_files.is_empty(), !s.written.is_empty(), !s.commands.is_empty()]
+    }
+
+    pub fn snapshot_side(&self) -> SideData {
+        let s = self.st.lock().unwrap();
+        let now = Instant::now();
+        SideData {
+            read: s.read_files.clone(),
+            written: s.written.clone(),
+            commands: s.commands.clone(),
+            fresh: s.touched.iter().filter(|(_, t)| now.duration_since(**t).as_secs_f64() < 2.0).map(|(k, _)| k.clone()).collect(),
+            running: s.agent_order.iter().filter_map(|id| s.agents.get(id)).map(|a| (a.agent.clone(), a.recent.back().cloned().unwrap_or_else(|| "starting…".into()), agent_stats(a.tools, a.tokens, a.started.elapsed().as_secs_f64()))).collect(),
+            finished: s.agent_log.iter().map(|a| (a.agent.clone(), a.ok, agent_stats(a.tools, a.tokens, a.seconds))).collect(),
+        }
+    }
+
+    /// The working indicator as ANSI rows (the screen draws these under the transcript).
+    pub fn status_lines(&self) -> Vec<String> {
+        let s = self.st.lock().unwrap();
+        if s.turn_active { Self::status_text(&s) } else { vec![] }
     }
 
     /// /expand [n]: print the full output of the n-th most recent tool call.
