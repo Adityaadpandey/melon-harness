@@ -1364,11 +1364,13 @@ impl Agent {
         self.playbooks_sent.clear(); // the summary does not carry playbook text: send it again next time
         let transcript = crate::config::loader::get_data_dir().join("transcripts").join(format!("{}.jsonl", self.session.session_id()));
         let notes = crate::agent::notes::read(&cfg.cwd);
+        self.session.context_manager.lock().unwrap().apply_compaction(&summary, cut, Some(&transcript), Some(notes));
+        self.restore_files(&recent);
+        self.remind_todos();
         let after = {
             let mut cm = self.session.context_manager.lock().unwrap();
-            cm.apply_compaction(&summary, cut, Some(&transcript), Some(notes));
             // the summarizer's usage is the size of the summary request, not of the context now. Estimate the real size
-            // until the next model call reports it.
+            // (restored files included) until the next model call reports it.
             let after = cm.estimated_tokens() as i64;
             cm.set_latest_usage(TokenUsage { prompt_tokens: after, total_tokens: after, ..Default::default() });
             if let Some(u) = &usage {
@@ -1376,8 +1378,6 @@ impl Agent {
             }
             after
         };
-        self.restore_files(&recent);
-        self.remind_todos();
         self.session.hook_system.fire(HookTrigger::PostCompact, &[("tokens_before", before.to_string()), ("summary", summary.clone())]).await;
         self.session.tracer.emit("compaction", json!({"cut": cut, "tokens_before": before, "tokens_after": after, "summary_tokens": usage.as_ref().map(|u| u.completion_tokens)}));
         true
