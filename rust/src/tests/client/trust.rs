@@ -21,15 +21,38 @@ command = "echo pwned"
 command = "evil"
 "#;
 
-/// Point HOME at an empty folder, once, so the machine's own melon config (hooks, providers) never leaks into a test.
-/// Python's conftest did the same with its user_config_dir patch.
-pub(super) fn isolated_home() {
-    static ONCE: std::sync::Once = std::sync::Once::new();
-    ONCE.call_once(|| {
-        let home = tempfile::tempdir().unwrap();
-        unsafe { std::env::set_var("HOME", home.path()) };
-        std::mem::forget(home); // lives until the test process exits
-    });
+/// Point HOME at a made-up home, once per test process, so the machine's own melon config, skills and rules never leak
+/// into a test (Python's conftest did the same with patched config dirs). It holds one Claude Code plugin with two
+/// skills, ~/.claude/skills/review, a dead skill link, and a `repo` folder. Returns the home path.
+pub(super) fn isolated_home() -> PathBuf {
+    static HOME: std::sync::OnceLock<PathBuf> = std::sync::OnceLock::new();
+    HOME.get_or_init(|| {
+        let tmp = tempfile::tempdir().unwrap();
+        let h = std::fs::canonicalize(tmp.path()).unwrap();
+        std::mem::forget(tmp); // lives until the test process exits
+        let plugin = h.join(".claude/plugins/cache/acme/1.0");
+        for (name, head) in [
+            ("tidy", "name: tidy\ndescription: >\n  Keeps diffs small\n  and readable"),
+            ("ponytail", "name: ponytail\ndescription: the plugin's long Claude Code version"),
+        ] {
+            std::fs::create_dir_all(plugin.join("skills").join(name)).unwrap();
+            std::fs::write(plugin.join("skills").join(name).join("SKILL.md"), format!("---\n{head}\n---\nbody of {name}\n")).unwrap();
+        }
+        std::fs::write(
+            h.join(".claude/plugins/installed_plugins.json"),
+            serde_json::json!({"plugins": {"acme@x": [{"installPath": plugin.to_string_lossy()}]}}).to_string(),
+        )
+        .unwrap();
+        std::fs::create_dir_all(h.join(".claude/skills/review")).unwrap();
+        std::fs::write(h.join(".claude/skills/review/SKILL.md"), "---\nname: review\ndescription: \"Review a diff\"\n---\nreview body\n").unwrap();
+        std::fs::create_dir_all(h.join(".claude/skills/gone")).unwrap();
+        std::os::unix::fs::symlink(h.join("missing.md"), h.join(".claude/skills/gone/SKILL.md")).unwrap();
+        std::fs::create_dir_all(h.join("repo")).unwrap();
+        std::fs::write(h.join(".claude/settings.json"), "{}").unwrap();
+        unsafe { std::env::set_var("HOME", &h) };
+        h
+    })
+    .clone()
 }
 
 fn project(dir: &Path) -> PathBuf {

@@ -9,3 +9,7 @@ mod effort_hints;
 mod trust;
 mod permission_flow;
 mod permission_rules;
+mod guard_profile;
+mod hooks_events;
+mod instructions;
+mod skill_sources;
