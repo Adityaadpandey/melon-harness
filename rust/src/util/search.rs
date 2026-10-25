@@ -134,7 +134,8 @@ pub fn search(files: &[PathBuf], root: &Path, regex: &Re, context: usize, limit:
     let mut res = SearchResult { lines: vec![], total: 0, hit_files: 0, per_file: vec![] };
     let mut shown = 0usize;
     // one pass over the whole file first: most files have no match and never get split into lines
-    let whole = regex.multiline();
+    // \A and \z mean line start/end per line but file start/end here: no shortcut at all for those
+    let whole = if regex.as_str().contains("\\A") || regex.as_str().contains("\\z") { None } else { regex.multiline() };
     let edgy = ["^", "$", "(?"].iter().any(|c| regex.as_str().contains(c));
     let odd_breaks = |t: &str| t.chars().any(|c| matches!(c, '\r' | '\x0b' | '\x0c' | '\x1c'..='\x1e' | '\u{85}' | '\u{2028}' | '\u{2029}'));
     for f in files {

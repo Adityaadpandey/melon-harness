@@ -145,7 +145,7 @@ impl Session {
 }
 
 /// The memory tool saves one file per workspace; the old shared user_memory.json is still read so nothing stored earlier is lost.
-fn load_memory(tool: &MemoryTool) -> Option<String> {
+pub(crate) fn load_memory(tool: &MemoryTool) -> Option<String> {
     let mut entries = tool.load_entries();
     let legacy = get_data_dir().join("user_memory.json");
     if let Some(old) = std::fs::read_to_string(legacy).ok().and_then(|t| serde_json::from_str::<Value>(&t).ok()).and_then(|v| v["entries"].as_object().cloned()) {
