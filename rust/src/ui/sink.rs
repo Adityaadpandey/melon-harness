@@ -103,11 +103,16 @@ macro_rules! uprint {
     ($($a:tt)*) => { $crate::ui::sink::write(&format!($($a)*)) };
 }
 
+/// Tests that install the sink (it is process-wide) take turns through this lock.
+#[cfg(test)]
+pub(crate) static TEST_LOCK: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
+
 #[cfg(test)]
 mod tests {
     use super::*;
     #[test]
     fn buffers_when_installed() {
+        let _g = TEST_LOCK.blocking_lock();
         install();
         write("a\nb");
         assert_eq!(with(|s| s.text.clone()).unwrap(), "a\nb");

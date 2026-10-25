@@ -103,6 +103,12 @@ struct State {
     auto_effort: Option<String>,
 }
 
+/// Test seam: answers every chat request of a client that has no script. Gets the messages, returns the stream events.
+#[cfg(test)]
+pub(crate) type ChatHook = Arc<dyn Fn(Vec<Value>) -> futures::future::BoxFuture<'static, Vec<StreamEvent>> + Send + Sync>;
+#[cfg(test)]
+pub(crate) static CHAT_HOOK: Mutex<Option<ChatHook>> = Mutex::new(None);
+
 pub struct LLMClient {
     pub config: ConfigHandle,
     pub tracer: Arc<Tracer>,
@@ -191,6 +197,12 @@ impl LLMClient {
                 let next = this.script.lock().unwrap().as_mut().map(|q| q.pop_front());
                 if let Some(turn) = next {
                     for ev in turn.unwrap_or_else(|| vec![StreamEvent::Error("script ran out".into())]) { yield ev; }
+                    return;
+                }
+                // a client with no script (a sub-agent's own) answers through the test hook, if one is installed
+                let hook = CHAT_HOOK.lock().unwrap().clone();
+                if let Some(h) = hook {
+                    for ev in h(messages.clone()).await { yield ev; }
                     return;
                 }
             }

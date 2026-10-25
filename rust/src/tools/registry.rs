@@ -274,7 +274,7 @@ impl ToolRegistry {
     }
 
     /// One tool result must never be able to eat the context: keep the head and the tail.
-    fn cap_output(&self, result: &mut ToolResult, name: &str) {
+    pub(crate) fn cap_output(&self, result: &mut ToolResult, name: &str) {
         let cfg = self.config.get();
         if cfg.pi_mode {
             return self.pi_cap(result, name);

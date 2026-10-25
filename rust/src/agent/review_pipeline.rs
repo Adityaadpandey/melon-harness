@@ -18,23 +18,23 @@ use std::sync::{Mutex, OnceLock};
 use std::time::Duration;
 use tokio::sync::mpsc::UnboundedSender;
 
-const MAX_GROUPS: usize = 3;
+pub(crate) const MAX_GROUPS: usize = 3;
 /// A clipped diff with this many files or fewer stays with one reviewer, who reads the rest with `git diff`.
-const SPLIT_FILES: usize = 30;
+pub(crate) const SPLIT_FILES: usize = 30;
 /// Claims checked per review; past it a finding stays unchecked and is reported as unverified.
-const MAX_VERIFIED: usize = 24;
+pub(crate) const MAX_VERIFIED: usize = 24;
 /// Claims one verifier reads at a time, so each gets real turns instead of a share of one budget.
-const VERIFY_BATCH: usize = 6;
-const SKIP_SUFFIXES: &[&str] = &[".lock", ".png", ".jpg", ".jpeg", ".gif", ".svg", ".ico", ".woff", ".woff2", ".map", "package-lock.json"];
-const GAP_MIN_LINES: usize = 80;
-const LIGHT_TURNS: usize = 12; // a small change has little to read; a reviewer that needs more than this is wandering
-const SMALL_DIFF_LINES: usize = 80; // one file this small gets one reviewer: a second one re-reads the same few lines
-const CHECK_WAIT: u64 = 90; // seconds the reviewers wait for typecheck/lint before starting without it
-const TRIAGE_CHUNK: usize = 3; // questions per reviewer: a reviewer holding more than this drifts into skimming all of them
-const REGION_PAD: usize = 30; // lines either side of a changed hunk
-const REGION_CHARS: usize = 14_000;
+pub(crate) const VERIFY_BATCH: usize = 6;
+pub(crate) const SKIP_SUFFIXES: &[&str] = &[".lock", ".png", ".jpg", ".jpeg", ".gif", ".svg", ".ico", ".woff", ".woff2", ".map", "package-lock.json"];
+pub(crate) const GAP_MIN_LINES: usize = 80;
+pub(crate) const LIGHT_TURNS: usize = 12; // a small change has little to read; a reviewer that needs more than this is wandering
+pub(crate) const SMALL_DIFF_LINES: usize = 80; // one file this small gets one reviewer: a second one re-reads the same few lines
+pub(crate) const CHECK_WAIT: u64 = 90; // seconds the reviewers wait for typecheck/lint before starting without it
+pub(crate) const TRIAGE_CHUNK: usize = 3; // questions per reviewer: a reviewer holding more than this drifts into skimming all of them
+pub(crate) const REGION_PAD: usize = 30; // lines either side of a changed hunk
+pub(crate) const REGION_CHARS: usize = 14_000;
 
-fn severity_rank(s: &str) -> usize {
+pub(crate) fn severity_rank(s: &str) -> usize {
     match s {
         "CRITICAL" => 0,
         "HIGH" => 1,
@@ -43,19 +43,19 @@ fn severity_rank(s: &str) -> usize {
     }
 }
 
-fn named_scope() -> &'static Re {
+pub(crate) fn named_scope() -> &'static Re {
     // a named scope is not "the changes"
     static R: OnceLock<Re> = OnceLock::new();
     R.get_or_init(|| lit_i(r"\b(commits?|pr|pull request|HEAD|branch|[0-9a-f]{7,40}|#\d+)\b"))
 }
-fn security_hint() -> &'static Re {
+pub(crate) fn security_hint() -> &'static Re {
     static R: OnceLock<Re> = OnceLock::new();
     R.get_or_init(|| lit_i(r"\b(auth\w*|token|password|passwd|secret|permission\w*|tenant\w*|session|cookie|jwt|oauth|csrf|cors|payment\w*|stripe|webhook\w*|role|admin|rbac|acl|sanitiz\w*|escape|exec|eval|innerHTML|queryRaw|\$queryRaw|SELECT|INSERT|DELETE)\b"))
 }
 
 // Each reviewer reads the same change through one lens, the way Claude Code runs a bug scan, a rules audit and a history
 // check side by side. A single generalist skims; specialists each go deep on one question.
-const LENS_BEHAVIOUR: &str = "LENS: behaviour. For every changed function, write down the claim it now makes (\"returns null only when X\"), then read its
+pub(crate) const LENS_BEHAVIOUR: &str = "LENS: behaviour. For every changed function, write down the claim it now makes (\"returns null only when X\"), then read its
 callers and callees and try to break the claim. For every new or changed condition, flag or gate, find everything that flips it at
 runtime and say what the user sees then (a button disabled while isFetching, and every mutation refetches it: it dims on every tap).
 Compare the new version of each component, page or function with the old one (`git show HEAD:<file>` or the base revision): list what the
@@ -65,7 +65,7 @@ before saying a replacement is missing: the new code often leans on a library do
 Removed behaviour: for every line the diff deletes or replaces, name the invariant it enforced (a guard, an error path, a validation, a
 cleanup, an early exit), then find where the new code establishes it again. If you cannot find it, that is a finding. Also ask what a
 line that moved into a new branch does now when the branch is not taken.";
-const LENS_APPROACH: &str = "LENS: approach. Judge the change the way the owner of this system would, not line by line. Is this the right fix at the right layer,
+pub(crate) const LENS_APPROACH: &str = "LENS: approach. Judge the change the way the owner of this system would, not line by line. Is this the right fix at the right layer,
 or a patch on the symptom while the cause stays (a guard in one caller when every caller shares the broken function)? Is there a simpler
 change that does the same job (delete the branch, reuse the helper that already exists a few files over, change the data instead of the code)?
 Layering: does it use the layer the repo's rules and neighbouring files use (service -> repository -> database), or reach past it?
@@ -75,7 +75,7 @@ client), open the other half and say whether it needs the same change. What is t
 rolled back? Does it follow how the neighbouring code solves the same problem, and if it does not, is the new way better? A real concern
 about the design is a finding even when every line is correct: name the better shape and what it saves. Production readiness: a schema or
 data-shape change needs a migration or a backfill; a changed API, event or config key must keep old callers and stored data working.";
-const LENS_FAILURES: &str = "LENS: failures and contracts. For every new awaited call or write on a request path (DB insert, cache write, outbound fetch), ask
+pub(crate) const LENS_FAILURES: &str = "LENS: failures and contracts. For every new awaited call or write on a request path (DB insert, cache write, outbound fetch), ask
 what the user gets when it throws; optional data that now fails the whole response is a finding. Look for swallowed errors, empty
 catches and fallbacks that hide a real failure. For every changed signature, return shape, event, route, schema, env var, cache key or
 migration, grep every caller and consumer and open the line that reads it: the type may say one thing and the runtime data another.
@@ -84,17 +84,17 @@ rules or playbooks usually say so: quote them; check whether a spec file exists 
 Performance: a new query, await or loop on a per-request path is a finding when it repeats per item or per visit (an extra DB call
 on every cache hit, an N+1); say how often it runs. Accessibility: UI hidden, locked or disabled by CSS alone (pointer-events: none,
 opacity) stays focusable and is still read aloud; it needs the attribute or the element removed.";
-const LENS_RULES: &str = "LENS: rules and intent. Check the diff against the PROJECT RULES and PLAYBOOKS above: every finding quotes the rule in a few
+pub(crate) const LENS_RULES: &str = "LENS: rules and intent. Check the diff against the PROJECT RULES and PLAYBOOKS above: every finding quotes the rule in a few
 words and the line that breaks it; a rule that is about how the author works (never commit, ask first) is not a review finding. Then
 check the request. A request is a vision, not a full spec: for behaviour it is silent on, a reasonable user's expectation is a requirement
 (a delete button that works on every row but the last is a defect even though nobody wrote \"the last row\"). Is something it asked for missing from the diff, and is something it did not ask for in it (scope creep, a new
 dependency, a rewrite of working code)? Also read the comments in the touched files: does the change break guidance written there?";
-const LENS_HISTORY: &str = "LENS: history. Use git: `git log -5 --oneline -- <file>`, `git blame` or `git log -L` on the changed region, `git show HEAD:<file>`.
+pub(crate) const LENS_HISTORY: &str = "LENS: history. Use git: `git log -5 --oneline -- <file>`, `git blame` or `git log -L` on the changed region, `git show HEAD:<file>`.
 Look for a change that undoes an earlier fix (read that commit's message), an invariant a previous commit set up that the diff
 breaks, and a sibling the change should have followed (grep for the same pattern next door: if five handlers do X and the new one
 does not, say why that is a defect). A defect the old code already had is not this change's.";
-const LENSES: &[(&str, &str)] = &[("behaviour", LENS_BEHAVIOUR), ("approach", LENS_APPROACH), ("failures", LENS_FAILURES), ("rules", LENS_RULES), ("history", LENS_HISTORY)];
-const CONTRACT_LENS: (&str, &str) = ("contracts", "LENS: producers and consumers. Nothing else is your job. List every value, shape, string format, prop, event, route,
+pub(crate) const LENSES: &[(&str, &str)] = &[("behaviour", LENS_BEHAVIOUR), ("approach", LENS_APPROACH), ("failures", LENS_FAILURES), ("rules", LENS_RULES), ("history", LENS_HISTORY)];
+pub(crate) const CONTRACT_LENS: (&str, &str) = ("contracts", "LENS: producers and consumers. Nothing else is your job. List every value, shape, string format, prop, event, route,
 cache key or return type the diff creates or changes. For each, find BOTH sides: the code that produces it and the code that reads it
 (grep the name, open every hit). Then compare them line against line, with a real example value pushed through each side:
 - A consumer that parses, matches or normalises something the producer already shapes (a regex that wants \"3 - Name\" when the
@@ -105,17 +105,17 @@ cache key or return type the diff creates or changes. For each, find BOTH sides:
 - A new fetch, query or lookup whose answer the caller already holds in a payload it received: say which payload and which field.
 Quote the producer line and the consumer line in the finding (path:line each) and the example value that breaks it. Report only
 mismatches you proved by reading both sides.");
-const SECURITY_LENS: (&str, &str) = ("security", "LENS: security and isolation. The diff touches auth, data access, secrets or money, so trace who can reach it: is every new
+pub(crate) const SECURITY_LENS: (&str, &str) = ("security", "LENS: security and isolation. The diff touches auth, data access, secrets or money, so trace who can reach it: is every new
 route, handler or query behind the same authorization its siblings use? Is a tenant, owner or user id taken from the request instead
 of the session? Injection (SQL, shell, path, HTML) from any value that crosses a trust boundary, secrets or tokens in logs and
 responses, fail-open checks (an error path that returns \"allowed\"), missing rate limits or idempotency on a write that moves money
 or sends mail. Read the middleware and the sibling handlers before claiming a gap.");
-const GAP_LENS: &str = "LENS: what the others missed. Four reviewers, each with one angle, already reported the findings below. Do not repeat
+pub(crate) const GAP_LENS: &str = "LENS: what the others missed. Four reviewers, each with one angle, already reported the findings below. Do not repeat
 them. Re-read the riskiest hunk of the diff yourself and ask the question none of the angles owns: what input, ordering or state
 did nobody try? If one of their findings is wrong, say so on a line starting with REJECT.
 ALREADY REPORTED:
 {found}";
-const LIGHT_NOTE: &str = "
+pub(crate) const LIGHT_NOTE: &str = "
 
 QUICK PASS: this change is small and the whole diff is above. Do not explore. Read the changed region's file once if you need the lines
 around it (and the script header or config it runs under), at most 3 reads in all, then answer. Cover: a failure the new code can cause
@@ -123,7 +123,7 @@ around it (and the script header or config it runs under), at most 3 reads in al
 removes more than before), a second copy of something the file already does, and a project rule the edit breaks (quote it).
 Where you did not check something, say so in the finding (\"unverified: the script header was not read\").";
 
-const REVIEWER_PROMPT: &str = "You are a principal engineer reviewing {scope}. You did not write it, and you will be accountable if it ships broken.
+pub(crate) const REVIEWER_PROMPT: &str = "You are a principal engineer reviewing {scope}. You did not write it, and you will be accountable if it ships broken.
 The request: {request}
 
 FILES: {part}
@@ -161,7 +161,7 @@ SUMMARY: <one or two sentences saying what the change does, in plain words>
 STRENGTH: <one specific thing the change does well, with file:line; leave the line out if nothing stands out, never flatter>
 ASIDE: <a behaviour you looked at and set aside as out of scope or intended, and why; at most 2 such lines, none if none>";
 
-const VERIFIER_PROMPT: &str = "Another agent claims these defects exist in the working tree. Decide each one. Your default is PLAUSIBLE: refuting a real defect costs more than keeping a doubtful one a reader can discard.
+pub(crate) const VERIFIER_PROMPT: &str = "Another agent claims these defects exist in the working tree. Decide each one. Your default is PLAUSIBLE: refuting a real defect costs more than keeping a doubtful one a reader can discard.
 
 CLAIMS:
 {claims}
@@ -194,7 +194,7 @@ REJECTED only when you can show it: the code contradicts the claim (quote the li
 the diff already guards it (cite the guard), or it is pure style with no observable effect. Say where.
 UNCLEAR means you could not decide with the files available. Nothing else.";
 
-const TRIAGE_PROMPT: &str = "You are planning a code review, not doing it. Read the change below and decide what is worth checking, so the reviewers
+pub(crate) const TRIAGE_PROMPT: &str = "You are planning a code review, not doing it. Read the change below and decide what is worth checking, so the reviewers
 spend their effort there instead of re-reading everything.
 
 {context}DIFF ({files}):
@@ -209,7 +209,7 @@ If nothing in the change can plausibly break anything, reply: NONE";
 
 /// All the angles as one checklist for ONE reviewer. Claude Code's own /code-review gets nine findings out of a 22-file PR
 /// from a single agent in under a minute; what matters is the method and the budget, not how many agents there are.
-fn one_reviewer(context: &str, security: bool) -> (String, String) {
+pub(crate) fn one_reviewer(context: &str, security: bool) -> (String, String) {
     let mut parts: Vec<&str> = vec![LENSES[0].1, LENSES[1].1, LENSES[2].1, if context.contains("PROJECT RULES") { LENSES[3].1 } else { LENSES[4].1 }];
     if security {
         parts.push(SECURITY_LENS.1);
@@ -231,7 +231,7 @@ pub fn parse_triage(reply: &str) -> Vec<String> {
 }
 
 /// The questions the triage picked, dealt out TRIAGE_CHUNK at a time. Three questions are one reviewer; six are two.
-fn triage_lenses(checks: &[String]) -> Vec<(String, String)> {
+pub(crate) fn triage_lenses(checks: &[String]) -> Vec<(String, String)> {
     checks
         .chunks(TRIAGE_CHUNK)
         .enumerate()
@@ -242,7 +242,7 @@ fn triage_lenses(checks: &[String]) -> Vec<(String, String)> {
         .collect()
 }
 
-async fn triage(config: &Config, role: &str, diff: &str, files: &[String], context: &str) -> Vec<String> {
+pub(crate) async fn triage(config: &Config, role: &str, diff: &str, files: &[String], context: &str) -> Vec<String> {
     let prompt = TRIAGE_PROMPT.replace("{context}", context).replace("{files}", &files.iter().take(25).cloned().collect::<Vec<_>>().join(", ")).replace("{diff}", diff);
     let reply = ask(config, &prompt, role, 4, config.review_pipeline_tokens.min(25_000), Some(vec!["code-review".into()]), None, "never").await;
     parse_triage(&reply)
@@ -250,7 +250,7 @@ async fn triage(config: &Config, role: &str, diff: &str, files: &[String], conte
 
 /// The current text around every changed hunk, with line numbers, so a quick reviewer sees the shell options, the loop or
 /// the function a hunk sits in without spending reads on it.
-fn changed_regions(cwd: &Path, diff: &str) -> String {
+pub(crate) fn changed_regions(cwd: &Path, diff: &str) -> String {
     let hunk = lit(r"(?m)^@@ -\d+(?:,\d+)? \+(\d+)(?:,(\d+))? @@");
     let header = lit(r"^a/(.+?) b/(.+)");
     let (mut out, mut used) = (vec![], 0usize);
@@ -289,14 +289,14 @@ fn changed_regions(cwd: &Path, diff: &str) -> String {
 }
 
 /// A change this small needs no plan: up to two files, under SMALL_DIFF_LINES of diff, nothing touching auth, queries or money.
-fn is_light(diff: &str, files: &[String], secure: bool) -> bool {
+pub(crate) fn is_light(diff: &str, files: &[String], secure: bool) -> bool {
     files.len() <= 2 && diff.matches('\n').count() < SMALL_DIFF_LINES && !secure
 }
 
 /// Auto (review_lenses = 0) is ONE reviewer carrying every angle plus one that only follows producers to consumers.
 /// review_lenses = N >= 2 fans out to N separate angle reviewers (security is appended when auth, queries or money are
 /// touched); 1 pins the behaviour angle alone.
-fn pick_lenses(config: &Config, diff: &str, files: &[String], context: &str) -> Vec<(String, String)> {
+pub(crate) fn pick_lenses(config: &Config, diff: &str, files: &[String], context: &str) -> Vec<(String, String)> {
     let secure = security_hint().is_match(&format!("{}\n{diff}", files.join(" ")));
     if config.review_lenses == 0 {
         if files.len() == 1 && diff.matches('\n').count() < SMALL_DIFF_LINES {
@@ -338,7 +338,7 @@ impl Default for Finding {
     }
 }
 
-fn changed_files(porcelain: &str) -> Vec<String> {
+pub(crate) fn changed_files(porcelain: &str) -> Vec<String> {
     let mut files = vec![];
     for line in porcelain.lines() {
         if line.len() < 4 || line[..2].contains('D') {
@@ -352,13 +352,13 @@ fn changed_files(porcelain: &str) -> Vec<String> {
     files
 }
 
-fn deleted_files(porcelain: &str) -> Vec<String> {
+pub(crate) fn deleted_files(porcelain: &str) -> Vec<String> {
     porcelain.lines().filter(|l| l.len() >= 4 && l[..2].contains('D')).map(|l| l[3..].trim().trim_matches('"').to_string()).collect()
 }
 
 /// A file deleted in one place and added somewhere else with identical bytes is a move, not a change.
 /// Returns (moves, deleted left over, added left over).
-async fn pair_moves(cwd: &Path, deleted: &[String], added: &[String]) -> (Vec<(String, String)>, Vec<String>, Vec<String>) {
+pub(crate) async fn pair_moves(cwd: &Path, deleted: &[String], added: &[String]) -> (Vec<(String, String)>, Vec<String>, Vec<String>) {
     let mut gone: HashMap<String, Vec<String>> = HashMap::new();
     for d in deleted {
         let sha = git(cwd, &["rev-parse", &format!("HEAD:{d}")]).await.trim().to_string();
@@ -385,7 +385,7 @@ async fn pair_moves(cwd: &Path, deleted: &[String], added: &[String]) -> (Vec<(S
 }
 
 /// Files still sitting where the moved ones used to be. They may have been leaning on what moved.
-async fn left_behind(cwd: &Path, moves: &[(String, String)]) -> Vec<String> {
+pub(crate) async fn left_behind(cwd: &Path, moves: &[(String, String)]) -> Vec<String> {
     let mut out: Vec<String> = vec![];
     for (old, _) in moves {
         let folder = old.rsplit_once('/').map_or(".", |x| x.0);
@@ -410,7 +410,7 @@ pub fn tidy(text: &str, limit: usize) -> String {
 }
 
 /// What a human reviewer writes around the findings: what the change does, what was and was not looked at.
-fn frame(answer: &str, summary: &str, reviewed: &[String], moves: &[(String, String)], deleted: &[String], checks: &[CheckResult], strengths: &[String], scope: &str) -> String {
+pub(crate) fn frame(answer: &str, summary: &str, reviewed: &[String], moves: &[(String, String)], deleted: &[String], checks: &[CheckResult], strengths: &[String], scope: &str) -> String {
     let mut lines: Vec<String> = vec![];
     if !summary.is_empty() {
         lines.push(format!("**What the change does:** {}.", tidy(summary, 320)));
@@ -439,7 +439,7 @@ fn frame(answer: &str, summary: &str, reviewed: &[String], moves: &[(String, Str
 }
 
 /// A diff too big for one prompt is cut by area; a change that lives in one area is cut into thirds.
-fn split_clipped(files: &[String]) -> Vec<(String, Vec<String>)> {
+pub(crate) fn split_clipped(files: &[String]) -> Vec<(String, Vec<String>)> {
     let groups = group_files(files, MAX_GROUPS);
     if groups.len() == 1 && files.len() > 1 {
         return (0..MAX_GROUPS.min(files.len())).map(|i| (format!("part {}", i + 1), files.iter().skip(i).step_by(MAX_GROUPS).cloned().collect())).collect();
@@ -448,7 +448,7 @@ fn split_clipped(files: &[String]) -> Vec<(String, Vec<String>)> {
 }
 
 /// Group by area (apps/server, apps/web, ...). More areas than reviewers: the extra ones are folded into the smallest group.
-fn group_files(files: &[String], limit: usize) -> Vec<(String, Vec<String>)> {
+pub(crate) fn group_files(files: &[String], limit: usize) -> Vec<(String, Vec<String>)> {
     let mut areas: Vec<(String, Vec<String>)> = vec![];
     for f in files {
         let parts: Vec<&str> = f.split('/').collect();
@@ -485,7 +485,7 @@ type Verdict = (String, String, String, String, bool, usize, i64);
 
 /// One `N | VERDICT | evidence | reach | ONGOING/TEMPORARY (how long) | NEW/ALREADY_AT_HEAD | SAME_AS | CONF n` line per
 /// claim. A claim the verifier skipped stays UNCLEAR; the trailing fields are optional.
-fn parse_verdicts(text: &str, count: usize) -> Vec<Verdict> {
+pub(crate) fn parse_verdicts(text: &str, count: usize) -> Vec<Verdict> {
     let mut out: Vec<Verdict> = (0..count).map(|_| ("UNCLEAR".into(), String::new(), String::new(), String::new(), false, 0, 100)).collect();
     let line = lit_i(r"(?m)^\W*(\d+)\s*\|\s*(CONFIRMED|PLAUSIBLE|REJECTED|UNCLEAR)\s*\|(.*)$");
     let twin_re = lit_i(r"SAME_AS\s*#?(\d+)");
@@ -518,7 +518,7 @@ fn parse_verdicts(text: &str, count: usize) -> Vec<Verdict> {
 
 /// What the user sees. HIGH has to be proven AND lasting AND new: a claim nobody proved, a state that heals itself or one
 /// the old code already had is at most MEDIUM.
-fn shown_severity(f: &Finding) -> &str {
+pub(crate) fn shown_severity(f: &Finding) -> &str {
     if matches!(f.severity.as_str(), "CRITICAL" | "HIGH") && (f.verdict != "CONFIRMED" || !f.temporary.is_empty() || f.at_head) {
         return "MEDIUM";
     }
@@ -526,7 +526,7 @@ fn shown_severity(f: &Finding) -> &str {
 }
 
 /// The verifier saw every claim at once: a claim it marked `SAME_AS 1` is folded into claim 1 (even across files).
-fn merge_same_cause(mut checked: Vec<Finding>) -> Vec<Finding> {
+pub(crate) fn merge_same_cause(mut checked: Vec<Finding>) -> Vec<Finding> {
     let mut keep: Vec<usize> = vec![];
     for n in 1..=checked.len() {
         let f_same = checked[n - 1].same_as;
@@ -548,7 +548,7 @@ fn merge_same_cause(mut checked: Vec<Finding>) -> Vec<Finding> {
 }
 
 /// The same cause reported twice (one fix, same file) becomes one finding naming every place.
-fn merge_duplicates(findings: Vec<Finding>) -> Vec<Finding> {
+pub(crate) fn merge_duplicates(findings: Vec<Finding>) -> Vec<Finding> {
     let words = |t: &str| -> std::collections::HashSet<String> {
         let re = lit(r"[a-z]{4,}");
         let (mut s, mut at, low) = (std::collections::HashSet::new(), 0, t.to_lowercase());
@@ -580,7 +580,7 @@ fn merge_duplicates(findings: Vec<Finding>) -> Vec<Finding> {
 }
 
 /// The block the main agent answers from. Rejected findings are listed so it can say what was ruled out, but never as findings.
-fn compose(findings: &[Finding], reviewers: usize) -> String {
+pub(crate) fn compose(findings: &[Finding], reviewers: usize) -> String {
     let mut live: Vec<&Finding> = findings.iter().filter(|f| matches!(f.verdict.as_str(), "CONFIRMED" | "PLAUSIBLE" | "UNCLEAR" | "UNCHECKED")).collect();
     live.sort_by_key(|f| severity_rank(shown_severity(f)));
     let rejected: Vec<&Finding> = findings.iter().filter(|f| f.verdict == "REJECTED").collect();
@@ -608,12 +608,12 @@ fn compose(findings: &[Finding], reviewers: usize) -> String {
 }
 
 /// A finding that cites a file that is not in the repo (and not one the change deleted) is a reviewer's slip.
-fn drop_missing_files(findings: Vec<Finding>, files: &[String]) -> Vec<Finding> {
+pub(crate) fn drop_missing_files(findings: Vec<Finding>, files: &[String]) -> Vec<Finding> {
     findings.into_iter().filter(|f| !f.where_.contains("(file not found)") || files.contains(&f.where_.split(':').next().unwrap_or("").trim().replace(" (file not found)", ""))).collect()
 }
 
 /// `position` maps a finding to its number in the whole list: SAME_AS in a reply counts inside the batch it saw.
-fn apply_verdicts(findings: &mut [Finding], range: std::ops::Range<usize>, reply: &str, min_conf: i64) {
+pub(crate) fn apply_verdicts(findings: &mut [Finding], range: std::ops::Range<usize>, reply: &str, min_conf: i64) {
     let verdicts = parse_verdicts(reply, range.len());
     for (k, v) in verdicts.into_iter().enumerate() {
         let (verdict, evidence, reach, temporary, at_head, same_as, conf) = v;
@@ -639,13 +639,13 @@ fn apply_verdicts(findings: &mut [Finding], range: std::ops::Range<usize>, reply
     }
 }
 
-fn claim_lines(batch: &[Finding]) -> String {
+pub(crate) fn claim_lines(batch: &[Finding]) -> String {
     batch.iter().enumerate().map(|(n, f)| format!("{}. {} | {} | {} | fix: {}", n + 1, f.severity, f.where_, f.what, if f.fix.is_empty() { "(none)" } else { &f.fix })).collect::<Vec<_>>().join("\n")
 }
 
 /// Claims go to verifiers six at a time (in parallel), so each claim gets turns of its own. A claim the verifier could not
 /// decide gets one more look from a fresh verifier with a bigger budget; if it is still undecided it stays PLAUSIBLE.
-async fn verify(config: &Config, role: &str, findings: &mut Vec<Finding>) {
+pub(crate) async fn verify(config: &Config, role: &str, findings: &mut Vec<Finding>) {
     let ranges: Vec<std::ops::Range<usize>> = (0..findings.len()).step_by(VERIFY_BATCH).map(|i| i..(i + VERIFY_BATCH).min(findings.len())).collect();
     let replies = {
         let futs = ranges.iter().map(|r| {
@@ -681,7 +681,7 @@ async fn verify(config: &Config, role: &str, findings: &mut Vec<Finding>) {
 
 /// Run the confirmed HIGH findings in a throwaway copy of the change. A defect that shows up in output is the strongest
 /// evidence there is; one the real code path refuses to show is capped at MEDIUM, with what was tried written next to it.
-async fn reproduce(config: &Config, role: &str, cwd: &Path, findings: &mut [Finding], files: &[String], target: Option<&Target>) {
+pub(crate) async fn reproduce(config: &Config, role: &str, cwd: &Path, findings: &mut [Finding], files: &[String], target: Option<&Target>) {
     let picks: Vec<usize> = (0..findings.len()).filter(|i| findings[*i].verdict == "CONFIRMED" && matches!(shown_severity(&findings[*i]), "CRITICAL" | "HIGH")).take(MAX_REPROS).collect();
     if picks.is_empty() {
         return;
@@ -726,7 +726,7 @@ async fn reproduce(config: &Config, role: &str, cwd: &Path, findings: &mut [Find
 }
 
 /// (title, rest): the first sentence is the heading and the remainder the explanation.
-fn headline(what: &str) -> (String, String) {
+pub(crate) fn headline(what: &str) -> (String, String) {
     let text = tidy(what, 700);
     if let Some(c) = Re::new(r"(?s)^(.{20,170}?[.!?])\s+(.*)", false).ok().and_then(|r| r.captures(&text)) {
         return (c[1].clone().unwrap_or_default().trim_end_matches('.').to_string(), c[2].clone().unwrap_or_default().trim().to_string());
@@ -743,13 +743,13 @@ fn headline(what: &str) -> (String, String) {
     (cut, rest)
 }
 
-fn sorted_live(findings: &[Finding]) -> Vec<Finding> {
+pub(crate) fn sorted_live(findings: &[Finding]) -> Vec<Finding> {
     let mut live: Vec<Finding> = findings.iter().filter(|f| f.verdict != "REJECTED").cloned().collect();
     live.sort_by(|a, b| (a.verdict != "CONFIRMED", severity_rank(shown_severity(a)), a.where_.clone()).cmp(&(b.verdict != "CONFIRMED", severity_rank(shown_severity(b)), b.where_.clone())));
     live
 }
 
-fn groups_of(live: &[Finding]) -> [Vec<Finding>; 4] {
+pub(crate) fn groups_of(live: &[Finding]) -> [Vec<Finding>; 4] {
     let proven: Vec<Finding> = live.iter().filter(|f| f.verdict == "CONFIRMED").cloned().collect();
     let blocking: Vec<Finding> = proven.iter().filter(|f| matches!(shown_severity(f), "CRITICAL" | "HIGH")).cloned().collect();
     let rest: Vec<Finding> = proven.iter().filter(|f| shown_severity(f) == "MEDIUM").cloned().collect();
@@ -759,14 +759,14 @@ fn groups_of(live: &[Finding]) -> [Vec<Finding>; 4] {
 }
 
 /// The findings in the order the answer numbers them (proven blockers, proven fixes, minor, then guesses). "Fix 2" means item 2.
-fn display_order(findings: &[Finding]) -> Vec<Finding> {
+pub(crate) fn display_order(findings: &[Finding]) -> Vec<Finding> {
     let live = sorted_live(findings);
     let [b, r, m, g] = groups_of(&live);
     [b, r, m, g].concat()
 }
 
 /// The review a user reads, built from the verified findings with no model call (markdown, which the terminal renders).
-fn format_answer(findings: &[Finding]) -> String {
+pub(crate) fn format_answer(findings: &[Finding]) -> String {
     let live = sorted_live(findings);
     let ruled = findings.iter().filter(|f| f.verdict == "REJECTED").count();
     if live.is_empty() {
@@ -813,14 +813,14 @@ fn format_answer(findings: &[Finding]) -> String {
 }
 
 /// New input + output tokens of each sub-agent, in the order they finished.
-fn spent_log() -> &'static Mutex<Vec<i64>> {
+pub(crate) fn spent_log() -> &'static Mutex<Vec<i64>> {
     static L: OnceLock<Mutex<Vec<i64>>> = OnceLock::new();
     L.get_or_init(|| Mutex::new(vec![]))
 }
 
 /// A path the reviewer wrote must exist. A near miss is mended when exactly one file has that name; anything else is
 /// marked so the reader does not go looking for it.
-async fn fix_paths(findings: &mut [Finding], cwd: &Path) {
+pub(crate) async fn fix_paths(findings: &mut [Finding], cwd: &Path) {
     let tree = crate::agent::grounding::tree(cwd).await;
     for f in findings.iter_mut() {
         let (path, rest) = match f.where_.split_once(':') {
@@ -835,6 +835,12 @@ async fn fix_paths(findings: &mut [Finding], cwd: &Path) {
         f.where_ = if same.len() == 1 { format!("{}{}", same[0], rest.map(|r| format!(":{r}")).unwrap_or_default()) } else { format!("{} (file not found)", f.where_) };
     }
 }
+
+/// Test seam: answers a sub-agent request without a model. Gets the sub-agent's final config, the prompt and the role.
+#[cfg(test)]
+pub(crate) type AskHook = std::sync::Arc<dyn Fn(Config, String, String) -> String + Send + Sync>;
+#[cfg(test)]
+pub(crate) static ASK_HOOK: Mutex<Option<AskHook>> = Mutex::new(None);
 
 /// One read-only sub-agent with its own context; returns its last text. A crash or a stop is an empty answer, never an error.
 #[allow(clippy::too_many_arguments)]
@@ -868,6 +874,10 @@ pub async fn ask(config: &Config, prompt: &str, role: &str, max_turns: usize, ma
     cfg.max_seconds = 300.0;
     cfg.approval = ApprovalPolicy::parse(approval).unwrap_or(ApprovalPolicy::Never);
     cfg.disabled_skills.extend(disabled_skills.unwrap_or_default());
+    #[cfg(test)]
+    if let Some(h) = ASK_HOOK.lock().unwrap().clone() {
+        return h(cfg, prompt.to_string(), role.to_string()); // tests answer for the model here
+    }
     let wall = Duration::from_secs_f64(cfg.max_seconds + 60.0);
     // the agent's own 300s budget only covers model waits; a stall anywhere else must not hang the review
     match tokio::time::timeout(wall, crate::agent::agent::run_collect(cfg, prompt)).await {
@@ -880,7 +890,7 @@ pub async fn ask(config: &Config, prompt: &str, role: &str, max_turns: usize, ma
 }
 
 /// The project's own typecheck / lint / related specs for the changed files, run once and shared with every reviewer.
-async fn run_checks(config: &Config, files: &[String]) -> Vec<CheckResult> {
+pub(crate) async fn run_checks(config: &Config, files: &[String]) -> Vec<CheckResult> {
     let mut out = vec![];
     for (cmd, sub) in select_checks(config, files) {
         out.push(run_check(&cmd, &config.cwd.join(sub), config).await);
@@ -890,7 +900,7 @@ async fn run_checks(config: &Config, files: &[String]) -> Vec<CheckResult> {
 
 /// A failed check that names a changed file is a proven defect with no model involved: `src/a.ts(12,5): error TS2322`.
 /// A failure that names none of them (old debt elsewhere) is left for the frame to mention, not blamed on this change.
-fn check_findings(results: &[CheckResult], files: &[String]) -> Vec<Finding> {
+pub(crate) fn check_findings(results: &[CheckResult], files: &[String]) -> Vec<Finding> {
     let mut out = vec![];
     for r in results.iter().filter(|r| !r.ok) {
         for f in files {
@@ -938,7 +948,7 @@ pub async fn run_review_pipeline(config: Config, request: String, tx: UnboundedS
 /// Emits notices as it goes and finally the answer and result block, or nothing when there is nothing to review.
 /// Reviewers each take one angle on the change, the project's checks run beside them, a last reviewer hunts for what
 /// they all missed, then verifiers try to refute every claim and score it.
-async fn run_review(config: &Config, request: &str, target: Option<&Target>, tx: &UnboundedSender<PipelineEvent>) {
+pub(crate) async fn run_review(config: &Config, request: &str, target: Option<&Target>, tx: &UnboundedSender<PipelineEvent>) {
     let say = |m: String| {
         let _ = tx.send(PipelineEvent::Notice(m));
     };

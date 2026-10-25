@@ -285,7 +285,7 @@ fn within(render: impl Fn(usize) -> String, budget: usize) -> String {
 }
 
 /// Skills grouped by folder, so a long plugin path is written once instead of once per skill.
-fn skill_rows(skills: &[&Skill], cap: usize) -> String {
+pub(crate) fn skill_rows(skills: &[&Skill], cap: usize) -> String {
     let home = dirs::home_dir().unwrap_or_default().to_string_lossy().to_string();
     let mut groups: Vec<(String, Vec<String>)> = vec![];
     for k in skills {

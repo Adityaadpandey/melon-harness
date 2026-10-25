@@ -91,6 +91,12 @@ async fn git(cwd: &Path, args: &[&str]) -> (i32, String) {
     }
 }
 
+/// Test seam: a worker's whole job. Gets its checkout and prompt, returns the task status the agent would have reported.
+#[cfg(test)]
+pub(crate) type WorkerHook = Arc<dyn Fn(PathBuf, String) -> futures::future::BoxFuture<'static, Option<String>> + Send + Sync>;
+#[cfg(test)]
+pub(crate) static WORKER_HOOK: std::sync::Mutex<Option<WorkerHook>> = std::sync::Mutex::new(None);
+
 pub struct Orchestrator {
     config: Config,
     sem: Arc<tokio::sync::Semaphore>,
@@ -171,6 +177,12 @@ impl Orchestrator {
         say(json!({"kind": "start", "goal": node.goal}));
         let mut last_text = String::new();
         let work = async {
+            #[cfg(test)]
+            let hook = WORKER_HOOK.lock().unwrap().clone();
+            #[cfg(test)]
+            if let Some(h) = hook {
+                return h(wt.clone(), prompt.clone()).await; // tests edit files here instead of running a model
+            }
             let mut agent = Agent::new(cfg, None).await;
             let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel::<AgentEvent>();
             let mut task_status = None;
