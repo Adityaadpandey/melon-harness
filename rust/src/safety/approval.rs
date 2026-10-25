@@ -258,7 +258,7 @@ pub struct ApprovalManager {
     pub approval_policy: Mutex<ApprovalPolicy>,
     pub cwd: PathBuf,
     pub confirmation_callback: Mutex<Option<ConfirmCallback>>,
-    always_commands: Mutex<HashSet<String>>,
+    pub(crate) always_commands: Mutex<HashSet<String>>,
     verify_commands: HashSet<String>,
     rules: Mutex<Rules>,
     /// Total seconds spent waiting for the user's answer; the agent's clock stops meanwhile.
@@ -335,7 +335,7 @@ impl ApprovalManager {
         }
     }
 
-    fn assess_command_safety(&self, command: &str) -> ApprovalDecision {
+    pub(crate) fn assess_command_safety(&self, command: &str) -> ApprovalDecision {
         use ApprovalDecision::*;
         use ApprovalPolicy as P;
         let policy = self.policy();

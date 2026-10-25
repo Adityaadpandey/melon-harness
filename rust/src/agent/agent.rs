@@ -71,7 +71,7 @@ fn notice(tx: &Tx, m: impl Into<String>) {
 
 /// Pass a model stream through, but give up when the request's time budget is gone: a stalled connection must not
 /// outlive the budget (retries and fallbacks each wait for their own read timeout).
-async fn next_within(deadline: Instant, s: &mut futures::stream::BoxStream<'static, StreamEvent>) -> Option<StreamEvent> {
+pub(crate) async fn next_within(deadline: Instant, s: &mut futures::stream::BoxStream<'static, StreamEvent>) -> Option<StreamEvent> {
     let left = deadline.saturating_duration_since(Instant::now());
     if left.is_zero() {
         return Some(StreamEvent::Error("Time budget exhausted while waiting for the model".into()));
@@ -97,7 +97,7 @@ pub struct Agent {
     last_compact_turn: Option<usize>,
     thrash: usize,
     overflow_retried: bool,
-    last_model_call: Option<Instant>,
+    pub(crate) last_model_call: Option<Instant>,
     /// Did the last request stop at the call budget? /more only makes sense then.
     pub capped_last: bool,
     /// Set by /more, consumed by the next request.
@@ -350,7 +350,7 @@ impl Agent {
 
     /// Read-only requests (review, explain, find) get a hard cap on tool rounds; requests that change files and
     /// sub-agents are not capped here (they have turn and token budgets).
-    fn call_limit(&self) -> usize {
+    pub(crate) fn call_limit(&self) -> usize {
         let cfg = self.config.get();
         let budget = if self.read_only { cfg.read_call_budget } else { cfg.write_call_budget };
         if cfg.model_role != "default" || budget == 0 {
@@ -1306,7 +1306,7 @@ impl Agent {
 
     /// Old results get cleared and history gets folded, but the task list is small and still the plan: put it back after
     /// a clear so the agent does not rediscover what is left to do.
-    fn remind_todos(&mut self) {
+    pub(crate) fn remind_todos(&mut self) {
         let text = self.todos().and_then(|t| t.as_any().downcast_ref::<TodosTool>().map(|t| t.render())).unwrap_or_default();
         if !text.is_empty() && text.contains("[ ]") && text != self.todos_reminded {
             self.todos_reminded = text.clone();
@@ -1315,7 +1315,7 @@ impl Agent {
         }
     }
 
-    fn prune(&mut self, remind: bool, force: bool) {
+    pub(crate) fn prune(&mut self, remind: bool, force: bool) {
         let cfg = self.config.get();
         // Clearing results early only hurts: the model re-reads what it just lost, and the rewrite throws away the
         // provider's cache. Claude Code waits until the context is genuinely filling up; so do we.
@@ -1349,7 +1349,7 @@ impl Agent {
         }
     }
 
-    async fn compact(&mut self, reuse_cache: bool) -> bool {
+    pub(crate) async fn compact(&mut self, reuse_cache: bool) -> bool {
         let cfg = self.config.get();
         let before = self.session.context_manager.lock().unwrap().latest_usage.total_tokens;
         self.session.hook_system.fire(HookTrigger::PreCompact, &[("tokens", before.to_string())]).await;
