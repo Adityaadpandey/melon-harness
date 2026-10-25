@@ -93,7 +93,7 @@ pub struct Agent {
     escalated: bool,
     budget_hit: bool,
     compact_retry_turn: usize,
-    last_role: String,
+    pub(crate) last_role: String,
     last_compact_turn: Option<usize>,
     thrash: usize,
     overflow_retried: bool,
