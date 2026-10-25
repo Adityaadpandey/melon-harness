@@ -5,6 +5,7 @@ use serde_json::{json, Value};
 use std::path::Path;
 
 mod test_agent_files;
+mod test_agent_loop;
 mod test_approval;
 mod test_reminders;
 mod test_answer_cap;
