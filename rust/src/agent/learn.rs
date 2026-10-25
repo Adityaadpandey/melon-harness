@@ -136,6 +136,14 @@ impl Learned {
         None
     }
 
+    pub fn edit_count(&self) -> usize {
+        self.data["edits"].as_array().map_or(0, Vec::len)
+    }
+
+    pub fn store_path(&self) -> &Path {
+        &self.path
+    }
+
     pub fn lessons(&self) -> Vec<String> {
         self.data["lessons"].as_array().unwrap().iter().map(|l| l["text"].as_str().unwrap_or("").to_string()).collect()
     }

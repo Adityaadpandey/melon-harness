@@ -86,6 +86,13 @@ fn fail(msg: &str) -> ! {
 }
 
 fn main() {
+    // subcommands that are not a request: melon learn-import ..., melon bench ...
+    let raw: Vec<String> = std::env::args().collect();
+    if raw.get(1).map(String::as_str) == Some("learn-import") {
+        let rt = tokio::runtime::Builder::new_multi_thread().enable_all().build().expect("runtime");
+        let argv: Vec<String> = std::iter::once("melon learn-import".to_string()).chain(raw.into_iter().skip(2)).collect();
+        std::process::exit(rt.block_on(agent::learn_import::main(argv)));
+    }
     let args = Args::parse();
     // a single-threaded runtime would starve the spinner thread's lock and the blocking prompts; four workers is plenty
     let rt = tokio::runtime::Builder::new_multi_thread().worker_threads(4).enable_all().build().expect("runtime");
