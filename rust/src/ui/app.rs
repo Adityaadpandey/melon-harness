@@ -307,7 +307,7 @@ pub struct Cli {
     live: Arc<Mutex<Option<Arc<Session>>>>,
 }
 
-const MODES: [ApprovalPolicy; 4] = [ApprovalPolicy::OnRequest, ApprovalPolicy::AutoEdit, ApprovalPolicy::Auto, ApprovalPolicy::Plan];
+pub(crate) const MODES: [ApprovalPolicy; 4] = [ApprovalPolicy::OnRequest, ApprovalPolicy::AutoEdit, ApprovalPolicy::Auto, ApprovalPolicy::Plan];
 
 impl Cli {
     pub fn new(config: Config) -> Cli {

@@ -52,6 +52,9 @@ async fn grep_respects_gitignore_finds_dotdirs_and_skips_secrets() {
 async fn grep_smart_case_context_glob_and_limit() {
     let d = repo();
     let p = d.path();
+    // made up front: another test holds the global file listing for a moment, and a file added after the
+    // first search of this repo could then be missed
+    w(p, "many.txt", &"hit\n".repeat(30));
     let t = GrepTool::new(handle(p));
     // lowercase + alternation: smart case is on
     assert!(run_tool(&t, p, json!({"pattern": "loaduser|loadUser"})).await.output.contains("src/b.ts:1:"));
@@ -61,7 +64,6 @@ async fn grep_smart_case_context_glob_and_limit() {
     assert!(r.output.contains("src/a.py-1-def load_user") && r.output.contains("src/a.py:2:    return 1"));
     let r = run_tool(&t, p, json!({"pattern": "load", "glob": "*.ts"})).await;
     assert!(r.output.contains("b.ts") && !r.output.contains("a.py"));
-    w(p, "many.txt", &"hit\n".repeat(30));
     let r = run_tool(&t, p, json!({"pattern": "hit", "limit": 5})).await;
     assert_eq!(r.output.matches("many.txt:").count(), 5);
     assert!(r.output.contains("25 more matches"));

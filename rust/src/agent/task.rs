@@ -38,7 +38,7 @@ impl TaskStatus {
     pub fn terminal(&self) -> bool {
         !matches!(self, TaskStatus::Running | TaskStatus::Verifying | TaskStatus::Repairing)
     }
-    fn allowed(&self, to: TaskStatus) -> bool {
+    pub(crate) fn allowed(&self, to: TaskStatus) -> bool {
         use TaskStatus::*;
         match self {
             Running => matches!(to, Verifying | Repairing | DoneNoChanges | Unverified | Failed), // Repairing: review findings on a run that had no checks
