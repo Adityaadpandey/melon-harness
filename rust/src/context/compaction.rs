@@ -12,7 +12,7 @@ use std::sync::{Arc, Mutex};
 const HEADINGS: &[&str] = &["## ORIGINAL GOAL", "## COMPLETED ACTIONS", "## CURRENT STATE", "## NEXT STEP", "## USER MESSAGES", "## KEY CONTEXT"];
 
 /// Sandwiched like Claude Code's: open models given tools mid-conversation reach for them unless told twice.
-fn fork_prompt() -> String {
+pub(crate) fn fork_prompt() -> String {
     format!(
         "CRITICAL: Respond with TEXT ONLY. Do not call any tools; a tool call here fails the task.\n\nThe conversation above is about to be replaced by your summary; the newest messages, which you cannot see, are kept word for word after it. If it opens with an earlier summary, carry its facts forward.\n\n{}\n\nREMINDER: plain text with the headings above, no tool calls.",
         get_compression_prompt()
@@ -23,7 +23,7 @@ pub struct ChatCompactor {
     client: Arc<LLMClient>,
 }
 
-fn format_history(messages: &[Value]) -> String {
+pub(crate) fn format_history(messages: &[Value]) -> String {
     let mut output = vec!["Here is the conversation that needs to be continue: \n".to_string()];
     for msg in messages {
         let role = msg["role"].as_str().unwrap_or("");

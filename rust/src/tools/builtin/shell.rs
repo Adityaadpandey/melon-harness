@@ -256,7 +256,9 @@ impl Tool for ShellTool {
         let mut guard = KillOnDrop(Some(pid));
 
         // output is copied to a log as it arrives, so a slow command can be handed over to the background mid-run
-        let job_id = jobs().lock().unwrap().len() + 1;
+        // a counter, not the table's size: two commands started together would otherwise share an id and a log file
+        static NEXT_JOB: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(1);
+        let job_id = NEXT_JOB.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
         let log = std::env::temp_dir().join(format!("melon-job-{}-{job_id}.log", std::process::id()));
         let _ = std::fs::write(&log, b"");
         let bufs: Arc<Mutex<(Vec<u8>, Vec<u8>)>> = Arc::new(Mutex::new((vec![], vec![])));

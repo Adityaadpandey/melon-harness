@@ -323,7 +323,7 @@ impl Cli {
         self.agent.as_mut().expect("agent")
     }
 
-    async fn new_agent(&mut self, confirm: Option<ConfirmCallback>) {
+    pub(crate) async fn new_agent(&mut self, confirm: Option<ConfirmCallback>) {
         let session = Session::create(self.config.clone()).await;
         *session.approval_manager.confirmation_callback.lock().unwrap() = confirm;
         #[cfg(test)]
@@ -854,7 +854,7 @@ impl Cli {
     }
 
     /// Written after every turn, so a crash or closed terminal still leaves something to resume.
-    fn autosave(&mut self) {
+    pub(crate) fn autosave(&mut self) {
         if self.agent.as_ref().map_or(false, |a| a.session.turns() > 0) {
             let snap = self.snapshot();
             PersistenceManager::new().save_session(&snap);
@@ -907,7 +907,7 @@ impl Cli {
         self.tui.reset();
     }
 
-    async fn resume(&mut self, id: &str) -> bool {
+    pub(crate) async fn resume(&mut self, id: &str) -> bool {
         let Some(snap) = PersistenceManager::new().load_session(id) else { return false };
         self.restore_into_session(&snap, true).await;
         // draw the conversation again so the transcript shows what was said
