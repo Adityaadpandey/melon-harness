@@ -307,6 +307,10 @@ pub struct Cli {
     live: Arc<Mutex<Option<Arc<Session>>>>,
 }
 
+/// Test seam: the replies the next agent made by `new_agent` will give.
+#[cfg(test)]
+pub(crate) static TEST_SCRIPT: Mutex<Option<Vec<Vec<crate::client::response::StreamEvent>>>> = Mutex::new(None);
+
 const MODES: [ApprovalPolicy; 4] = [ApprovalPolicy::OnRequest, ApprovalPolicy::AutoEdit, ApprovalPolicy::Auto, ApprovalPolicy::Plan];
 
 impl Cli {
@@ -322,6 +326,10 @@ impl Cli {
     async fn new_agent(&mut self, confirm: Option<ConfirmCallback>) {
         let session = Session::create(self.config.clone()).await;
         *session.approval_manager.confirmation_callback.lock().unwrap() = confirm;
+        #[cfg(test)]
+        if let Some(turns) = TEST_SCRIPT.lock().unwrap().take() {
+            *session.client.script.lock().unwrap() = Some(turns.into()); // tests give the new agent its model replies here
+        }
         self.agent = Some(Agent::with_session(self.config.clone(), session));
         self.publish_session();
     }
@@ -396,6 +404,19 @@ impl Cli {
     ///     {"type": "get_state"}                                      is it running, which model
     /// Every command gets {"type": "response", "command": ..., "success": ..., "id": ...}.
     pub async fn run_rpc(&mut self) {
+        let (line_tx, line_rx) = tokio::sync::mpsc::unbounded_channel::<String>();
+        std::thread::spawn(move || {
+            let stdin = std::io::stdin();
+            let mut s = String::new();
+            while stdin.read_line(&mut s).map_or(false, |n| n > 0) {
+                let _ = line_tx.send(std::mem::take(&mut s));
+            }
+        });
+        self.run_rpc_lines(line_rx).await;
+    }
+
+    /// The command loop behind `run_rpc`, reading its lines from a channel so tests can feed it.
+    pub(crate) async fn run_rpc_lines(&mut self, mut line_rx: tokio::sync::mpsc::UnboundedReceiver<String>) {
         self.new_agent(None).await;
         let agent = self.agent.take().unwrap();
         let steering = agent.steering.clone();
@@ -405,14 +426,6 @@ impl Cli {
             uprintln!("{v}");
             let _ = std::io::stdout().flush();
         };
-        let (line_tx, mut line_rx) = tokio::sync::mpsc::unbounded_channel::<String>();
-        std::thread::spawn(move || {
-            let stdin = std::io::stdin();
-            let mut s = String::new();
-            while stdin.read_line(&mut s).map_or(false, |n| n > 0) {
-                let _ = line_tx.send(std::mem::take(&mut s));
-            }
-        });
         let mut running: Option<tokio::task::JoinHandle<()>> = None;
         let model = self.config.get().model.name.clone();
         while let Some(line) = line_rx.recv().await {
