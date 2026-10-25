@@ -108,7 +108,7 @@ pub struct LLMClient {
     pub tracer: Arc<Tracer>,
     pub registry: Arc<ModelRegistry>,
     router: Router,
-    adapters: Mutex<HashMap<String, Arc<dyn Adapter>>>,
+    pub(crate) adapters: Mutex<HashMap<String, Arc<dyn Adapter>>>,
     state: Mutex<State>,
     max_retries: usize,
     /// Tests only: replies played back instead of calling a model, and every request seen.
@@ -138,7 +138,7 @@ impl LLMClient {
     }
 
     /// Which account a model is billed to: models sharing one also share its quota.
-    fn provider_of(&self, model: &str) -> String {
+    pub(crate) fn provider_of(&self, model: &str) -> String {
         let cfg = self.config.get();
         match split(&cfg, model) {
             Some((p, _)) => p.name,
@@ -247,7 +247,7 @@ impl LLMClient {
 
     /// max_tokens for this call: the configured cap, what the server said it accepts, and the room left in the context,
     /// whichever is smallest. e.g. a 128k window with 110k of prompt leaves 128k-110k-4k = 14k to write.
-    fn output_cap(&self, model: &str, window: usize, est_tokens: usize) -> Option<usize> {
+    pub(crate) fn output_cap(&self, model: &str, window: usize, est_tokens: usize) -> Option<usize> {
         let cfg = self.config.get();
         let st = self.state.lock().unwrap();
         let configured = st.max_out.get(model).copied().unwrap_or(cfg.model.max_output_tokens);

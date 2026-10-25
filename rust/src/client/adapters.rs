@@ -458,7 +458,7 @@ impl CodexResponsesAdapter {
         CodexResponsesAdapter { client: http_client(60), auth: CodexAuth::default(), effort: std::sync::Mutex::new(effort), cache_key: uuid::Uuid::new_v4().to_string() }
     }
 
-    async fn headers(&self, force: bool) -> Result<Vec<(&'static str, String)>, ProviderError> {
+    pub(crate) async fn headers(&self, force: bool) -> Result<Vec<(&'static str, String)>, ProviderError> {
         let (token, account) = self.auth.credentials(force).await.map_err(|e| {
             if e.starts_with("Connection error") { classify(None, &e) } else { ProviderError::new(e, Some(401)) }
         })?;
