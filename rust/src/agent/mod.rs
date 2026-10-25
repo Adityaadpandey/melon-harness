@@ -1,0 +1,30 @@
+//! The agent: the loop that talks to the model and runs tools, plus everything around one request (routing, checks,
+//! reviews, learning, sessions).
+pub mod agent;
+pub mod brevity;
+pub mod challenge;
+pub mod events;
+pub mod grounding;
+pub mod instructions;
+pub mod learn;
+pub mod learn_import;
+pub mod notes;
+pub mod orchestrator;
+pub mod orient;
+pub mod persistence;
+pub mod profile;
+pub mod review;
+pub mod review_fix;
+pub mod review_fix_verify;
+pub mod review_pipeline;
+pub mod review_target;
+pub mod root;
+pub mod routing_policy;
+pub mod scope;
+pub mod session;
+pub mod skills;
+pub mod task;
+pub mod verify;
+pub mod review_claude;
+pub mod review_memory;
+pub mod review_repro;
