@@ -22,7 +22,7 @@ pub struct ModelConfig {
 
 impl Default for ModelConfig {
     fn default() -> Self {
-        ModelConfig { name: "codex/gpt-5.6-luna".into(), temperature: None, context_window: 256_000, max_output_tokens: 32_000 }
+        ModelConfig { name: "MiniMaxAI/MiniMax-M3".into(), temperature: None, context_window: 256_000, max_output_tokens: 32_000 }
     }
 }
 

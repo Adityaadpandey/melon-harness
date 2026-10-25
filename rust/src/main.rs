@@ -9,6 +9,8 @@ mod safety;
 mod tools;
 mod ui;
 mod util;
+#[cfg(test)]
+mod tests;
 
 use clap::Parser;
 use config::loader::{load_config, load_last_model, save_last_model, LoadOptions};

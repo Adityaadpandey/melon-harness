@@ -23,6 +23,9 @@ pub fn get_config_dir() -> PathBuf {
 }
 
 pub fn get_data_dir() -> PathBuf {
+    if let Ok(d) = std::env::var("MELON_DATA_DIR") {
+        return PathBuf::from(d);
+    }
     if cfg!(target_os = "macos") {
         dirs::home_dir().unwrap_or_default().join("Library/Application Support/melon")
     } else {

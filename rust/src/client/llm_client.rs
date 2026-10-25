@@ -111,12 +111,18 @@ pub struct LLMClient {
     adapters: Mutex<HashMap<String, Arc<dyn Adapter>>>,
     state: Mutex<State>,
     max_retries: usize,
+    /// Tests only: replies played back instead of calling a model, and every request seen.
+    #[cfg(test)]
+    pub script: Mutex<Option<std::collections::VecDeque<Vec<StreamEvent>>>>,
+    #[cfg(test)]
+    pub requests: Mutex<Vec<Vec<Value>>>,
 }
 
 impl LLMClient {
     pub fn new(config: ConfigHandle, tracer: Arc<Tracer>) -> LLMClient {
         let registry = Arc::new(ModelRegistry::new(config.clone(), crate::config::loader::get_data_dir()));
-        LLMClient { router: Router::new(config.clone()), config, tracer, registry, adapters: Mutex::new(HashMap::new()), state: Mutex::new(State::default()), max_retries: 3 }
+        LLMClient { router: Router::new(config.clone()), config, tracer, registry, adapters: Mutex::new(HashMap::new()), state: Mutex::new(State::default()), max_retries: 3,
+            #[cfg(test)] script: Mutex::new(None), #[cfg(test)] requests: Mutex::new(Vec::new()) }
     }
 
     pub async fn initialize(&self) {
@@ -179,6 +185,15 @@ impl LLMClient {
         let this = self.clone();
         let role = role.to_string();
         Box::pin(async_stream::stream! {
+            #[cfg(test)]
+            {
+                this.requests.lock().unwrap().push(messages.clone());
+                let next = this.script.lock().unwrap().as_mut().map(|q| q.pop_front());
+                if let Some(turn) = next {
+                    for ev in turn.unwrap_or_else(|| vec![StreamEvent::Error("script ran out".into())]) { yield ev; }
+                    return;
+                }
+            }
             let est_tokens = serde_json::to_string(&messages).map(|s| s.len()).unwrap_or(0) / 3;
             let (models, skipped) = this.router.candidates(&this.registry, &role, tools.is_some(), est_tokens);
             let blocked = this.state.lock().unwrap().quota_blocked.clone();
