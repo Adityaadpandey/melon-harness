@@ -38,3 +38,5 @@ mod test_rewind;
 mod test_notes;
 mod test_memory_scope;
 mod test_task_modes;
+mod test_task_verify;
+mod test_workspace;
