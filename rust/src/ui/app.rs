@@ -1,5 +1,7 @@
 //! The program's modes: one-shot, JSON lines, RPC, parallel workers, and the interactive session with its slash commands.
-use super::input::{Input, Line, COMMANDS};
+use crate::{uprint, uprintln};
+use super::fullscreen;
+use super::input::{Completions, Input, Line, COMMANDS};
 use super::prompt::{set_asker, Asker};
 use super::style::*;
 use super::tui::Tui;
@@ -11,7 +13,7 @@ use crate::agent::verify::undo;
 use crate::client::response::TokenUsage;
 use crate::config::loader::{get_data_dir, save_env_key, save_last_model};
 use crate::config::{ApprovalPolicy, Config, ConfigHandle};
-use crate::safety::approval::{ConfirmCallback, Decision};
+use crate::safety::approval::{ApprovalManager, ConfirmCallback, Decision};
 use crate::tools::builtin::shell::{kill_jobs, jobs_list as JOBS_LIST};
 use crate::util::cost::summarize_usage;
 use crate::util::re::lit;
@@ -117,7 +119,7 @@ fn pick_key(count: usize) -> usize {
 
 fn read_secret_line(prompt: &str) -> String {
     use crossterm::event::{read, Event, KeyCode, KeyEventKind};
-    print!("{prompt}");
+    uprint!("{prompt}");
     let _ = std::io::stdout().flush();
     if crossterm::terminal::enable_raw_mode().is_err() {
         let mut s = String::new();
@@ -144,12 +146,12 @@ fn read_secret_line(prompt: &str) -> String {
         }
     }
     let _ = crossterm::terminal::disable_raw_mode();
-    println!();
+    uprintln!();
     buf.trim().to_string()
 }
 
 fn read_plain_line(prompt: &str) -> String {
-    print!("{prompt}");
+    uprint!("{prompt}");
     let _ = std::io::stdout().flush();
     let mut s = String::new();
     let _ = std::io::stdin().read_line(&mut s);
@@ -164,6 +166,9 @@ impl Asker for TuiAsker {
     fn ask_choice(&self, question: String, options: Vec<String>) -> BoxFuture<'static, usize> {
         let tui = self.tui.clone();
         Box::pin(async move {
+            if let Some(fs) = fullscreen::current() {
+                return fs.choose(question, options).await;
+            }
             tui.pause();
             let mut lines = question.lines();
             let head = lines.next().unwrap_or("");
@@ -174,8 +179,8 @@ impl Asker for TuiAsker {
             for (i, o) in options.iter().enumerate() {
                 text.push_str(&format!("   {} {o}\n", bold_paint(&format!("{}.", i + 1), ACCENT)));
             }
-            print!("{text}");
-            print!("\x07");
+            uprint!("{text}");
+            uprint!("\x07");
             let _ = std::io::stdout().flush();
             let n = options.len();
             let pick = tokio::task::spawn_blocking(move || pick_key(n)).await.unwrap_or(n - 1);
@@ -187,6 +192,9 @@ impl Asker for TuiAsker {
     fn read_line(&self, prompt: String) -> BoxFuture<'static, String> {
         let tui = self.tui.clone();
         Box::pin(async move {
+            if let Some(fs) = fullscreen::current() {
+                return fs.ask_line(&prompt, false).await;
+            }
             tui.pause();
             let s = tokio::task::spawn_blocking(move || read_plain_line(&prompt)).await.unwrap_or_default();
             tui.resume();
@@ -203,10 +211,21 @@ fn confirm_callback(tui: Arc<Tui>) -> ConfirmCallback {
     Arc::new(move |c| {
         let tui = tui.clone();
         Box::pin(async move {
+            if let Some(fs) = fullscreen::current() {
+                let (q, always, _title) = tui.show_confirmation(&c);
+                let choice = fs.choose(q, vec!["Yes".into(), always, "No, and tell me what to do differently".into()]).await;
+                return if choice < 2 {
+                    tui.approved(&c);
+                    Decision { approved: true, always: choice == 1, feedback: None }
+                } else {
+                    let fb = fs.ask_line("What should I do instead? (Enter to skip)", false).await;
+                    Decision { approved: false, always: false, feedback: (!fb.is_empty()).then(|| format!("The user said: {fb}")) }
+                };
+            }
             tui.pause();
             let (q, always, _title) = tui.show_confirmation(&c);
             tui.set_phase("Waiting for your answer");
-            print!("\n {} {}\n   {} Yes\n   {} {always}\n   {} No, and tell me what to do differently\n\x07", bold_paint("?", ACCENT), bold_paint(&q, FG), bold_paint("1.", ACCENT), bold_paint("2.", ACCENT), bold_paint("3.", ACCENT));
+            uprint!("\n {} {}\n   {} Yes\n   {} {always}\n   {} No, and tell me what to do differently\n\x07", bold_paint("?", ACCENT), bold_paint(&q, FG), bold_paint("1.", ACCENT), bold_paint("2.", ACCENT), bold_paint("3.", ACCENT));
             let _ = std::io::stdout().flush();
             let choice = tokio::task::spawn_blocking(|| pick_key(3)).await.unwrap_or(2);
             let d = if choice < 2 {
@@ -222,6 +241,59 @@ fn confirm_callback(tui: Arc<Tui>) -> ConfirmCallback {
     })
 }
 
+
+/// Shift+Tab: next approval mode. Entering plan mode remembers where to come back to.
+fn cycle_approval(mgr: &Arc<ApprovalManager>, config: &ConfigHandle, before_plan: &Mutex<ApprovalPolicy>) {
+    let now = mgr.policy();
+    let next = MODES.iter().position(|m| *m == now).map_or(MODES[0], |i| MODES[(i + 1) % MODES.len()]);
+    if next == ApprovalPolicy::Plan {
+        *before_plan.lock().unwrap() = if now != ApprovalPolicy::Plan { now } else { ApprovalPolicy::OnRequest };
+    }
+    mgr.set_policy(next);
+    config.update(|c| c.approval = next);
+}
+
+/// Footer: the things you act on first (mode, model, context), details after, fitted to the width.
+fn toolbar_text(config: &ConfigHandle, sess: Option<Arc<Session>>, width: usize) -> String {
+        let cfg = config.get();
+        let mut parts: Vec<String> = vec![];
+        let running = JOBS_LIST().iter().filter(|j| !j.done()).count();
+        if running > 0 {
+            parts.push(format!("⚙ {running} running (/jobs)"));
+        }
+        if let Some(s) = &sess {
+            parts.push(s.approval_manager.policy().value().to_string());
+            if let Some(e) = &cfg.reasoning_effort {
+                parts.push(format!("effort {e}"));
+            }
+        }
+        parts.push(sess.as_ref().and_then(|s| s.client.last_model()).unwrap_or_else(|| cfg.model.name.clone()));
+        if let Some(s) = &sess {
+            let used = s.context_manager.lock().unwrap().context_used();
+            let window = s.client.registry.get(&cfg.model.name).context_length; // what the agent compacts against
+            if used > 0 {
+                parts.push(format!("ctx {}  {}k/{}k", context_bar(100.0 * used as f64 / window as f64, 12), used / 1000, window / 1000));
+            }
+            if let Some(c) = summarize_usage(&s.tracer.snapshot(), &cfg.pricing)["est_cost_usd"].as_f64() {
+                parts.push(format!("${c}"));
+            }
+            if cfg.sandbox != "off" {
+                parts.push(match crate::safety::sandbox::mode(&cfg) {
+                    "on" => "sandboxed",
+                    "unavailable" => "no sandbox",
+                    _ => "",
+                }
+                .to_string());
+            }
+        }
+        if let Some(p) = &cfg.profile {
+            parts.push(p.clone());
+        }
+        let text = parts.into_iter().filter(|p| !p.is_empty()).collect::<Vec<_>>().join("  ·  ");
+        let w = width.saturating_sub(3);
+        if text.chars().count() <= w { text } else { format!("{}…", text.chars().take(w - 1).collect::<String>()) }
+}
+
 // ---------------------------------------------------------------------------------------------------- the app
 
 pub struct Cli {
@@ -230,7 +302,9 @@ pub struct Cli {
     pub config: ConfigHandle,
     pub tui: Arc<Tui>,
     pub last_report: Option<Value>,
-    before_plan: ApprovalPolicy,
+    before_plan: Arc<Mutex<ApprovalPolicy>>,
+    /// The current session, for the full-screen footer and Shift+Tab (they run on the UI thread).
+    live: Arc<Mutex<Option<Arc<Session>>>>,
 }
 
 const MODES: [ApprovalPolicy; 4] = [ApprovalPolicy::OnRequest, ApprovalPolicy::AutoEdit, ApprovalPolicy::Auto, ApprovalPolicy::Plan];
@@ -238,7 +312,7 @@ const MODES: [ApprovalPolicy; 4] = [ApprovalPolicy::OnRequest, ApprovalPolicy::A
 impl Cli {
     pub fn new(config: Config) -> Cli {
         let tui = Tui::new(&config.cwd);
-        Cli { agent: None, resume_id: None, config: ConfigHandle::new(config), tui, last_report: None, before_plan: ApprovalPolicy::OnRequest }
+        Cli { agent: None, resume_id: None, config: ConfigHandle::new(config), tui, last_report: None, before_plan: Arc::new(Mutex::new(ApprovalPolicy::OnRequest)), live: Arc::new(Mutex::new(None)) }
     }
 
     fn agent(&mut self) -> &mut Agent {
@@ -249,6 +323,19 @@ impl Cli {
         let session = Session::create(self.config.clone()).await;
         *session.approval_manager.confirmation_callback.lock().unwrap() = confirm;
         self.agent = Some(Agent::with_session(self.config.clone(), session));
+        self.publish_session();
+    }
+
+    /// Tell the full-screen front end which session and steering queue are live.
+    fn publish_session(&mut self) {
+        let (session, steering) = {
+            let a = self.agent();
+            (a.session.clone(), a.steering.clone())
+        };
+        *self.live.lock().unwrap() = Some(session);
+        if let Some(fs) = fullscreen::current() {
+            fs.set_steer(steering);
+        }
     }
 
     pub async fn run_single(&mut self, message: &str, report_path: Option<&Path>) -> Option<String> {
@@ -279,7 +366,7 @@ impl Cli {
             tokio::pin!(run);
             let mut report = None;
             let mut handle = |ev: AgentEvent, ok: &mut bool, report: &mut Option<Value>| {
-                println!("{}", ev.to_value());
+                uprintln!("{}", ev.to_value());
                 let _ = std::io::stdout().flush();
                 match ev {
                     AgentEvent::AgentError { .. } => *ok = false,
@@ -315,7 +402,7 @@ impl Cli {
         let session_id = agent.session.session_id();
         let agent: Arc<tokio::sync::Mutex<Agent>> = Arc::new(tokio::sync::Mutex::new(agent));
         let emit = |v: Value| {
-            println!("{v}");
+            uprintln!("{v}");
             let _ = std::io::stdout().flush();
         };
         let (line_tx, mut line_rx) = tokio::sync::mpsc::unbounded_channel::<String>();
@@ -358,11 +445,11 @@ impl Cli {
                             loop {
                                 tokio::select! {
                                     _ = &mut run => break,
-                                    Some(ev) = rx.recv() => { println!("{}", ev.to_value()); let _ = std::io::stdout().flush(); }
+                                    Some(ev) = rx.recv() => { uprintln!("{}", ev.to_value()); let _ = std::io::stdout().flush(); }
                                 }
                             }
                             while let Ok(ev) = rx.try_recv() {
-                                println!("{}", ev.to_value());
+                                uprintln!("{}", ev.to_value());
                             }
                         }));
                     }
@@ -424,7 +511,7 @@ impl Cli {
                 plan(&client, message).await
             }
         };
-        println!("{} {}", bold("Parallel plan:"), nodes.iter().map(|n| n.id.clone()).collect::<Vec<_>>().join(", "));
+        uprintln!("{} {}", bold("Parallel plan:"), nodes.iter().map(|n| n.id.clone()).collect::<Vec<_>>().join(", "));
         let workers = cfg.max_parallel_agents;
         let result = match Orchestrator::new(cfg, workers, None).run(message, nodes, apply).await {
             Ok(r) => r,
@@ -435,9 +522,9 @@ impl Cli {
         };
         let mut summary = result.clone();
         summary.as_object_mut().map(|o| o.remove("tasks"));
-        println!("{}", serde_json::to_string_pretty(&summary).unwrap_or_default());
+        uprintln!("{}", serde_json::to_string_pretty(&summary).unwrap_or_default());
         for t in result["tasks"].as_array().into_iter().flatten() {
-            println!("  {:<9}{:<14}{}s  {}", t["status"].as_str().unwrap_or(""), t["id"].as_str().unwrap_or(""), t["seconds"], t["note"].as_str().unwrap_or(""));
+            uprintln!("  {:<9}{:<14}{}s  {}", t["status"].as_str().unwrap_or(""), t["id"].as_str().unwrap_or(""), t["seconds"], t["note"].as_str().unwrap_or(""));
         }
         if let Some(p) = report_path {
             let changed: std::collections::BTreeSet<String> = result["tasks"].as_array().into_iter().flatten().flat_map(|t| t["changed"].as_array().cloned().unwrap_or_default()).filter_map(|v| v.as_str().map(String::from)).collect();
@@ -470,86 +557,83 @@ impl Cli {
     #[allow(dead_code)]
     fn cycle_mode(&mut self) {
         let mgr = self.agent().session.approval_manager.clone();
-        let now = mgr.policy();
-        let next = MODES.iter().position(|m| *m == now).map_or(MODES[0], |i| MODES[(i + 1) % MODES.len()]);
-        if next == ApprovalPolicy::Plan {
-            self.before_plan = if now != ApprovalPolicy::Plan { now } else { ApprovalPolicy::OnRequest };
-        }
-        mgr.set_policy(next);
-        self.config.update(|c| c.approval = next);
+        cycle_approval(&mgr, &self.config, &self.before_plan);
     }
 
-    /// Footer: the things you act on first (mode, model, context), details after, fitted to the width.
     fn toolbar(&self) -> String {
-        let cfg = self.config.get();
-        let mut parts: Vec<String> = vec![];
-        let running = JOBS_LIST().iter().filter(|j| !j.done()).count();
-        if running > 0 {
-            parts.push(format!("⚙ {running} running (/jobs)"));
-        }
-        let sess = self.agent.as_ref().map(|a| a.session.clone());
-        if let Some(s) = &sess {
-            parts.push(s.approval_manager.policy().value().to_string());
-            if let Some(e) = &cfg.reasoning_effort {
-                parts.push(format!("effort {e}"));
-            }
-        }
-        parts.push(sess.as_ref().and_then(|s| s.client.last_model()).unwrap_or_else(|| cfg.model.name.clone()));
-        if let Some(s) = &sess {
-            let used = s.context_manager.lock().unwrap().context_used();
-            let window = s.client.registry.get(&cfg.model.name).context_length; // what the agent compacts against
-            if used > 0 {
-                parts.push(format!("ctx {}  {}k/{}k", context_bar(100.0 * used as f64 / window as f64, 12), used / 1000, window / 1000));
-            }
-            if let Some(c) = summarize_usage(&s.tracer.snapshot(), &cfg.pricing)["est_cost_usd"].as_f64() {
-                parts.push(format!("${c}"));
-            }
-            if cfg.sandbox != "off" {
-                parts.push(match crate::safety::sandbox::mode(&cfg) {
-                    "on" => "sandboxed",
-                    "unavailable" => "no sandbox",
-                    _ => "",
-                }
-                .to_string());
-            }
-        }
-        if let Some(p) = &cfg.profile {
-            parts.push(p.clone());
-        }
-        let text = parts.into_iter().filter(|p| !p.is_empty()).collect::<Vec<_>>().join("  ·  ");
-        let w = term_width().saturating_sub(3);
-        if text.chars().count() <= w { text } else { format!("{}…", text.chars().take(w - 1).collect::<String>()) }
+        toolbar_text(&self.config, self.agent.as_ref().map(|a| a.session.clone()), term_width())
     }
 
     pub async fn run_interactive(&mut self) {
         let cfg = self.config.get();
+        let confirm = confirm_callback(self.tui.clone());
+        self.new_agent(Some(confirm)).await;
+        set_asker(Some(Arc::new(TuiAsker { tui: self.tui.clone() })));
+        let reg = self.agent().session.client.registry.clone();
+        let models = move || reg.all().into_iter().map(|m| m.id).collect::<Vec<_>>();
+        let skills = Arc::new(Mutex::new(self.agent().session.skills.iter().filter(|k| !k.always).map(|k| (k.name.clone(), k.description.clone())).collect::<Vec<_>>()));
+        let history = Some(get_data_dir().join("input_history"));
+
+        // a real terminal gets the full-screen layout; MELON_PLAIN=1 (or a pipe) keeps the plain scrolling one
+        let mut fs = None;
+        if fullscreen::wanted() {
+            let (config, live) = (self.config.clone(), self.live.clone());
+            let (title_cfg, footer_cfg) = (self.config.clone(), self.config.clone());
+            let comp = Arc::new(Completions::new(cfg.cwd.clone(), cfg.forbidden_paths.clone(), Box::new(models.clone()), skills.clone()));
+            let title = Arc::new(move || {
+                let c = title_cfg.get();
+                format!("{}  ·  {}", c.model.name, home_short(&c.cwd))
+            });
+            let footer = Arc::new(move || toolbar_text(&footer_cfg, live.lock().unwrap().clone(), crossterm::terminal::size().map_or(100, |s| s.0 as usize)));
+            match fullscreen::start(self.tui.clone(), title, footer, comp, history.clone()) {
+                Ok(f) => {
+                    let (mgr_live, bp) = (self.live.clone(), self.before_plan.clone());
+                    f.set_cycle(Arc::new(move || {
+                        if let Some(s) = mgr_live.lock().unwrap().clone() {
+                            cycle_approval(&s.approval_manager, &config, &bp);
+                        }
+                    }));
+                    fs = Some(f);
+                    self.publish_session();
+                }
+                Err(e) => uprintln!("{}", paint(&format!("full-screen mode unavailable ({e}); using the plain terminal"), AMBER)),
+            }
+        }
         self.tui.print_welcome(
             "melon",
             &[
                 format!("model: {}   approval: {}", cfg.model.name, cfg.approval.value()),
                 format!("cwd: {}{}", home_short(&cfg.cwd), cfg.profile.as_ref().map(|p| format!("   profile: {p}")).unwrap_or_default()),
-                "/help for commands · @file to attach · !cmd to run a command · Ctrl+J for a newline".into(),
+                "/help for commands · @file to attach · !cmd to run a command · Shift+Enter (or Ctrl+J) for a newline".into(),
             ],
         );
-        let confirm = confirm_callback(self.tui.clone());
-        self.new_agent(Some(confirm)).await;
-        set_asker(Some(Arc::new(TuiAsker { tui: self.tui.clone() })));
-        let reg = self.agent().session.client.registry.clone();
-        let input = Input::new(cfg.cwd.clone(), cfg.forbidden_paths.clone(), Box::new(move || reg.all().into_iter().map(|m| m.id).collect()), Some(get_data_dir().join("input_history")));
-        *input.skills.lock().unwrap() = self.agent().session.skills.iter().filter(|k| !k.always).map(|k| (k.name.clone(), k.description.clone())).collect();
+        let input = if fs.is_none() {
+            let inp = Input::new(cfg.cwd.clone(), cfg.forbidden_paths.clone(), Box::new(models), history);
+            *inp.skills.lock().unwrap() = skills.lock().unwrap().clone();
+            Some(inp)
+        } else {
+            None
+        };
         if let Some(id) = self.resume_id.clone() {
             if self.resume(&id).await {
-                println!("{}", paint(&format!("Resumed {id} ({} turns). Carry on where you left off.", self.agent().session.turns()), MINT));
+                uprintln!("{}", paint(&format!("Resumed {id} ({} turns). Carry on where you left off.", self.agent().session.turns()), MINT));
             } else {
-                println!("{}", paint(&format!("No session with id {id}; starting a new one."), CORAL));
+                uprintln!("{}", paint(&format!("No session with id {id}; starting a new one."), CORAL));
             }
         }
         loop {
-            println!("{}", paint(&format!(" {}", self.toolbar()), MUTED));
-            let line = match input.read(format!(" {}", bold_paint("✦ ", ACCENT))).await {
+            let read = match (&fs, &input) {
+                (Some(f), _) => f.read().await,
+                (None, Some(inp)) => {
+                    uprintln!("{}", paint(&format!(" {}", self.toolbar()), MUTED));
+                    inp.read(format!(" {}", bold_paint("✦ ", ACCENT))).await
+                }
+                _ => Line::Eof,
+            };
+            let line = match read {
                 Line::Text(t) => t,
                 Line::Interrupted => {
-                    println!("{}", paint("  (Ctrl+C) type /exit to quit", MUTED));
+                    uprintln!("{}", paint("  (Ctrl+C) type /exit to quit", MUTED));
                     continue;
                 }
                 Line::Eof => break,
@@ -571,7 +655,7 @@ impl Cli {
             let cfg = self.config.get();
             let (text, attached) = expand_mentions(&user_input, &cfg.cwd, &cfg.forbidden_paths);
             if !attached.is_empty() {
-                println!("{}", paint(&format!("  attached: {}", attached.join(", ")), MUTED));
+                uprintln!("{}", paint(&format!("  attached: {}", attached.join(", ")), MUTED));
             }
             self.run_turn(&text).await;
         }
@@ -582,26 +666,41 @@ impl Cli {
         };
         self.agent().close().await;
         set_asker(None);
-        println!("\n{}", paint("Goodbye!", MUTED));
+        if let Some(f) = &fs {
+            f.stop(); // back to the real terminal, with the conversation left on it
+        }
+        uprintln!("\n{}", paint("Goodbye!", MUTED));
         if turns > 0 {
-            println!("{}{}", paint("Resume this session:  ", MUTED), bold(&format!("melon --resume {sid}")));
-            println!("{}{}", paint("Or the newest one in this folder:  ", MUTED), bold("melon --continue"));
+            uprintln!("{}{}", paint("Resume this session:  ", MUTED), bold(&format!("melon --resume {sid}")));
+            uprintln!("{}{}", paint("Or the newest one in this folder:  ", MUTED), bold("melon --continue"));
         }
     }
 
     /// Run one request, with Ctrl+C cancelling the agent and not the app.
     async fn run_turn(&mut self, text: &str) {
+        // full-screen mode gets Ctrl+C as a key, not a signal
+        let cancel = fullscreen::current().map(|f| f.begin_turn());
         let result = {
             let fut = self.process_message(text);
             tokio::pin!(fut);
             tokio::select! {
                 r = &mut fut => Some(r),
-                _ = tokio::signal::ctrl_c() => None,
+                _ = async {
+                    match &cancel {
+                        Some(n) => n.notified().await,
+                        None => {
+                            let _ = tokio::signal::ctrl_c().await;
+                        }
+                    }
+                } => None,
             }
         };
+        if let Some(f) = fullscreen::current() {
+            f.end_turn();
+        }
         if result.is_none() {
             self.tui.end_turn();
-            println!("\n{}", paint("Interrupted", AMBER));
+            uprintln!("\n{}", paint("Interrupted", AMBER));
             self.agent().on_interrupt();
         }
         self.autosave();
@@ -631,14 +730,14 @@ impl Cli {
             Ok(Err(e)) => (e.to_string(), -1),
             Err(_) => ("[timed out after 120s]".to_string(), -1),
         };
-        println!("{}", text.trim_end());
+        uprintln!("{}", text.trim_end());
         if !private && crate::safety::guard::violation("shell", &json!({"command": cmd}), &cfg).is_some() {
-            println!("{}", paint("  (protected by repository rules: output not shared with the model)", MUTED));
+            uprintln!("{}", paint("  (protected by repository rules: output not shared with the model)", MUTED));
             private = true;
         }
         if !private {
             self.agent().session.context_manager.lock().unwrap().add_user_message(&format!("I ran `{cmd}` (exit {code}):\n{}", text.chars().take(8000).collect::<String>()));
-            println!("{}", paint("  (output added to the conversation)", MUTED));
+            uprintln!("{}", paint("  (output added to the conversation)", MUTED));
         }
     }
 
@@ -648,13 +747,13 @@ impl Cli {
             return; // tiny tasks have nothing worth tuning
         }
         let share = (100.0 * h["tool_result_carried"].as_f64().unwrap_or(0.0) / u["prompt_tokens"].as_f64().unwrap_or(1.0).max(1.0)).round().min(100.0);
-        println!("{}", paint(&format!("    {share}% of the input tokens were earlier tool results re-sent. Biggest:"), MUTED));
+        uprintln!("{}", paint(&format!("    {share}% of the input tokens were earlier tool results re-sent. Biggest:"), MUTED));
         for r in h["top"].as_array().unwrap().iter().take(3) {
             let (t, c) = (r["tokens"].as_i64().unwrap_or(0), r["carried"].as_i64().unwrap_or(0));
-            println!("{}", paint(&format!("      {} {}: {t} tokens, re-sent {}x = {c}", r["tool"].as_str().unwrap_or(""), r["target"].as_str().unwrap_or(""), c / t.max(1)), MUTED));
+            uprintln!("{}", paint(&format!("      {} {}: {t} tokens, re-sent {}x = {c}", r["tool"].as_str().unwrap_or(""), r["target"].as_str().unwrap_or(""), c / t.max(1)), MUTED));
         }
         if let Some(rep) = h["repeated"].as_array().filter(|r| !r.is_empty()) {
-            println!("{}", paint(&format!("    repeated: {}", rep.iter().filter_map(Value::as_str).collect::<Vec<_>>().join("; ")), MUTED));
+            uprintln!("{}", paint(&format!("    repeated: {}", rep.iter().filter_map(Value::as_str).collect::<Vec<_>>().join("; ")), MUTED));
         }
     }
 
@@ -664,13 +763,13 @@ impl Cli {
         let quiet = self.tui.quiet();
         let w = &u["cache_waste"];
         if w["misses"].as_i64().unwrap_or(0) > 0 && !quiet {
-            println!("{}", paint(&format!("    cache misses: {} tokens re-billed ({})", w["missed_tokens"], w["reasons"].as_array().map(|r| r.iter().filter_map(Value::as_str).collect::<Vec<_>>().join(", ")).unwrap_or_default()), MUTED));
+            uprintln!("{}", paint(&format!("    cache misses: {} tokens re-billed ({})", w["missed_tokens"], w["reasons"].as_array().map(|r| r.iter().filter_map(Value::as_str).collect::<Vec<_>>().join(", ")).unwrap_or_default()), MUTED));
         }
         if !quiet {
             self.print_heaviest(u);
         }
         if let Some(un) = report["grounding"]["unverified"].as_array().filter(|a| !a.is_empty()) {
-            println!("{}", paint(&format!("  ⚠ {} cited reference(s) could not be verified: {}", un.len(), un.iter().take(4).filter_map(Value::as_str).collect::<Vec<_>>().join("; ")), AMBER));
+            uprintln!("{}", paint(&format!("  ⚠ {} cited reference(s) could not be verified: {}", un.len(), un.iter().take(4).filter_map(Value::as_str).collect::<Vec<_>>().join("; ")), AMBER));
         }
         let status = report["status"].as_str().unwrap_or("");
         if status == "done_no_changes" {
@@ -687,28 +786,28 @@ impl Cli {
             let bad: Vec<&Value> = checks.iter().filter(|c| c["ok"] != true).collect();
             let review = report["review"]["verdict"].as_str().map(|v| format!("  ·  review {}", v.to_lowercase())).unwrap_or_default();
             let tail = format!("{}{review}", if !checks.is_empty() && bad.is_empty() { format!("  ·  {} checks ok", checks.len()) } else { String::new() });
-            println!("  {}  {}", paint(status, color), paint(&format!("{files} files{tail}  ·  /undo reverts"), MUTED));
+            uprintln!("  {}  {}", paint(status, color), paint(&format!("{files} files{tail}  ·  /undo reverts"), MUTED));
             for c in bad {
-                println!("    {} {}", paint("✗", CORAL), c["command"].as_str().unwrap_or(""));
+                uprintln!("    {} {}", paint("✗", CORAL), c["command"].as_str().unwrap_or(""));
             }
             return;
         }
         if report["undo"] == true {
-            println!("{}", paint("    /undo puts these files back", MUTED));
+            uprintln!("{}", paint("    /undo puts these files back", MUTED));
         }
-        println!("  {}  files changed: {files}  repairs: {}", paint(&format!("Result: {status}"), color), report["repairs"]);
+        uprintln!("  {}  files changed: {files}  repairs: {}", paint(&format!("Result: {status}"), color), report["repairs"]);
         for c in &checks {
             let ok = c["ok"] == true;
-            println!("    {} {} ({}s)", paint(if ok { "✓" } else { "✗" }, if ok { MINT } else { CORAL }), c["command"].as_str().unwrap_or(""), c["seconds"]);
+            uprintln!("    {} {} ({}s)", paint(if ok { "✓" } else { "✗" }, if ok { MINT } else { CORAL }), c["command"].as_str().unwrap_or(""), c["seconds"]);
         }
         if status == "verified" && !checks.is_empty() && !checks.iter().any(|c| lit(r"test|spec|pytest|vitest|jest|playwright").is_match(c["command"].as_str().unwrap_or(""))) {
-            println!("{}", paint("    These checks (types/lint) don't exercise the changed behaviour, so \"verified\" does not mean the bug is fixed.", MUTED));
+            uprintln!("{}", paint("    These checks (types/lint) don't exercise the changed behaviour, so \"verified\" does not mean the bug is fixed.", MUTED));
         }
         if let Some(v) = report["review"]["verdict"].as_str() {
-            println!("    review: {v}{}", if v == "PASS" { "" } else { " (see findings above)" });
+            uprintln!("    review: {v}{}", if v == "PASS" { "" } else { " (see findings above)" });
         }
         if status == "unverified" {
-            println!("{}", paint("    No verification commands found; changes were not tested.", MUTED));
+            uprintln!("{}", paint("    No verification commands found; changes were not tested.", MUTED));
         }
     }
 
@@ -791,6 +890,7 @@ impl Cli {
         *session.approval_manager.confirmation_callback.lock().unwrap() = confirm;
         self.agent().session.mcp_manager.shutdown().await;
         self.agent().session = session;
+        self.publish_session();
         self.tui.reset();
     }
 
@@ -805,7 +905,7 @@ impl Cli {
                 "user" => {
                     let c = m["content"].as_str().unwrap_or("");
                     if c.starts_with(crate::context::manager::COMPACT_HEAD) {
-                        println!("{}", italic(&paint("  ✦ compacted · earlier messages are summarised for the model", MUTED)));
+                        uprintln!("{}", italic(&paint("  ✦ compacted · earlier messages are summarised for the model", MUTED)));
                     } else {
                         self.tui.echo_user(c.split("\n\n---\n").next().unwrap_or(""));
                     }
@@ -813,7 +913,7 @@ impl Cli {
                 "assistant" => {
                     let c = m["content"].as_str().unwrap_or("");
                     if !c.trim().is_empty() {
-                        println!("\n{}", super::md::render_block(c, true));
+                        uprintln!("\n{}", super::md::render_block(c, true));
                     }
                 }
                 _ => {}
@@ -880,10 +980,10 @@ impl Cli {
         if mgr.policy() == ApprovalPolicy::Plan && final_response.as_deref().map_or(false, looks_like_plan) {
             if let Some(asker) = super::prompt::asker() {
                 if asker.ask_choice("Carry out this plan? (leaves plan mode)".into(), vec!["Yes, go ahead".into(), "No, keep planning".into()]).await == 0 {
-                    let back = self.before_plan;
+                    let back = *self.before_plan.lock().unwrap();
                     mgr.set_policy(back);
                     self.config.update(|c| c.approval = back);
-                    println!("{}", paint(&format!("Plan mode off, approval: {}", back.value()), MINT));
+                    uprintln!("{}", paint(&format!("Plan mode off, approval: {}", back.value()), MINT));
                     return Box::pin(self.process_message("The plan is approved. Carry it out now, step by step, and verify as you go.")).await;
                 }
             }
@@ -898,50 +998,53 @@ impl Cli {
         let providers = crate::client::providers::all_providers(&cfg);
         let Some(p) = providers.get(name) else {
             if !name.is_empty() {
-                println!("{}", paint(&format!("Unknown provider: {name}"), CORAL));
+                uprintln!("{}", paint(&format!("Unknown provider: {name}"), CORAL));
             }
-            println!("Connect one with {}:", bold("/connect <name>"));
+            uprintln!("Connect one with {}:", bold("/connect <name>"));
             for (n, q) in &providers {
                 let state = if q.api_key().is_some() { paint("ready", MINT) } else { paint(&format!("needs {}", q.api_key_env.clone().unwrap_or_default()), MUTED) };
-                println!("  {n:<11} {state}  {}", paint(&q.base_url, MUTED));
+                uprintln!("  {n:<11} {state}  {}", paint(&q.base_url, MUTED));
             }
-            println!("{}", paint("Anything else that speaks the OpenAI or Anthropic format: add a [providers.<name>] table to config.toml.", MUTED));
+            uprintln!("{}", paint("Anything else that speaks the OpenAI or Anthropic format: add a [providers.<name>] table to config.toml.", MUTED));
             return;
         };
         if let Some(env) = &p.api_key_env {
             let note = if p.api_key().is_some() { " (Enter keeps the current one)" } else { "" };
             let prompt = format!("Paste your {} API key{note}: ", p.name);
-            let key = tokio::task::spawn_blocking(move || read_secret_line(&prompt)).await.unwrap_or_default();
+            let key = match fullscreen::current() {
+                Some(fs) => fs.ask_line(&prompt, true).await,
+                None => tokio::task::spawn_blocking(move || read_secret_line(&prompt)).await.unwrap_or_default(),
+            };
             if key.chars().any(char::is_whitespace) {
-                println!("{}", paint("That doesn't look like a key (it has spaces or line breaks). Nothing saved.", CORAL));
+                uprintln!("{}", paint("That doesn't look like a key (it has spaces or line breaks). Nothing saved.", CORAL));
                 return;
             }
             if !key.is_empty() {
                 if let Ok(path) = save_env_key(env, &key) {
-                    println!("{}", paint(&format!("Saved {env} to {}", path.display()), MUTED));
+                    uprintln!("{}", paint(&format!("Saved {env} to {}", path.display()), MUTED));
                 }
             } else if p.api_key().is_none() {
-                println!("{}", paint("Cancelled.", MUTED));
+                uprintln!("{}", paint("Cancelled.", MUTED));
                 return;
             }
         }
         match crate::client::providers::fetch_models(p).await {
-            Err(e) => println!("{}", paint(&format!("Couldn't list {}'s models ({}). If the key is right you can still pick one by name: /model {}:<model>", p.name, e.chars().take(160).collect::<String>(), p.name), AMBER)),
+            Err(e) => uprintln!("{}", paint(&format!("Couldn't list {}'s models ({}). If the key is right you can still pick one by name: /model {}:<model>", p.name, e.chars().take(160).collect::<String>(), p.name), AMBER)),
             Ok(ids) => {
                 let _ = std::fs::create_dir_all(get_data_dir());
                 let _ = std::fs::write(get_data_dir().join(format!("models-{}.json", p.name)), serde_json::to_string(&ids).unwrap_or_default());
                 self.agent().session.client.registry.add_provider_models_list(&p.name, &ids);
-                println!("{} Switch with {} and Tab, e.g. /model {}:{}", paint(&format!("Connected {}: {} models.", p.name, ids.len()), MINT), bold(&format!("/model {}:", p.name)), p.name, ids.first().cloned().unwrap_or_else(|| "<model>".into()));
+                uprintln!("{} Switch with {} and Tab, e.g. /model {}:{}", paint(&format!("Connected {}: {} models.", p.name, ids.len()), MINT), bold(&format!("/model {}:", p.name)), p.name, ids.first().cloned().unwrap_or_else(|| "<model>".into()));
             }
         }
     }
 
     fn show_help(&self) {
-        println!("\n{}", bold_paint("Commands", LAVENDER));
+        uprintln!("\n{}", bold_paint("Commands", LAVENDER));
         for (c, d) in COMMANDS {
-            println!("  {}  {}", bold_paint(&format!("{c:<13}"), ACCENT), paint(d, MUTED));
+            uprintln!("  {}  {}", bold_paint(&format!("{c:<13}"), ACCENT), paint(d, MUTED));
         }
-        println!("\n{}\n  @path attaches a file (Tab completes)\n  !cmd runs a shell command and shows the output to the model; !!cmd runs it privately\n  Ctrl+J inserts a newline · Ctrl+C interrupts the agent\n", bold_paint("Input", LAVENDER));
+        uprintln!("\n{}\n  @path attaches a file (Tab completes)\n  !cmd runs a shell command and shows the output to the model; !!cmd runs it privately\n  Ctrl+J inserts a newline · Ctrl+C interrupts the agent\n", bold_paint("Input", LAVENDER));
     }
 
     /// Returns false when the session should end.
@@ -961,29 +1064,29 @@ impl Cli {
                 let ok = self.agent().compact_now().await;
                 self.tui.end_turn();
                 if !ok {
-                    println!("{}", paint("Nothing to compact yet", MUTED));
+                    uprintln!("{}", paint("Nothing to compact yet", MUTED));
                 } else {
                     self.autosave(); // otherwise quitting now and resuming brings the whole uncompacted history back
                     let sid = self.agent().session.session_id();
                     let after = self.agent().session.context_manager.lock().unwrap().latest_usage.total_tokens;
-                    println!("{}", paint(&format!("Context compacted: {before} -> ~{after} tokens"), MINT));
-                    println!("{}", paint(&format!("Summary: first message of {}\nReplaced messages: {}", get_data_dir().join("sessions").join(format!("{sid}.json")).display(), get_data_dir().join("transcripts").join(format!("{sid}.jsonl")).display()), MUTED));
+                    uprintln!("{}", paint(&format!("Context compacted: {before} -> ~{after} tokens"), MINT));
+                    uprintln!("{}", paint(&format!("Summary: first message of {}\nReplaced messages: {}", get_data_dir().join("sessions").join(format!("{sid}.json")).display(), get_data_dir().join("transcripts").join(format!("{sid}.jsonl")).display()), MUTED));
                 }
             }
             "/cost" => {
                 let u = summarize_usage(&self.agent().session.tracer.snapshot(), &cfg.pricing);
                 let w = &u["cache_waste"];
-                println!("  calls: {}   in: {} ({}% cached)   out: {}", u["calls"], u["prompt_tokens"], u["cache_hit_pct"], u["completion_tokens"]);
-                println!("  est cost: {}", u["est_cost_usd"].as_f64().map(|c| format!("${c}")).unwrap_or_else(|| "unknown (add a [pricing] section to config)".into()));
+                uprintln!("  calls: {}   in: {} ({}% cached)   out: {}", u["calls"], u["prompt_tokens"], u["cache_hit_pct"], u["completion_tokens"]);
+                uprintln!("  est cost: {}", u["est_cost_usd"].as_f64().map(|c| format!("${c}")).unwrap_or_else(|| "unknown (add a [pricing] section to config)".into()));
                 self.print_heaviest(&u);
                 if w["misses"].as_i64().unwrap_or(0) > 0 {
-                    println!("  cache misses: {} ({} tokens re-billed: {})", w["misses"], w["missed_tokens"], w["reasons"].as_array().map(|r| r.iter().filter_map(Value::as_str).collect::<Vec<_>>().join(", ")).unwrap_or_default());
+                    uprintln!("  cache misses: {} ({} tokens re-billed: {})", w["misses"], w["missed_tokens"], w["reasons"].as_array().map(|r| r.iter().filter_map(Value::as_str).collect::<Vec<_>>().join(", ")).unwrap_or_default());
                 }
             }
-            "/verbose" => println!("{}", paint(&format!("  output: {}", if self.tui.toggle_quiet() { "quiet" } else { "verbose" }), MUTED)),
+            "/verbose" => uprintln!("{}", paint(&format!("  output: {}", if self.tui.toggle_quiet() { "quiet" } else { "verbose" }), MUTED)),
             "/more" => {
                 if !self.agent().capped_last {
-                    println!("{}", paint("  /more only applies after a request stopped at its round budget.", MUTED));
+                    uprintln!("{}", paint("  /more only applies after a request stopped at its round budget.", MUTED));
                 } else {
                     self.agent().extra_calls = 10;
                     self.run_turn("Continue from where you stopped. You have 10 more tool rounds; batch independent lookups as parallel calls, spend them on what is still unknown, then answer.").await;
@@ -991,36 +1094,43 @@ impl Cli {
             }
             "/challenge" => {
                 if args.is_empty() {
-                    println!("{}", paint("Usage: /challenge <your idea or plan>. A second model argues against it.", MUTED));
+                    uprintln!("{}", paint("Usage: /challenge <your idea or plan>. A second model argues against it.", MUTED));
                 } else {
                     self.tui.start_turn("Challenging");
                     let (objections, dropped, err) = crate::agent::challenge::challenge_request(&cfg, &args).await;
                     self.tui.end_turn();
                     if !err.is_empty() {
-                        println!("{}", paint(&format!("Challenger failed: {}", err.chars().take(200).collect::<String>()), CORAL));
+                        uprintln!("{}", paint(&format!("Challenger failed: {}", err.chars().take(200).collect::<String>()), CORAL));
                     } else {
                         let r = crate::agent::challenge::render(&objections, dropped);
-                        println!("{}", if r.is_empty() { paint("Nothing it could back with evidence.", MUTED) } else { r });
+                        uprintln!("{}", if r.is_empty() { paint("Nothing it could back with evidence.", MUTED) } else { r });
                     }
                 }
             }
             "/skills" => {
                 let skills = self.agent().session.skills.clone();
                 for sk in &skills {
-                    println!("  {}{}  {}", paint(&sk.name, ACCENT), if sk.always { paint(" (always on)", MUTED) } else { String::new() }, paint(&sk.description, MUTED));
+                    uprintln!("  {}{}  {}", paint(&sk.name, ACCENT), if sk.always { paint(" (always on)", MUTED) } else { String::new() }, paint(&sk.description, MUTED));
                 }
                 if skills.is_empty() {
-                    println!("{}", paint("  no skills loaded", MUTED));
+                    uprintln!("{}", paint("  no skills loaded", MUTED));
                 }
             }
             "/copy" => {
-                let text = self.tui.last_reply();
+                let fs = fullscreen::current();
+                let text = match &fs {
+                    Some(f) if args.trim() == "all" => f.all_text(), // the whole conversation, not just the last reply
+                    _ => self.tui.last_reply(),
+                };
                 if text.is_empty() {
-                    println!("{}", paint("  nothing to copy yet", MUTED));
-                } else if copy_to_clipboard(&text) {
-                    println!("{}", paint(&format!("  copied {} characters", text.chars().count()), MINT));
+                    uprintln!("{}", paint("  nothing to copy yet", MUTED));
+                } else if fs.is_some() || copy_to_clipboard(&text) {
+                    if fs.is_some() {
+                        super::screen::copy_to_clipboard(&text);
+                    }
+                    uprintln!("{}", paint(&format!("  copied {} characters", text.chars().count()), MINT));
                 } else {
-                    println!("{}", paint("  no clipboard tool found (pbcopy, wl-copy or xclip)", AMBER));
+                    uprintln!("{}", paint("  no clipboard tool found (pbcopy, wl-copy or xclip)", AMBER));
                 }
             }
             "/jobs" => {
@@ -1030,12 +1140,12 @@ impl Cli {
                 let job = words.last().and_then(|w| w.parse::<usize>().ok()).and_then(|id| jobs.iter().find(|j| j.id == id).cloned());
                 if let (true, Some(j)) = (kill, &job) {
                     crate::tools::builtin::shell::kill_job(j);
-                    println!("{}", paint(&format!("  stopped job {}", j.id), MUTED));
+                    uprintln!("{}", paint(&format!("  stopped job {}", j.id), MUTED));
                 } else if let Some(j) = &job {
-                    println!("{} {}\n{}", paint(&format!("job {}", j.id), ACCENT), paint(&j.command, MUTED), j.tail(40));
+                    uprintln!("{} {}\n{}", paint(&format!("job {}", j.id), ACCENT), paint(&j.command, MUTED), j.tail(40));
                 } else {
                     if jobs.is_empty() {
-                        println!("{}", paint("  no background jobs", MUTED));
+                        uprintln!("{}", paint("  no background jobs", MUTED));
                     }
                     for j in jobs {
                         let state = match j.returncode() {
@@ -1043,7 +1153,7 @@ impl Cli {
                             Some(0) => "done".to_string(),
                             Some(c) => format!("failed ({c})"),
                         };
-                        println!("  {} {state:<12} {}", paint(&j.id.to_string(), ACCENT), paint(&format!("{:.0}s  {}", j.started.elapsed().as_secs_f64(), j.command), MUTED));
+                        uprintln!("  {} {state:<12} {}", paint(&j.id.to_string(), ACCENT), paint(&format!("{:.0}s  {}", j.started.elapsed().as_secs_f64(), j.command), MUTED));
                     }
                 }
             }
@@ -1055,27 +1165,30 @@ impl Cli {
                     a.session.loop_detector.lock().unwrap().clear();
                 }
                 self.tui.reset();
-                print!("\x1b[2J\x1b[3J\x1b[H");
-                println!("{}", paint("Conversation cleared ", MINT));
+                match fullscreen::current() {
+                    Some(f) => f.clear(),
+                    None => uprint!("\x1b[2J\x1b[3J\x1b[H"),
+                }
+                uprintln!("{}", paint("Conversation cleared ", MINT));
             }
             "/config" => {
-                println!("\n{}", bold("Current Configuration"));
-                println!("  Model: {}", cfg.model.name);
-                println!("  Temperature: {}", cfg.model.temperature.map(|t| t.to_string()).unwrap_or_else(|| "per model family".into()));
-                println!("  Approval: {}", cfg.approval.value());
-                println!("  Working Dir: {}", cfg.cwd.display());
-                println!("  Max Turns: {}", cfg.max_turns);
-                println!("  Hooks Enabled: {}", cfg.hooks_enabled);
+                uprintln!("\n{}", bold("Current Configuration"));
+                uprintln!("  Model: {}", cfg.model.name);
+                uprintln!("  Temperature: {}", cfg.model.temperature.map(|t| t.to_string()).unwrap_or_else(|| "per model family".into()));
+                uprintln!("  Approval: {}", cfg.approval.value());
+                uprintln!("  Working Dir: {}", cfg.cwd.display());
+                uprintln!("  Max Turns: {}", cfg.max_turns);
+                uprintln!("  Hooks Enabled: {}", cfg.hooks_enabled);
             }
             "/model" => {
                 if args.is_empty() {
-                    println!("Current model: {}", cfg.model.name);
+                    uprintln!("Current model: {}", cfg.model.name);
                 } else {
                     let (known, near) = self.agent().session.client.registry.validate(&args);
                     if !known {
-                        println!("{}", paint(&format!("Unknown model: {args}"), CORAL));
+                        uprintln!("{}", paint(&format!("Unknown model: {args}"), CORAL));
                         if !near.is_empty() {
-                            println!("Did you mean: {}", near.join(", "));
+                            uprintln!("Did you mean: {}", near.join(", "));
                         }
                     } else {
                         let a = args.clone();
@@ -1084,30 +1197,30 @@ impl Cli {
                             c.model_pinned = true;
                         });
                         save_last_model(&args);
-                        println!("{}", paint(&format!("Model changed to: {args} "), MINT));
+                        uprintln!("{}", paint(&format!("Model changed to: {args} "), MINT));
                     }
                 }
             }
             "/connect" => self.connect(&args.to_lowercase()).await,
             "/approval" => {
                 if args.is_empty() {
-                    println!("Current approval policy: {}", cfg.approval.value());
+                    uprintln!("Current approval policy: {}", cfg.approval.value());
                 } else if let Some(p) = ApprovalPolicy::parse(&args) {
                     self.config.update(|c| c.approval = p);
                     self.agent().session.approval_manager.set_policy(p); // the manager holds its own copy
-                    println!("{}", paint(&format!("Approval policy changed to: {args} "), MINT));
+                    uprintln!("{}", paint(&format!("Approval policy changed to: {args} "), MINT));
                 } else {
-                    println!("{}", paint(&format!("Incorrect approval policy: {args} "), CORAL));
-                    println!("Valid options: on-request, on-failure, auto, auto-edit, never, yolo, plan");
+                    uprintln!("{}", paint(&format!("Incorrect approval policy: {args} "), CORAL));
+                    uprintln!("Valid options: on-request, on-failure, auto, auto-edit, never, yolo, plan");
                 }
             }
             "/effort" => {
                 if matches!(args.as_str(), "low" | "medium" | "high" | "auto") {
                     let v = (args != "auto").then(|| args.clone());
                     self.config.update(|c| c.reasoning_effort = v);
-                    println!("{} {}", paint(&format!("  effort: {args}"), MINT), paint("(Codex models; others ignore it)", MUTED));
+                    uprintln!("{} {}", paint(&format!("  effort: {args}"), MINT), paint("(Codex models; others ignore it)", MUTED));
                 } else {
-                    println!("  effort: {}  {}", cfg.reasoning_effort.clone().unwrap_or_else(|| "auto".into()), paint("/effort low|medium|high|auto", MUTED));
+                    uprintln!("  effort: {}  {}", cfg.reasoning_effort.clone().unwrap_or_else(|| "auto".into()), paint("/effort low|medium|high|auto", MUTED));
                 }
             }
             "/agents" => {
@@ -1115,9 +1228,9 @@ impl Cli {
                 for d in crate::tools::subagents::default_definitions(&cfg) {
                     let mode = if d.allowed_tools.as_ref().map_or(false, |t| !t.is_empty() && t.iter().all(|x| crate::tools::subagents::READONLY_TOOLS.contains(&x.as_str()))) { "read-only" } else { "can edit/run" };
                     let from = if files.iter().any(|f| f.name == d.name) { " (from an agent file)" } else { "" };
-                    println!("  {}  {}\n      {}", bold(&d.name), paint(&format!("{mode}, {} turns, {} model{from}", d.max_turns, d.role), MUTED), d.description.chars().take(150).collect::<String>());
+                    uprintln!("  {}  {}\n      {}", bold(&d.name), paint(&format!("{mode}, {} turns, {} model{from}", d.max_turns, d.role), MUTED), d.description.chars().take(150).collect::<String>());
                 }
-                println!("{}", paint("Add your own: a markdown file with name/description/tools in .claude/agents/ or .melon/agents/ (repo or home)", MUTED));
+                uprintln!("{}", paint("Add your own: a markdown file with name/description/tools in .claude/agents/ or .melon/agents/ (repo or home)", MUTED));
             }
             "/permissions" => {
                 use crate::safety::rules::{drop_rule, load_rules, save_rule, KINDS};
@@ -1125,39 +1238,39 @@ impl Cli {
                 let mgr = self.agent().session.approval_manager.clone();
                 if KINDS.contains(&word) && !rule_text.is_empty() {
                     if let Ok(p) = save_rule(&cfg.cwd, word, rule_text) {
-                        println!("{}", paint(&format!("{word}: {rule_text}  (saved in {})", p.display()), MINT));
+                        uprintln!("{}", paint(&format!("{word}: {rule_text}  (saved in {})", p.display()), MINT));
                     }
                     self.reload_rules();
                 } else if word == "remove" && !rule_text.is_empty() {
                     let ok = drop_rule(&cfg.cwd, rule_text);
                     self.reload_rules();
-                    println!("{}", if ok { paint("Removed", MINT) } else { paint("No such rule in .melon/permissions.json", MUTED) });
+                    uprintln!("{}", if ok { paint("Removed", MINT) } else { paint("No such rule in .melon/permissions.json", MUTED) });
                 } else {
                     let _ = load_rules;
                     let rules = mgr.rules_snapshot();
                     if rules.rules.is_empty() {
-                        println!("{}", paint("No rules. Add one: /permissions allow Bash(git diff:*) | deny Read(.env*) | ask Bash(git push:*)", MUTED));
+                        uprintln!("{}", paint("No rules. Add one: /permissions allow Bash(git diff:*) | deny Read(.env*) | ask Bash(git push:*)", MUTED));
                     }
                     for kind in KINDS {
                         for r in rules.rules.iter().filter(|r| r.kind == kind) {
-                            println!("  {kind:<6} {}  {}", r.text, paint(&home_short(Path::new(&r.source)), MUTED));
+                            uprintln!("  {kind:<6} {}  {}", r.text, paint(&home_short(Path::new(&r.source)), MUTED));
                         }
                     }
-                    println!("{}", paint(&format!("approval mode: {}. Deny wins over ask, ask over allow; /permissions remove <rule>", mgr.policy().value()), MUTED));
+                    uprintln!("{}", paint(&format!("approval mode: {}. Deny wins over ask, ask over allow; /permissions remove <rule>", mgr.policy().value()), MUTED));
                 }
             }
             "/plan" => {
                 let mgr = self.agent().session.approval_manager.clone();
                 if mgr.policy() == ApprovalPolicy::Plan {
-                    let back = self.before_plan;
+                    let back = *self.before_plan.lock().unwrap();
                     mgr.set_policy(back);
                     self.config.update(|c| c.approval = back);
-                    println!("{}", paint(&format!("Plan mode off, approval: {}", back.value()), MINT));
+                    uprintln!("{}", paint(&format!("Plan mode off, approval: {}", back.value()), MINT));
                 } else {
-                    self.before_plan = mgr.policy();
+                    *self.before_plan.lock().unwrap() = mgr.policy();
                     mgr.set_policy(ApprovalPolicy::Plan);
                     self.config.update(|c| c.approval = ApprovalPolicy::Plan);
-                    println!("{}", paint("Plan mode on: melon can read and search but changes nothing. /plan again to leave.", MINT));
+                    uprintln!("{}", paint("Plan mode on: melon can read and search but changes nothing. /plan again to leave.", MINT));
                 }
             }
             "/diff" => {
@@ -1166,7 +1279,7 @@ impl Cli {
                     a.push("--stat".into());
                 }
                 let out = std::process::Command::new("git").args(&a).output().map(|o| String::from_utf8_lossy(&o.stdout).trim().to_string()).unwrap_or_default();
-                println!("{}", if out.is_empty() { paint("No unstaged changes", MUTED) } else { out });
+                uprintln!("{}", if out.is_empty() { paint("No unstaged changes", MUTED) } else { out });
             }
             "/context" => {
                 let a = self.agent();
@@ -1178,64 +1291,64 @@ impl Cli {
                 for m in &cm.messages {
                     *by_role.entry(m.role.as_str()).or_default() += m.token_count;
                 }
-                println!("\n{}  {used} / {limit} tokens before compaction ({}%), window {window}", bold("Context"), used * 100 / limit.max(1));
-                println!("   system prompt  ~{} tokens", crate::util::text::estimate_tokens(cm.system_prompt()));
-                println!("   summary        {}", cm.summary.as_ref().map(|s| format!("~{} tokens", crate::util::text::estimate_tokens(s))).unwrap_or_else(|| "none yet".into()));
-                println!("   messages       {}: user ~{}, assistant ~{}, tool results ~{} tokens ({cleared} old results cleared)", cm.message_count(), by_role.get("user").unwrap_or(&0), by_role.get("assistant").unwrap_or(&0), by_role.get("tool").unwrap_or(&0));
+                uprintln!("\n{}  {used} / {limit} tokens before compaction ({}%), window {window}", bold("Context"), used * 100 / limit.max(1));
+                uprintln!("   system prompt  ~{} tokens", crate::util::text::estimate_tokens(cm.system_prompt()));
+                uprintln!("   summary        {}", cm.summary.as_ref().map(|s| format!("~{} tokens", crate::util::text::estimate_tokens(s))).unwrap_or_else(|| "none yet".into()));
+                uprintln!("   messages       {}: user ~{}, assistant ~{}, tool results ~{} tokens ({cleared} old results cleared)", cm.message_count(), by_role.get("user").unwrap_or(&0), by_role.get("assistant").unwrap_or(&0), by_role.get("tool").unwrap_or(&0));
             }
             "/hooks" => {
                 if !cfg.hooks_enabled || cfg.hooks.is_empty() {
-                    println!("{}", paint("No hooks configured (see hooks in config.toml)", MUTED));
+                    uprintln!("{}", paint("No hooks configured (see hooks in config.toml)", MUTED));
                 }
                 for h in cfg.hooks.iter().filter(|_| cfg.hooks_enabled) {
-                    println!("  • {}: {}{} -> {}", h.name, h.trigger.value(), h.matcher.as_ref().map(|m| format!(" [{m}]")).unwrap_or_default(), h.command.clone().unwrap_or_else(|| "script".into()));
+                    uprintln!("  • {}: {}{} -> {}", h.name, h.trigger.value(), h.matcher.as_ref().map(|m| format!(" [{m}]")).unwrap_or_default(), h.command.clone().unwrap_or_else(|| "script".into()));
                 }
             }
             "/stats" => {
-                println!("\n{}", bold("Session Statistics "));
+                uprintln!("\n{}", bold("Session Statistics "));
                 if let Some(o) = self.agent().session.get_stats().as_object() {
                     for (k, v) in o {
-                        println!("   {k}: {v}");
+                        uprintln!("   {k}: {v}");
                     }
                 }
             }
             "/tools" => {
                 let tools = self.agent().session.tool_registry.get_tools();
-                println!("\n{}", bold(&format!("Available tools ({}) ", tools.len())));
+                uprintln!("\n{}", bold(&format!("Available tools ({}) ", tools.len())));
                 for t in tools {
-                    println!("  • {}", t.name());
+                    uprintln!("  • {}", t.name());
                 }
             }
             "/mcp" => {
                 let servers = self.agent().session.mcp_manager.get_all_servers();
-                println!("\n{}", bold(&format!("MCP Servers ({}) ", servers.len())));
+                uprintln!("\n{}", bold(&format!("MCP Servers ({}) ", servers.len())));
                 for s in servers {
                     let st = s["status"].as_str().unwrap_or("");
-                    println!("  • {}: {} ({} tools)", s["name"].as_str().unwrap_or(""), paint(st, if st == "connected" { MINT } else { CORAL }), s["tools"]);
+                    uprintln!("  • {}: {} ({} tools)", s["name"].as_str().unwrap_or(""), paint(st, if st == "connected" { MINT } else { CORAL }), s["tools"]);
                 }
             }
             "/save" => {
                 let snap = self.snapshot();
                 PersistenceManager::new().save_session(&snap);
-                println!("{}", paint(&format!("Session saved: {}", snap.session_id), MINT));
+                uprintln!("{}", paint(&format!("Session saved: {}", snap.session_id), MINT));
             }
             "/sessions" => {
-                println!("\n{}", bold("Saved Sessions"));
+                uprintln!("\n{}", bold("Saved Sessions"));
                 for s in PersistenceManager::new().list_sessions() {
                     let here = if s["cwd"] == cfg.cwd.to_string_lossy().as_ref() { paint(" (this folder)", MUTED) } else { String::new() };
-                    println!("  • {}  {} turns  {}{here}\n      {}", s["session_id"].as_str().unwrap_or(""), s["turn_count"], s["updated_at"].as_str().unwrap_or("").chars().take(16).collect::<String>(), paint(s["title"].as_str().unwrap_or(""), MUTED));
+                    uprintln!("  • {}  {} turns  {}{here}\n      {}", s["session_id"].as_str().unwrap_or(""), s["turn_count"], s["updated_at"].as_str().unwrap_or("").chars().take(16).collect::<String>(), paint(s["title"].as_str().unwrap_or(""), MUTED));
                 }
             }
             "/resume" => {
                 let pm = PersistenceManager::new();
                 let sid = if args.is_empty() { pm.latest_for(&cfg.cwd.to_string_lossy()) } else { Some(args.clone()) };
                 match sid {
-                    None => println!("{}", paint("No saved session for this folder. /sessions lists all.", MUTED)),
+                    None => uprintln!("{}", paint("No saved session for this folder. /sessions lists all.", MUTED)),
                     Some(id) => {
                         if self.resume(&id).await {
-                            println!("{}", paint(&format!("Resumed {id} ({} turns)", self.agent().session.turns()), MINT));
+                            uprintln!("{}", paint(&format!("Resumed {id} ({} turns)", self.agent().session.turns()), MINT));
                         } else {
-                            println!("{}", paint(&format!("No session with id {id}"), CORAL));
+                            uprintln!("{}", paint(&format!("No session with id {id}"), CORAL));
                         }
                     }
                 }
@@ -1245,19 +1358,19 @@ impl Cli {
                 match name.as_str() {
                     "/learn" => {
                         let ok = !args.is_empty() && learned.add_lesson(&args, "user");
-                        println!("{}", if ok { paint("Learned, and saved to AGENTS.md. It applies from the next session (the prompt is fixed for this one).", MINT) } else { paint("Usage: /learn <a rule, at least a few words>", MUTED) });
+                        uprintln!("{}", if ok { paint("Learned, and saved to AGENTS.md. It applies from the next session (the prompt is fixed for this one).", MINT) } else { paint("Usage: /learn <a rule, at least a few words>", MUTED) });
                     }
                     "/forget" => {
                         let gone = args.parse::<usize>().ok().and_then(|n| learned.forget(n));
-                        println!("{}", match gone { Some(g) => paint(&format!("Forgot: {g}"), MINT), None => paint("Usage: /forget <number from /lessons>", MUTED) });
+                        uprintln!("{}", match gone { Some(g) => paint(&format!("Forgot: {g}"), MINT), None => paint("Usage: /forget <number from /lessons>", MUTED) });
                     }
                     _ => {
                         let rows = learned.lessons();
                         for (i, t) in rows.iter().enumerate() {
-                            println!("  {}. {t}", i + 1);
+                            uprintln!("  {}. {t}", i + 1);
                         }
                         if rows.is_empty() {
-                            println!("{}", paint("Nothing learned yet. Rejecting an action with feedback, or /learn <rule>, teaches melon.", MUTED));
+                            uprintln!("{}", paint("Nothing learned yet. Rejecting an action with feedback, or /learn <rule>, teaches melon.", MUTED));
                         }
                     }
                 }
@@ -1265,7 +1378,7 @@ impl Cli {
             "/undo" => {
                 let info = self.agent().undo_info.clone();
                 match info {
-                    None => println!("{}", paint("Nothing to undo: the last request changed no files.", MUTED)),
+                    None => uprintln!("{}", paint("Nothing to undo: the last request changed no files.", MUTED)),
                     Some(info) => {
                         let files: Vec<String> = info["files"].as_array().map(|a| a.iter().filter_map(|v| v.as_str().map(String::from)).collect()).unwrap_or_default();
                         let created: Vec<String> = info["created"].as_array().map(|a| a.iter().filter_map(|v| v.as_str().map(String::from)).collect()).unwrap_or_default();
@@ -1276,9 +1389,9 @@ impl Cli {
                             a.undo_info = None;
                             a.checkpoints.pop();
                             a.session.tool_registry.epoch.fetch_add(1, std::sync::atomic::Ordering::SeqCst); // files on disk changed under earlier reads
-                            println!("{}", paint(&format!("Restored {}, removed {} new file(s).", restored.len(), deleted.len()), MINT));
+                            uprintln!("{}", paint(&format!("Restored {}, removed {} new file(s).", restored.len(), deleted.len()), MINT));
                             if !skipped.is_empty() {
-                                println!("{}", paint(&format!("Left alone (no earlier copy): {}", skipped.join(", ")), AMBER));
+                                uprintln!("{}", paint(&format!("Left alone (no earlier copy): {}", skipped.join(", ")), AMBER));
                             }
                         }
                     }
@@ -1287,7 +1400,7 @@ impl Cli {
             "/rewind" => {
                 let marks = self.agent().checkpoints.clone();
                 if marks.is_empty() {
-                    println!("{}", paint("Nothing to rewind: no request in this session has changed files.", MUTED));
+                    uprintln!("{}", paint("Nothing to rewind: no request in this session has changed files.", MUTED));
                 } else if let Ok(n) = args.parse::<usize>() {
                     let n = n.clamp(1, marks.len());
                     let chosen = &marks[marks.len() - n..];
@@ -1301,31 +1414,31 @@ impl Cli {
                         a.undo_info = None;
                         a.session.tool_registry.epoch.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
                         a.session.context_manager.lock().unwrap().add_user_message(&format!("[The user rewound the last {n} request(s): {} file(s) restored and {} new file(s) removed, so the working tree is back to how it was before \"{first_req}\". Earlier edits in this chat no longer exist on disk.]", restored.len(), deleted.len()));
-                        println!("{}", paint(&format!("Restored {}, removed {} new file(s).", restored.len(), deleted.len()), MINT));
+                        uprintln!("{}", paint(&format!("Restored {}, removed {} new file(s).", restored.len(), deleted.len()), MINT));
                         if !skipped.is_empty() {
-                            println!("{}", paint(&format!("Left alone (no earlier copy): {}", skipped.join(", ")), AMBER));
+                            uprintln!("{}", paint(&format!("Left alone (no earlier copy): {}", skipped.join(", ")), AMBER));
                         }
                     }
                 } else {
                     for (i, m) in marks.iter().rev().enumerate() {
-                        println!("  {}. {}  {}", i + 1, m["request"].as_str().unwrap_or(""), paint(&format!("({} file(s))", m["files"].as_array().map_or(0, Vec::len)), MUTED));
+                        uprintln!("  {}. {}  {}", i + 1, m["request"].as_str().unwrap_or(""), paint(&format!("({} file(s))", m["files"].as_array().map_or(0, Vec::len)), MUTED));
                     }
-                    println!("{}", paint("/rewind <n> puts the files back to how they were before request n (1 = the latest)", MUTED));
+                    uprintln!("{}", paint("/rewind <n> puts the files back to how they were before request n (1 = the latest)", MUTED));
                 }
             }
             "/checkpoint" => {
                 let snap = self.snapshot();
-                println!("{}", paint(&format!("Checkpoint created: {}", PersistenceManager::new().save_checkpoint(&snap)), MINT));
+                uprintln!("{}", paint(&format!("Checkpoint created: {}", PersistenceManager::new().save_checkpoint(&snap)), MINT));
             }
             "/restore" => {
                 if args.is_empty() {
-                    println!("{}", paint("Usage: /restore <checkpoint_id> ", CORAL));
+                    uprintln!("{}", paint("Usage: /restore <checkpoint_id> ", CORAL));
                 } else {
                     match PersistenceManager::new().load_checkpoint(&args) {
-                        None => println!("{}", paint("Checkpoint does not exist ", CORAL)),
+                        None => uprintln!("{}", paint("Checkpoint does not exist ", CORAL)),
                         Some(snap) => {
                             self.restore_into_session(&snap, false).await;
-                            println!("{}", paint(&format!("Restored checkpoint {args} into session {}", snap.session_id), MINT));
+                            uprintln!("{}", paint(&format!("Restored checkpoint {args} into session {}", snap.session_id), MINT));
                         }
                     }
                 }
@@ -1342,7 +1455,7 @@ impl Cli {
                     let msg = if args.is_empty() { format!("Apply the {} skill to this project: {}", sk.name, sk.description) } else { args.clone() };
                     self.run_turn(&msg).await;
                 } else {
-                    println!("{}", paint(&format!("Unknown command: {other}"), CORAL));
+                    uprintln!("{}", paint(&format!("Unknown command: {other}"), CORAL));
                 }
             }
         }
