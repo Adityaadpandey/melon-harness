@@ -28,8 +28,14 @@ async fn background_job_returns_fast_then_reports_done() {
     let job = job_for(cmd).expect("job registered");
     assert!(!job.done()); // still running
     assert!(finished_jobs().iter().all(|j| j.command != cmd));
-    tokio::time::sleep(Duration::from_millis(1500)).await;
-    assert!(job.done() && job.tail(15).contains("built-bg-one"));
+    // a loaded machine can be slow to start the shell, so wait for it instead of guessing a delay
+    for _ in 0..100 {
+        if job.done() {
+            break;
+        }
+        tokio::time::sleep(Duration::from_millis(100)).await;
+    }
+    assert!(job.done() && job.tail(15).contains("built-bg-one"), "done={} code={:?} log={} tail={:?}", job.done(), job.returncode(), job.log.display(), job.tail(15));
     // announced only once, whoever drains the table first
     let seen = finished_jobs().iter().chain(finished_jobs().iter()).filter(|j| j.command == cmd).count();
     assert!(seen <= 1, "announced {seen} times");

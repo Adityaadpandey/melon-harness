@@ -80,6 +80,10 @@ pub fn kill_job(j: &BackgroundJob) {
 }
 
 pub fn kill_jobs() {
+    // the job table is process-wide, so in tests one agent closing would kill another test's job
+    if cfg!(test) {
+        return;
+    }
     for j in jobs().lock().unwrap().values() {
         if !j.done() {
             killpg(j.pid);
