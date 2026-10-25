@@ -1,0 +1,20 @@
+//! Small shared helpers: paths, text, regex, tracing, the result archive and the cost summary.
+pub mod archive;
+pub mod cost;
+pub mod edits;
+pub mod paths;
+pub mod re;
+pub mod search;
+pub mod text;
+pub mod trace;
+pub mod fnmatch;
+pub mod precompact;
+pub mod codegraph;
+pub mod diagnostics;
+pub mod importgraph;
+pub mod netguard;
+pub mod outline;
+pub mod pyscan;
+pub mod rank;
+pub mod repomap;
+pub mod templates;
