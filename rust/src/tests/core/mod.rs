@@ -12,6 +12,7 @@ mod test_ask_user;
 mod test_background_shell;
 mod test_challenge;
 mod test_commands;
+mod test_cost;
 mod test_precompact;
 
 /// A config rooted in `dir` that approves everything, built the way the loader builds it (so pi-mode defaults apply,
