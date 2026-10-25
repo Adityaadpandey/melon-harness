@@ -16,6 +16,10 @@ const MAX_FILE_BYTES: u64 = 2_000_000;
 const MAX_LINE_CHARS: usize = 300;
 const LIST_TTL: Duration = Duration::from_secs(20);
 
+pub fn is_secret_name(name: &str) -> bool {
+    is_secret(name)
+}
+
 fn is_secret(name: &str) -> bool {
     let low = name.to_lowercase();
     SECRET_GLOBS.iter().any(|g| fnmatch(&low, g))

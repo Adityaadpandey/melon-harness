@@ -33,7 +33,8 @@ pub struct Session {
     pub approval_manager: Arc<ApprovalManager>,
     pub loop_detector: Mutex<LoopDetector>,
     pub hook_system: HookSystem,
-    pub created_at: chrono::DateTime<chrono::Local>,
+    pub created_at: Mutex<String>,
+    pub updated_at: Mutex<String>,
     pub turn_count: AtomicUsize,
 }
 
@@ -47,9 +48,6 @@ impl Session {
         *tool_registry.tracer.lock().unwrap() = Some(tracer.clone());
         let archive = Arc::new(ResultStore::new(Some(get_data_dir().join("results").join(&session_id))));
         *tool_registry.archive.lock().unwrap() = archive.clone();
-        if let Some(r) = tool_registry.get("recall_result").and_then(|t| t.as_any().downcast_ref::<RecallResultTool>().map(|r| r.store.lock().unwrap().clone())) {
-            let _ = r;
-        }
         if let Some(t) = tool_registry.get("recall_result") {
             if let Some(r) = t.as_any().downcast_ref::<RecallResultTool>() {
                 *r.store.lock().unwrap() = archive.clone();
@@ -76,9 +74,6 @@ impl Session {
         {
             let cm2 = cm.clone();
             tool_registry.set_is_live(Arc::new(move |id| cm2.lock().unwrap().has_live_result(id)));
-        }
-        if let Some(a) = tool_registry.get("advisor").and_then(|t| t.as_any().downcast_ref::<AdvisorTool>().map(|_| ())) {
-            let _ = a;
         }
         if let Some(t) = tool_registry.get("advisor") {
             if let Some(a) = t.as_any().downcast_ref::<AdvisorTool>() {
@@ -108,7 +103,8 @@ impl Session {
             approval_manager: approval,
             loop_detector: Mutex::new(LoopDetector::default()),
             hook_system,
-            created_at: chrono::Local::now(),
+            created_at: Mutex::new(chrono::Local::now().to_rfc3339()),
+            updated_at: Mutex::new(chrono::Local::now().to_rfc3339()),
             turn_count: AtomicUsize::new(0),
         })
     }
@@ -126,7 +122,12 @@ impl Session {
     }
 
     pub fn increment_turn(&self) -> usize {
+        *self.updated_at.lock().unwrap() = chrono::Local::now().to_rfc3339();
         self.turn_count.fetch_add(1, Ordering::SeqCst) + 1
+    }
+
+    pub fn set_turns(&self, n: usize) {
+        self.turn_count.store(n, Ordering::SeqCst);
     }
 
     pub fn turns(&self) -> usize {
@@ -136,7 +137,7 @@ impl Session {
     pub fn get_stats(&self) -> Value {
         let cm = self.context_manager.lock().unwrap();
         serde_json::json!({
-            "session_id": self.session_id(), "created_at": self.created_at.to_rfc3339(), "turn_count": self.turns(),
+            "session_id": self.session_id(), "created_at": self.created_at.lock().unwrap().clone(), "turn_count": self.turns(),
             "message_count": cm.message_count(), "token_usage": cm.total_usage.to_value(),
             "tools_count": self.tool_registry.get_tools().len(), "mcp_servers": self.tool_registry.connected_mcp_tools().len(),
         })

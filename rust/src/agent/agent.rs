@@ -277,6 +277,11 @@ impl Agent {
 
     /// Ctrl+C. A request cut off while the review pipeline was still running never reached the history, so the next
     /// "pls cont" found nothing to continue. Keep it, marked as interrupted, so the model can pick it back up.
+    /// /compact: summarise now, whatever the size.
+    pub async fn compact_now(&mut self) -> bool {
+        self.compact(true).await
+    }
+
     pub fn on_interrupt(&mut self) {
         let mut cm = self.session.context_manager.lock().unwrap();
         if !self.unsent.is_empty() {

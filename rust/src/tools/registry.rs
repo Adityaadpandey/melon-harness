@@ -374,8 +374,8 @@ impl ToolRegistry {
             return fail(ToolResult::error_with(veto, json!({"tool_name": name, "blocked": true}))).await;
         }
         let inv = ToolInvocation { params: params.clone(), cwd: cwd.to_path_buf(), epoch: self.epoch.load(Ordering::SeqCst), call_id: call_id.to_string(), progress: self.progress.lock().unwrap().clone() };
-        let rule = approval.and_then(|a| a.rules.decide(name, &params));
-        if let Some(r) = rule {
+        let rule = approval.and_then(|a| a.decide_rule(name, &params));
+        if let Some(r) = &rule {
             if r.kind == "deny" {
                 return fail(ToolResult::error_with(
                     format!("Denied by the permission rule {}. Do not retry it or look for a way around it; tell the user what you needed.", r.text),
@@ -395,7 +395,7 @@ impl ToolRegistry {
                     tool_kind: tool.kind().value().to_string(),
                 };
                 let mut decision = approval.check_approval(&ctx);
-                match rule.map(|r| r.kind.as_str()) {
+                match rule.as_ref().map(|r| r.kind.as_str()) {
                     Some("allow") if decision == ApprovalDecision::NeedsConfirmation => decision = ApprovalDecision::Approved, // rejections are never lifted by a rule
                     Some("ask") if decision == ApprovalDecision::Approved => decision = ApprovalDecision::NeedsConfirmation,
                     _ => {}

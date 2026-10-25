@@ -260,7 +260,7 @@ pub struct ApprovalManager {
     pub confirmation_callback: Mutex<Option<ConfirmCallback>>,
     always_commands: Mutex<HashSet<String>>,
     verify_commands: HashSet<String>,
-    pub rules: Rules,
+    rules: Mutex<Rules>,
     /// Total seconds spent waiting for the user's answer; the agent's clock stops meanwhile.
     pub waited: Mutex<f64>,
     unsandboxed: fn(&str) -> bool,
@@ -271,7 +271,7 @@ impl ApprovalManager {
         let cwd = crate::util::paths::resolve(cwd); // symlinked tmp dirs (/var -> /private/var) must still match
         ApprovalManager {
             approval_policy: Mutex::new(policy),
-            rules: load_rules(&cwd),
+            rules: Mutex::new(load_rules(&cwd)),
             cwd,
             confirmation_callback: Mutex::new(None),
             always_commands: Mutex::new(HashSet::new()),
@@ -279,6 +279,20 @@ impl ApprovalManager {
             waited: Mutex::new(0.0),
             unsandboxed: super::sandbox::is_unsandboxed,
         }
+    }
+
+    /// The permission rule that applies to this call, if any.
+    pub fn decide_rule(&self, name: &str, params: &serde_json::Value) -> Option<super::rules::Rule> {
+        self.rules.lock().unwrap().decide(name, params).cloned()
+    }
+
+    pub fn rules_snapshot(&self) -> Rules {
+        self.rules.lock().unwrap().clone()
+    }
+
+    /// Re-read the allow / deny / ask files (after /permissions changed one).
+    pub fn reload_rules(&self) {
+        *self.rules.lock().unwrap() = load_rules(&self.cwd);
     }
 
     pub fn policy(&self) -> ApprovalPolicy {

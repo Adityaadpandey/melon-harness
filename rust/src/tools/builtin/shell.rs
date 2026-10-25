@@ -66,6 +66,19 @@ fn killpg(pid: u32) {
     unsafe { libc::killpg(pid as i32, libc::SIGKILL) };
 }
 
+/// Every background job, oldest first.
+pub fn jobs_list() -> Vec<Arc<BackgroundJob>> {
+    let mut v: Vec<Arc<BackgroundJob>> = jobs().lock().unwrap().values().cloned().collect();
+    v.sort_by_key(|j| j.id);
+    v
+}
+
+pub fn kill_job(j: &BackgroundJob) {
+    if !j.done() {
+        killpg(j.pid);
+    }
+}
+
 pub fn kill_jobs() {
     for j in jobs().lock().unwrap().values() {
         if !j.done() {
