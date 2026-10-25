@@ -54,7 +54,7 @@ impl ModelRegistry {
         ModelRegistry { config, data_dir, models: Mutex::new(HashMap::new()), order: Mutex::new(vec![]), cooldown: Mutex::new(HashMap::new()) }
     }
 
-    fn put(&self, info: ModelInfo) {
+    pub(crate) fn put(&self, info: ModelInfo) {
         let mut m = self.models.lock().unwrap();
         if !m.contains_key(&info.id) {
             self.order.lock().unwrap().push(info.id.clone());

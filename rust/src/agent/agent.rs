@@ -50,13 +50,13 @@ fn text_call() -> &'static Re {
 }
 
 /// "the prompt is too big", as each provider words it. A rate limit saying "too many tokens" is not one.
-fn overflow() -> &'static Re {
+pub(crate) fn overflow() -> &'static Re {
     static R: OnceLock<Re> = OnceLock::new();
     R.get_or_init(|| {
         lit_i(r"context[_ ](length|window)|maximum context|prompt (is )?too long|prompt exceeds max length|request_too_large|too many tokens|exceeds? the (model|context)|input (is )?too long|maximum prompt length|reduce the length of the messages|exceeds the available context size|greater than the context length|exceeded model token limit|configured context size|range of input length should be|token limit exceeded|longer than the model'?s context length|maximum allowed input length")
     })
 }
-fn not_overflow() -> &'static Re {
+pub(crate) fn not_overflow() -> &'static Re {
     static R: OnceLock<Re> = OnceLock::new();
     R.get_or_init(|| lit_i(r"rate.?limit|too many requests|throttl|please wait"))
 }
