@@ -3,6 +3,7 @@ pub mod adapters;
 pub mod codex_auth;
 pub mod errors;
 pub mod llm_client;
+pub mod probe;
 pub mod providers;
 pub mod response;
 pub mod routing;

@@ -80,14 +80,14 @@ def claude_report(text: str) -> dict:
 
 
 async def run_one(task: Task, harness: Path, model: str, mode: str, timeout: int, env: dict, run_idx: int,
-                  agent: str = "melon") -> dict:
+                  agent: str = "melon", binary: str | None = None) -> dict:
     legacy = not (harness / "agent" / "task.py").exists()
     d = Path(tempfile.mkdtemp(prefix=f"bench-{task.id}-"))
     build_repo(task, d, model, legacy, melon_config=agent == "melon")
     originals = {p: (d / p).read_bytes() for p in task.protect}
     report_path = d.parent / f"{d.name}.report.json"
 
-    cmd = [sys.executable, str(harness / "main.py")]
+    cmd = [binary] if binary else [sys.executable, str(harness / "main.py")]  # --bin: the Rust build, same flags
     prompt = task.prompt
     if agent == "claude-code":
         # auto permission mode is Claude Code's counterpart of melon's --approval auto: edits and commands run unasked,
@@ -170,7 +170,7 @@ async def main_run(a) -> None:
 
     async def guarded(t, i):
         async with sem:
-            row = await run_one(t, harness, a.model, a.mode, a.timeout, env, i, a.agent)
+            row = await run_one(t, harness, a.model, a.mode, a.timeout, env, i, a.agent, a.bin)
             row["label"], row["jobs"] = a.label, a.jobs
             print(f"{row['status']:<7} {t.id:<28} {row['wall_sec']:>7}s  {row['model']}", flush=True)
             return row
@@ -222,6 +222,7 @@ if __name__ == "__main__":
     ap.add_argument("--label", default="new")
     ap.add_argument("--model")
     ap.add_argument("--agent", choices=["melon", "claude-code"], default="melon", help="which harness runs the tasks")
+    ap.add_argument("--bin", help="run this executable (the Rust build, rust/target/release/melon) instead of main.py")
     ap.add_argument("--tasks")
     ap.add_argument("--runs", type=int, default=1)
     ap.add_argument("--mode", choices=["single", "parallel"], default="single")
