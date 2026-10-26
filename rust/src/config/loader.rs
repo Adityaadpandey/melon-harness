@@ -33,7 +33,7 @@ pub fn get_data_dir() -> PathBuf {
     }
 }
 
-/// The folder holding profiles/ and skills/: next to the binary's source tree, or `MELON_HOME`.
+/// The folder holding profiles/ and skills/: inside the rust folder (found from the binary), or `MELON_HOME`.
 pub fn home_dir() -> PathBuf {
     if let Ok(h) = std::env::var("MELON_HOME") {
         return PathBuf::from(h);
@@ -45,7 +45,7 @@ pub fn home_dir() -> PathBuf {
             }
         }
     }
-    PathBuf::from(env!("CARGO_MANIFEST_DIR")).parent().map(Path::to_path_buf).unwrap_or_default()
+    PathBuf::from(env!("CARGO_MANIFEST_DIR"))
 }
 
 pub fn save_last_model(name: &str) {

@@ -6,7 +6,7 @@ use crate::config::ApprovalPolicy;
 
 /// The playbooks that ship with the harness (the repo's skills/ folder).
 fn builtin() -> Vec<Skill> {
-    let dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).parent().unwrap().join("skills");
+    let dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("skills");
     let mut files: Vec<_> = std::fs::read_dir(dir).unwrap().flatten().map(|e| e.path()).filter(|p| p.extension().map_or(false, |e| e == "md")).collect();
     files.sort();
     files.iter().filter_map(|f| parse_skill(&std::fs::read_to_string(f).unwrap(), Some(f))).collect()
