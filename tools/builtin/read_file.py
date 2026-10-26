@@ -160,6 +160,13 @@ class ReadFileTool(Tool):
     async def execute(self, invocation: ToolInvocation) -> ToolResult:
         params = ReadFileParams(**invocation.params)
         path = resolve_path(invocation.cwd, params.path)
+        if not path.exists():
+            # models sometimes trail junk after the real name ("a.html has no?", "a.html?"): if a cleaned-up form is a file, it was meant
+            raw = params.path.strip()
+            for guess in ((raw.split() or [""])[0], raw.rstrip("?!.,")):
+                if guess and guess != params.path and resolve_path(invocation.cwd, guess).is_file():
+                    path = resolve_path(invocation.cwd, guess)
+                    break
 
         if not path.exists():
             return ToolResult.error_result(

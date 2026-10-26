@@ -670,3 +670,14 @@ async def test_a_claude_code_style_call_still_runs(cfg):
         done = next(e for e in events if e.type == AgentEventType.TOOL_CALL_COMPLETE)
         assert done.data["success"] is True
         assert "hello there" in next(m for m in agent.session.client.requests[1] if m["role"] == "tool")["content"]
+
+
+async def test_read_file_forgives_junk_after_the_path(cfg):
+    from tools.base import ToolInvocation
+    from tools.builtin.read_file import ReadFileTool
+
+    tool = ReadFileTool(cfg)
+    for name, p in (("a.html", "a.html has no?"), ("b.html", "b.html?")):
+        (cfg.cwd / name).write_text("<p>hi</p>\n")
+        r = await tool.execute(ToolInvocation(params={"path": p}, cwd=cfg.cwd))
+        assert "hi" in r.output, p

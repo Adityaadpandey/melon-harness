@@ -164,7 +164,8 @@ class ContextManager:
         return self._latest_usage.total_tokens or self.estimated_tokens()
 
     def needs_compression(self) -> bool:
-        return self._latest_usage.total_tokens > self._limit()
+        # the provider's last count can be stale: after a switch to a smaller window, or a huge reply, the real size is bigger
+        return self._latest_usage.total_tokens > self._limit() or self.estimated_tokens() > self.context_window
 
     def set_latest_usage(self, usage: TokenUsage):
         self._latest_usage = usage
