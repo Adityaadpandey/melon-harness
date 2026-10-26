@@ -194,6 +194,8 @@ class LLMClient:
             started = time.perf_counter()
             first_token: float | None = None
             text, calls, usage, finish, reasoning = "", [], None, None, None
+            written, open_calls = 0, {}  # chars streamed so far, and tool calls started but not finished (id -> name)
+            runaway = self.config.model.max_output_tokens * 4  # ~chars; codex/responses servers take no max_tokens, so cut here
             cap = self._output_cap(model, info.context_length, est_tokens) if isinstance(adapter, OpenAIChatAdapter) else None
             body = {} if model in self._no_thinking else thinking_body(self._provider(model), wire_model, effort)
             extra = {k: v for k, v in (("max_tokens", cap), ("top_p", top_p), ("extra_body", body)) if v and isinstance(adapter, OpenAIChatAdapter)}
@@ -206,7 +208,13 @@ class LLMClient:
                         first_token = time.perf_counter() - started
                     if ev.type == StreamEventType.TEXT_DELTA:
                         text += ev.text_delta.content
+                        written += len(ev.text_delta.content)
+                    elif ev.type == StreamEventType.TOOL_CALL_START:
+                        open_calls[ev.tool_call_delta.call_id] = ev.tool_call_delta.name
+                    elif ev.type == StreamEventType.TOOL_CALL_DELTA:
+                        written += len(ev.tool_call_delta.arguments_delta)
                     elif ev.type == StreamEventType.TOOL_CALL_COMPLETE:
+                        open_calls.pop(ev.tool_call.call_id, None)
                         calls.append(ev.tool_call)
                     elif ev.type == StreamEventType.MESSAGE_COMPLETE:
                         usage, finish, reasoning = ev.usage, ev.finish_reason, ev.reasoning
@@ -214,6 +222,12 @@ class LLMClient:
                     if stream:
                         collected.emitted = True
                         yield ev
+                    if written > runaway:
+                        # a 258KB edit took 10 minutes and 128k tokens before the server stopped it. Stop here, and hand the
+                        # agent an empty call per unfinished one so it is told to resend smaller instead of continuing the text.
+                        finish = "length"
+                        calls += [ToolCall(cid, name, {}) for cid, name in open_calls.items()]
+                        break
                 self.last_model = model
                 self.tracer.emit(
                     "model_call", model=model, role=role, attempt=attempt, ok=True,

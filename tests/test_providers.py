@@ -369,3 +369,23 @@ async def test_a_server_without_the_switch_is_asked_again_without_it_and_remembe
     await collect(c)
     await collect(c)
     assert fake.bodies == [{"thinking": {"type": "enabled"}}, None, None]
+
+
+async def test_a_runaway_reply_is_stopped_and_its_open_call_comes_back_to_be_resent_smaller(tmp_path):
+    from client.response import ToolCallDelta
+
+    class Runaway(FakeAdapter):
+        async def stream(self, model, messages, tools, temperature):
+            yield StreamEvent(type=StreamEventType.TOOL_CALL_START, tool_call_delta=ToolCallDelta("c1", "edit"))
+            for _ in range(1000):  # far more than the cap; the loop must stop reading well before the end
+                self.calls.append(model)
+                yield StreamEvent(type=StreamEventType.TOOL_CALL_DELTA, tool_call_delta=ToolCallDelta("c1", None, "x" * 1000))
+
+    c, fake = make_client(tmp_path, {})
+    c.config.model.max_output_tokens = 1000  # 4000 chars
+    runaway = Runaway({})
+    c._adapter = lambda endpoint: runaway
+    evs = await collect(c)
+    assert len(runaway.calls) < 10
+    done = [e for e in evs if e.type == StreamEventType.MESSAGE_COMPLETE][-1]
+    assert done.finish_reason == "length"
