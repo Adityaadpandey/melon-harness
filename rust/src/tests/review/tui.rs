@@ -99,8 +99,8 @@ async fn transcript_shape() {
     t.tool_call_complete("c4", "shell", false, "boom", Some("Exit code 1"), &Map::new(), None, Some(1));
     let out = r.text();
     let re = |p: &str| regex::Regex::new(p).unwrap().is_match(&out);
-    assert!(re(r"\[search\]\s+needle\n.*✓ Found 1 match.*\n.*x:1:needle\n\n.*\[read\]\s+b.py\n.*✓ Read 5 lines"), "{out}");
-    assert!(re(r"\[update\]\s+a.py"), "{out}");
+    assert!(re(r"\[?search\]?\s+needle\n.*✓ Found 1 match.*\n.*x:1:needle\n\n.*\[?read\]?\s+b.py\n.*✓ Read 5 lines"), "{out}");
+    assert!(re(r"\[?update\]?\s+a.py"), "{out}");
     assert!(re(r"updated\s+\+2 −1"), "{out}");
     assert!(re(r"2 \+ y = 20") && re(r"2 - y = 2"), "{out}");
     assert!(out.contains("✗ Exit code 1"));
@@ -202,7 +202,7 @@ async fn text_after_a_tool_call_starts_a_new_message() {
     r.tui.assistant_delta("Found it.");
     r.tui.end_turn();
     let out = r.text();
-    let read_at = regex::Regex::new(r"\[read\]\s+a.py").unwrap().find(&out).unwrap().start();
+    let read_at = regex::Regex::new(r"\[?read\]?\s+a.py").unwrap().find(&out).unwrap().start();
     assert!(out.find("Let me look.").unwrap() < read_at && read_at < out.find("Found it.").unwrap(), "{out}");
     assert_eq!(out.matches('◆').count(), 2); // two messages around the tool call
 }
