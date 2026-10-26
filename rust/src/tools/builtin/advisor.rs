@@ -68,6 +68,32 @@ pub fn render_transcript(messages: &[Value], cap: usize) -> String {
     std::iter::once(head).chain(out).collect::<Vec<_>>().join("\n\n")
 }
 
+const MIN_FILES: usize = 3;
+const MIN_ROUNDS: usize = 6;
+const MIN_ERRORS: usize = 3;
+
+/// Worth a second opinion: the work spans several files after real effort, or keeps failing. A one-file restyle, a vague
+/// "make it better" or a quick question is not, and the advisor costs a stronger model reading the whole transcript.
+pub fn is_serious(messages: &[Value]) -> bool {
+    let (mut files, mut rounds, mut errors) = (std::collections::HashSet::new(), 0, 0);
+    for m in messages {
+        if m["role"] == "tool" && m["content"].as_str().map_or(false, |c| c.starts_with("Error") || c.starts_with("Not run")) {
+            errors += 1;
+        }
+        let calls = m["tool_calls"].as_array().cloned().unwrap_or_default();
+        if !calls.is_empty() {
+            rounds += 1;
+        }
+        for c in &calls {
+            let args: Value = serde_json::from_str(c["function"]["arguments"].as_str().unwrap_or("{}")).unwrap_or(Value::Null);
+            if let Some(p) = args["path"].as_str() {
+                files.insert(p.to_string());
+            }
+        }
+    }
+    errors >= MIN_ERRORS || (files.len() >= MIN_FILES && rounds >= MIN_ROUNDS)
+}
+
 pub type TranscriptFn = Arc<dyn Fn() -> Vec<Value> + Send + Sync>;
 
 pub struct AdvisorTool {
@@ -76,13 +102,15 @@ pub struct AdvisorTool {
     pub transcript: Mutex<Option<TranscriptFn>>,
     /// Advisor calls in this request; the agent resets it per request.
     pub calls: AtomicUsize,
+    /// A review-fix run must consult it whatever the size; the agent sets this per request.
+    pub forced: std::sync::atomic::AtomicBool,
     /// The registry's write count when it was last called, so "consulted after the last edit" can be checked.
     pub last_call_at: AtomicI64,
 }
 
 impl AdvisorTool {
     pub fn new(config: ConfigHandle) -> Self {
-        AdvisorTool { config, client: Mutex::new(None), transcript: Mutex::new(None), calls: AtomicUsize::new(0), last_call_at: AtomicI64::new(-1) }
+        AdvisorTool { config, client: Mutex::new(None), transcript: Mutex::new(None), calls: AtomicUsize::new(0), forced: Default::default(), last_call_at: AtomicI64::new(-1) }
     }
 }
 
@@ -92,7 +120,7 @@ impl Tool for AdvisorTool {
         "advisor"
     }
     fn description(&self) -> String {
-        "Ask a stronger reviewer model for advice. Takes no parameters: your whole conversation is forwarded. Call it BEFORE you edit (after reading the code), when you think you are done (after saving the work), when stuck, or before changing approach. Skip it for trivial one-step tasks.".into()
+        "Ask a stronger reviewer model for advice. Takes no parameters: your whole conversation is forwarded. Only for serious work: a change across several files, a bug whose cause you cannot find, or being stuck after repeated failures. Call it before committing to the approach or when you think you are done. Never for a one-file edit, a restyle, a vague request or a question; it will refuse.".into()
     }
     fn kind(&self) -> ToolKind {
         ToolKind::Read
@@ -109,6 +137,9 @@ impl Tool for AdvisorTool {
         let max = self.config.get().advisor_max_calls;
         if self.calls.load(Ordering::SeqCst) >= max {
             return ToolResult::error(format!("Advisor limit reached ({max} calls this request). Decide with what you have."));
+        }
+        if !self.forced.load(Ordering::SeqCst) && !is_serious(&transcript()) {
+            return ToolResult::error("The advisor is for serious work (several files, or repeated failures). This task is not there yet: decide with what you have.");
         }
         self.calls.fetch_add(1, Ordering::SeqCst);
         let prompt = vec![

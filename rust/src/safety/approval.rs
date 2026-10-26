@@ -82,6 +82,13 @@ fn dangerous() -> &'static Vec<Re> {
     R.get_or_init(|| DANGEROUS_PATTERNS.iter().map(|p| lit_i(p)).collect())
 }
 
+/// Moving or deleting build output and dependency dirs is not a fix for a failing check (`mv .next .next.stale` once turned
+/// 7,600 cache files into "your changes"). It is the user's call every time, even in auto mode and even if `mv` was approved before.
+pub fn is_disruptive_command(command: &str) -> bool {
+    static R: OnceLock<Re> = OnceLock::new();
+    R.get_or_init(|| lit(r#"\b(?:mv|rm|rmdir|trash)\b[^;&|\n]*?(?:^|[\s/'"])(?:node_modules|\.next[\w.-]*|\.nuxt|\.turbo|\.cache|dist|build|target|coverage|__pycache__|\.venv|venv)(?:[/\s'"]|$)"#)).is_match(command)
+}
+
 fn plain_safe(name: &str) -> Option<&'static [&'static str]> {
     // `name: reject` lists flags that turn an otherwise read-only command into a writer.
     // env, printenv and set are left out on purpose: they print every secret in the environment.
@@ -348,6 +355,9 @@ impl ApprovalManager {
         if is_dangerous_command(command) {
             return Rejected;
         }
+        if is_disruptive_command(command) {
+            return if policy == P::Never { Rejected } else { NeedsConfirmation };
+        }
         if self.always_allowed(command) || self.is_verify_command(command) {
             return Approved;
         }
@@ -456,6 +466,9 @@ mod tests {
 
     #[test]
     fn dangerous() {
+        assert!(is_disruptive_command("if [ -d .next ]; then mv .next .next.stale-typecheck; fi"));
+        assert!(is_disruptive_command("rm -rf apps/web/node_modules"));
+        assert!(!is_disruptive_command("rm build.log") && !is_disruptive_command("ls dist"));
         assert!(is_dangerous_command("rm -rf /"));
         assert!(is_dangerous_command("git reset --hard HEAD"));
         assert!(!is_dangerous_command("git branch -d x"));

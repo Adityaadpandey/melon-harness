@@ -23,6 +23,7 @@ async fn advisor(dir: &std::path::Path, cfg: Config, turns: Vec<Vec<crate::clien
     let agent = scripted(cfg.clone(), turns).await;
     let client = agent.session.client.clone();
     let tool = AdvisorTool::new(ConfigHandle::new(cfg));
+    tool.forced.store(true, std::sync::atomic::Ordering::SeqCst); // these tests use tiny transcripts
     *tool.client.lock().unwrap() = Some(client.clone());
     *tool.transcript.lock().unwrap() = Some(Arc::new(move || transcript.clone()));
     let _ = dir;
@@ -90,4 +91,15 @@ async fn a_gate_refuses_a_call_with_its_message_and_lets_everything_else_through
     let msg = format!("{} {}", blocked.output, blocked.error.clone().unwrap_or_default());
     assert!(!blocked.success && msg.contains("Consult the advisor first."));
     assert_eq!(std::fs::read_to_string(dir.path().join("a.txt")).unwrap(), "x\n");
+}
+
+#[test]
+fn the_advisor_refuses_a_small_or_vague_task_and_accepts_a_serious_one() {
+    use crate::tools::builtin::advisor::is_serious;
+    let read = |p: &str| json!({"role": "assistant", "tool_calls": [{"function": {"name": "read_file", "arguments": json!({"path": p}).to_string()}}]});
+    let one_file: Vec<Value> = std::iter::once(json!({"role": "user", "content": "make it better"})).chain((0..8).map(|_| read("a.html"))).collect();
+    assert!(!is_serious(&one_file));
+    let wide: Vec<Value> = (0..6).map(|i| read(&format!("f{i}.py"))).collect();
+    assert!(is_serious(&wide));
+    assert!(is_serious(&vec![json!({"role": "tool", "content": "Error: boom"}); 3]));
 }

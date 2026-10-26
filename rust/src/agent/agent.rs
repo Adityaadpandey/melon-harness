@@ -562,8 +562,11 @@ impl Agent {
         let registry = self.session.tool_registry.clone();
         let advisor_on = registry.get_tools().iter().any(|t| t.name() == "advisor");
         if advisor_on {
-            if let Some(a) = registry.get("advisor").and_then(|t| t.as_any().downcast_ref::<crate::tools::builtin::advisor::AdvisorTool>().map(|a| a.calls.store(0, std::sync::atomic::Ordering::SeqCst))) {
-                let _ = a; // the limit is per request
+            if let Some(t) = registry.get("advisor") {
+                if let Some(a) = t.as_any().downcast_ref::<crate::tools::builtin::advisor::AdvisorTool>() {
+                    a.calls.store(0, std::sync::atomic::Ordering::SeqCst); // the limit is per request
+                    a.forced.store(self.fix_run, std::sync::atomic::Ordering::SeqCst);
+                }
             }
         }
         *registry.gate.lock().unwrap() = if self.fix_run && advisor_on { Some(review_fix::edit_gate(registry.clone())) } else { None }; // a fix run may not edit before the advisor has been consulted
