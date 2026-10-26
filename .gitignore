@@ -1,8 +1,20 @@
-__pycache__
-.git
-.venv/
+# build output
+target/
+
+# secrets and local state
 .env
-.pytest_cache/
 .melon/
+
+# macOS
+.DS_Store
+
+# editors and other checkouts
+.claude/
 pi/
+opencode/
+
+# leftovers from the old python version
+__pycache__/
+.venv/
+.pytest_cache/
 *.egg-info/
