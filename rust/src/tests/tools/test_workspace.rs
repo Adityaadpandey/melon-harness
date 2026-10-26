@@ -296,3 +296,24 @@ fn git_commit_works_beside_a_tracked_secret_file_that_stays_unreadable() {
     assert!(sandboxed("git stash -q && git stash pop -q && git -c user.name=t -c user.email=t@t commit -qam next", &c, p).status.success());
     assert!(!sandboxed("cat .env.test", &c, p).status.success());
 }
+
+#[tokio::test]
+async fn editing_an_unread_file_returns_its_text_and_the_retry_works() {
+    let e = fake_home();
+    fs::write(e.ws.join("a.txt"), "one\ntwo\n").unwrap();
+    let mut c = crate::tests::fakes::config(&e.ws);
+    c.approval = ApprovalPolicy::Yolo;
+    let mut a = crate::agent::agent::Agent::new(c, None).await;
+    let s = a.session.clone();
+    let edit = json!({"path": "a.txt", "old_string": "two", "new_string": "2"});
+    let r = s.tool_registry.invoke("edit", edit.clone(), &e.ws, &s.hook_system, Some(&s.approval_manager), "c1").await;
+    assert!(!r.success && r.error.clone().unwrap_or_default().contains("   2\ttwo") || r.output.contains("   2\ttwo"), "{r:?}");
+    assert_eq!(fs::read_to_string(e.ws.join("a.txt")).unwrap(), "one\ntwo\n"); // nothing changed yet
+    let r = s.tool_registry.invoke("edit", edit, &e.ws, &s.hook_system, Some(&s.approval_manager), "c2").await;
+    assert!(r.success, "{r:?}");
+    assert_eq!(fs::read_to_string(e.ws.join("a.txt")).unwrap(), "one\n2\n");
+    // a stray word after the real name still reads the file
+    let r = s.tool_registry.invoke("read_file", json!({"path": "a.txt junk?"}), &e.ws, &s.hook_system, None, "c3").await;
+    assert!(r.success && r.output.contains("one"), "{r:?}");
+    a.close().await;
+}

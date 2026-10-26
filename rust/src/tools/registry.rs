@@ -235,11 +235,24 @@ impl ToolRegistry {
         }
         let p = params["path"].as_str().unwrap_or("");
         let seen = self.read_state.lock().unwrap().get(&path.to_string_lossy().to_string()).cloned();
-        match seen {
-            None => Some(ToolResult::error_with(format!("Read {p} with read_file before editing it, so the change is based on its real contents."), json!({"tool_name": name, "needs_read": true}))),
-            Some(s) if s != stamp(&path) => Some(ToolResult::error_with(format!("{p} changed on disk since you read it. Re-read it before editing."), json!({"tool_name": name, "needs_read": true}))),
-            _ => None,
+        let why = match seen {
+            None => format!("Read {p} with read_file before editing it, so the change is based on its real contents."),
+            Some(s) if s != stamp(&path) => format!("{p} changed on disk since you read it."),
+            _ => return None,
+        };
+        // a small file comes back right in the error and counts as read, so the retry needs no extra read_file round trip
+        let text = std::fs::read(&path).map(|b| String::from_utf8_lossy(&b).to_string()).unwrap_or_default();
+        if text.lines().count() <= 250 && text.len() <= 20_000 {
+            if let Some(s) = stamp(&path) {
+                self.read_state.lock().unwrap().insert(path.to_string_lossy().to_string(), Some(s));
+            }
+            let numbered: Vec<String> = text.lines().enumerate().map(|(i, l)| format!("{:>4}\t{l}", i + 1)).collect();
+            return Some(ToolResult::error_with(
+                format!("{why} Nothing was changed. Here is the file as it is now; send the edit again against this text (without the line-number prefix):\n{}", numbered.join("\n")),
+                json!({"tool_name": name, "needs_read": true, "inlined": true}),
+            ));
         }
+        Some(ToolResult::error_with(format!("{why} Re-read it before editing."), json!({"tool_name": name, "needs_read": true})))
     }
 
     /// Files the agent read or wrote that something else has changed since: the user in their editor, a formatter, a

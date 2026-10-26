@@ -582,6 +582,7 @@ impl Agent {
 
         loop {
             self.failed = false;
+            let mut fail_reason = String::new();
             // events from the loop are forwarded as they happen; the final text is read from TEXT_COMPLETE
             let (itx, mut irx) = tokio::sync::mpsc::unbounded_channel::<AgentEvent>();
             {
@@ -590,12 +591,15 @@ impl Agent {
                 loop {
                     tokio::select! {
                         _ = &mut fut => break,
-                        Some(ev) = irx.recv() => { if let AgentEvent::TextComplete(c) = &ev { final_response = Some(c.clone()); } emit(&tx, ev); }
+                        Some(ev) = irx.recv() => { if let AgentEvent::TextComplete(c) = &ev { final_response = Some(c.clone()); } if let AgentEvent::AgentError { error } = &ev { fail_reason = error.clone(); } emit(&tx, ev); }
                     }
                 }
                 while let Ok(ev) = irx.try_recv() {
                     if let AgentEvent::TextComplete(c) = &ev {
                         final_response = Some(c.clone());
+                    }
+                    if let AgentEvent::AgentError { error } = &ev {
+                        fail_reason = error.clone();
                     }
                     emit(&tx, ev);
                 }
@@ -606,7 +610,7 @@ impl Agent {
                 task.changed_files = changed_since(before.as_ref(), snapshot(&cwd).await.as_ref());
             }
             if self.failed {
-                task.transition(TaskStatus::Failed, "agent loop aborted");
+                task.transition(TaskStatus::Failed, if fail_reason.is_empty() { "agent loop aborted" } else { &fail_reason }); // the trace says why, not just that it failed
                 break;
             }
             let cfg = self.config.get();
@@ -1136,6 +1140,10 @@ impl Agent {
                 return;
             }
 
+            let churn = self.session.loop_detector.lock().unwrap().take_churn();
+            if let Some(c) = churn {
+                self.add_user(&format!("{c}. Stop and check: run the tests or re-read the file to see where it stands. If the edits are not converging, step back and try a different approach, or tell the user what is blocking you."));
+            }
             let looped = self.session.loop_detector.lock().unwrap().check_for_loop();
             if let Some(err) = looped {
                 loop_warnings += 1;

@@ -1,20 +1,40 @@
 use serde_json::{Map, Value};
-use std::collections::VecDeque;
+use std::collections::{HashMap, HashSet, VecDeque};
 
 pub struct LoopDetector {
     max_exact_repeats: usize,
     max_cycle_length: usize,
     history: VecDeque<String>,
+    edits: HashMap<String, usize>,
+    nudged: HashSet<String>,
+    churn: Option<String>,
 }
 
 impl Default for LoopDetector {
     fn default() -> Self {
-        LoopDetector { max_exact_repeats: 3, max_cycle_length: 3, history: VecDeque::new() }
+        LoopDetector { max_exact_repeats: 3, max_cycle_length: 3, history: VecDeque::new(), edits: HashMap::new(), nudged: HashSet::new(), churn: None }
     }
 }
 
 impl LoopDetector {
+    const CHURN_EDITS: usize = 8;
+
+    /// Said once per file: lots of small edits to one place usually means the approach, not the next edit, is the problem.
+    pub fn take_churn(&mut self) -> Option<String> {
+        self.churn.take()
+    }
+
     pub fn record_tool_call(&mut self, name: &str, args: &Map<String, Value>) {
+        // the same file edited again and again is not an exact repeat, so the checks below miss it
+        if matches!(name, "edit" | "write_file") {
+            if let Some(p) = args.get("path").and_then(Value::as_str) {
+                let n = self.edits.entry(p.to_string()).or_insert(0);
+                *n += 1;
+                if *n >= Self::CHURN_EDITS && self.nudged.insert(p.to_string()) {
+                    self.churn = Some(format!("{p} has been edited {n} times in this task"));
+                }
+            }
+        }
         let mut parts = vec!["tool_call".to_string(), name.to_string()];
         let mut keys: Vec<&String> = args.keys().collect();
         keys.sort();
@@ -63,12 +83,29 @@ impl LoopDetector {
 
     pub fn clear(&mut self) {
         self.history.clear();
+        self.edits.clear();
+        self.churn = None;
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn many_edits_to_one_file_nudge_once() {
+        let mut d = LoopDetector::default();
+        let mut a = Map::new();
+        a.insert("path".into(), "x.rs".into());
+        for i in 0..12 {
+            a.insert("new_string".into(), format!("v{i}").into());
+            d.record_tool_call("edit", &a);
+            if i == 7 {
+                assert!(d.take_churn().unwrap().contains("x.rs"));
+            }
+        }
+        assert!(d.take_churn().is_none());
+    }
+
     #[test]
     fn repeats_and_cycles() {
         let mut d = LoopDetector::default();

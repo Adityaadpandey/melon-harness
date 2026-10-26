@@ -188,7 +188,16 @@ impl Tool for ReadFileTool {
         let mut offset = inv.params["offset"].as_u64().unwrap_or(1).max(1) as usize;
         let mut limit = inv.params["limit"].as_u64().map(|l| l as usize);
         let symbol = inv.str("symbol").filter(|s| !s.is_empty());
-        let path = resolve_path(&inv.cwd, p);
+        let mut path = resolve_path(&inv.cwd, p);
+        // models sometimes trail junk after the real name ("a.html એકસinvalid?"): if the first word is a file, it was meant
+        if !path.exists() {
+            if let Some(word) = p.split_whitespace().next().filter(|w| *w != p) {
+                let cut = resolve_path(&inv.cwd, word);
+                if cut.is_file() {
+                    path = cut;
+                }
+            }
+        }
         if !path.exists() {
             return ToolResult::error(format!("File not found: {}.{}", path.display(), similar_paths(&inv.cwd, &path, &cfg.forbidden_paths)));
         }
