@@ -42,7 +42,7 @@ impl TaskStatus {
         use TaskStatus::*;
         match self {
             Running => matches!(to, Verifying | Repairing | DoneNoChanges | Unverified | Failed), // Repairing: review findings on a run that had no checks
-            Verifying => matches!(to, Running | Verified | Repairing | VerificationFailed | Failed), // Running: the user steered mid-check
+            Verifying => matches!(to, Running | Verified | Unverified | Repairing | VerificationFailed | Failed), // Running: the user steered mid-check
             Repairing => matches!(to, Repairing | Verifying | Unverified | DoneNoChanges | Failed),
             _ => false,
         }

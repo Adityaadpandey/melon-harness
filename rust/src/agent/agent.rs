@@ -16,7 +16,7 @@ use crate::agent::scope::{is_broad, SWEEP, SWEEP_CHECKPOINT};
 use crate::agent::session::Session;
 use crate::agent::skills::match_skills;
 use crate::agent::task::{TaskState, TaskStatus};
-use crate::agent::verify::{backup, changed_since, repair_prompt, run_check, select_checks, signature_breaks, signature_prompt, snapshot, Snapshot};
+use crate::agent::verify::{backup, changed_since, repair_prompt, run_check, select_checks, signature_breaks, signature_prompt, snapshot, split_preexisting, Snapshot};
 use crate::client::response::{StreamEvent, TokenUsage, ToolCall};
 use crate::config::{Config, ConfigHandle, HookTrigger};
 use crate::prompts::create_loop_breaker_prompt;
@@ -579,6 +579,7 @@ impl Agent {
         let before = snapshot(&self.config.get().cwd).await;
         let backup_ref = if before.is_some() { backup(&self.config.get().cwd).await } else { None };
         let mut before: Option<Snapshot> = before;
+        let mut baseline: std::collections::BTreeMap<String, crate::agent::verify::CheckResult> = Default::default(); // clean-tree result per failing check
         let mut final_response: Option<String> = None;
         let (mut nudged, mut signatures_checked, mut reviews, mut grounded_once, mut rewrote, mut stop_blocks) = (false, false, 0usize, false, false, 0usize);
         let mut sent_back = self.fix_brief.clone(); // findings the author was just asked to fix: the next review checks that fix
@@ -731,7 +732,20 @@ impl Agent {
                     continue;
                 };
                 task.verification = results.iter().map(|r| r.to_value()).collect();
-                failures = results.into_iter().filter(|r| !r.ok).collect();
+                let failing: Vec<_> = results.into_iter().zip(checks.iter()).filter(|(r, _)| !r.ok).map(|(r, (_, sub))| (r, cwd.join(sub))).collect();
+                failures = failing.iter().map(|(r, _)| r.clone()).collect();
+                if let (false, Some(r)) = (failing.is_empty(), backup_ref.as_deref()) {
+                    // is it the run's doing at all? the same check on the pre-run files tells
+                    let created: Vec<String> = task.changed_files.iter().filter(|f| !before.as_ref().map_or(false, |b| b.contains_key(*f))).cloned().collect();
+                    let (new, old) = split_preexisting(&cwd, r, &task.changed_files, &created, failing, &mut baseline, &cfg).await;
+                    for o in &old {
+                        notice(&tx, format!("{} was already failing before your change; leaving it alone", o.command));
+                        if let Some(v) = task.verification.iter_mut().find(|v| v["command"] == o.command.as_str()) {
+                            v["preexisting"] = json!(true);
+                        }
+                    }
+                    failures = new;
+                }
             }
 
             if !failures.is_empty() {
@@ -831,7 +845,9 @@ impl Agent {
                 }
             }
 
-            if !checks.is_empty() {
+            if task.verification.iter().any(|v| v["preexisting"] == true) {
+                task.transition(TaskStatus::Unverified, "a check was already failing before the change");
+            } else if !checks.is_empty() {
                 task.transition(TaskStatus::Verified, "");
             } else {
                 task.transition(TaskStatus::Unverified, "no verification commands");

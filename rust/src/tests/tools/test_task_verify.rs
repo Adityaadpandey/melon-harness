@@ -261,3 +261,15 @@ async fn signature_guard_skips_what_the_user_asked_for_and_functions_that_moved(
     assert_eq!(signature_breaks(p, &changed, "tidy up a.py").await, vec!["a.py: load() no longer accepts `cache`"]);
     assert!(signature_breaks(p, &changed, "drop the cache parameter from load").await.is_empty());
 }
+
+#[tokio::test]
+async fn a_check_that_was_already_failing_is_not_repaired_and_the_run_is_not_called_verified() {
+    let d = repo();
+    let cfg = cfg_for(d.path(), |c| c.verify_commands = vec!["echo 'types.ts(3,1): error TS2307: stale'; exit 1".into()]);
+    let mut a = scripted(cfg, vec![write("a.txt"), text("done")]).await;
+    let rep = report(&go(&mut a, "go").await);
+    assert_eq!(rep["repairs"], 0, "{rep}");
+    assert_eq!(rep["status"], "unverified", "{rep}");
+    assert_eq!(rep["checks"][0]["preexisting"], true);
+    assert_eq!(request_count(&a), 2); // no repair round trip
+}

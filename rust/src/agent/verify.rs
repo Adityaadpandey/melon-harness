@@ -273,6 +273,78 @@ pub async fn run_check(command: &str, cwd: &Path, config: &Config) -> CheckResul
     }
 }
 
+/// Lines that name an error, with line and column numbers dropped so an unrelated edit above them doesn't make an old
+/// error look new.
+fn error_lines(text: &str) -> HashSet<String> {
+    static R: OnceLock<Re> = OnceLock::new();
+    let num = R.get_or_init(|| lit(r"\(\d+,\d+\)|:\d+(:\d+)?"));
+    text.lines().filter(|l| l.to_lowercase().contains("error")).map(|l| num.replace_all(l.trim(), "").to_string()).collect()
+}
+
+/// Puts the agent's file contents back when dropped, so a cancelled or crashed baseline run never leaves the tree reverted.
+/// The modified time goes back too: the agent tracks it to notice edits made behind its back, and a rewrite would look like one.
+struct Restore(Vec<(PathBuf, Option<(Vec<u8>, Option<std::time::SystemTime>)>)>);
+impl Restore {
+    fn of(cwd: &Path, files: &[String]) -> Self {
+        Restore(files.iter().map(|f| {
+            let p = cwd.join(f);
+            let saved = std::fs::read(&p).ok().map(|b| (b, std::fs::metadata(&p).and_then(|m| m.modified()).ok()));
+            (p, saved)
+        }).collect())
+    }
+}
+impl Drop for Restore {
+    fn drop(&mut self) {
+        for (p, saved) in &self.0 {
+            match saved {
+                Some((b, mtime)) => {
+                    if std::fs::write(p, b).is_ok() {
+                        if let (Some(t), Ok(f)) = (mtime, std::fs::File::options().write(true).open(p)) {
+                            let _ = f.set_modified(*t);
+                        }
+                    }
+                }
+                None => { let _ = std::fs::remove_file(p); }
+            }
+        }
+    }
+}
+
+/// Was this check already failing before the run touched anything? The run's edits are swapped out for the pre-run copies
+/// (`backup_ref`), the failing commands run once more, and the agent's files go back. A failure whose errors all appear in
+/// that clean run is not the agent's to fix (a stale `.next` types file once sent a restyle of one HTML page into a "repair").
+/// `cache` keeps the clean-tree result per command, since it can't change while the task runs.
+/// Returns (failures that are new, failures that were already there).
+pub async fn split_preexisting(
+    cwd: &Path,
+    backup_ref: &str,
+    changed: &[String],
+    created: &[String],
+    failing: Vec<(CheckResult, PathBuf)>,
+    cache: &mut BTreeMap<String, CheckResult>,
+    config: &Config,
+) -> (Vec<CheckResult>, Vec<CheckResult>) {
+    if failing.iter().any(|(r, _)| !cache.contains_key(&r.command)) {
+        let _restore = Restore::of(cwd, changed);
+        undo(cwd, backup_ref, changed, created).await;
+        for (r, dir) in &failing {
+            if !cache.contains_key(&r.command) {
+                cache.insert(r.command.clone(), run_check(&r.command, dir, config).await);
+            }
+        }
+    } // `_restore` drops here and puts the agent's files back
+    let (mut new, mut old) = (vec![], vec![]);
+    for (r, _) in failing {
+        let base = &cache[&r.command];
+        let (now, then) = (error_lines(&r.output_tail), error_lines(&base.output_tail));
+        // output that names a file the run changed is about the run's work (a failing test it was asked to fix fails the same way
+        // before and after), and output with no error lines says nothing either way: both stay the agent's to repair
+        let names_change = changed.iter().any(|f| r.output_tail.contains(f.as_str()) || Path::new(f).file_name().map_or(false, |n| r.output_tail.contains(n.to_string_lossy().as_ref())));
+        if !base.ok && !now.is_empty() && now.is_subset(&then) && !names_change { old.push(r) } else { new.push(r) }
+    }
+    (new, old)
+}
+
 pub fn repair_prompt(failures: &[CheckResult], files: &[String]) -> String {
     let blocks = failures.iter().map(|f| format!("$ {}\n(exit {})\n{}", f.command.chars().take(MAX_COMMAND_SHOWN).collect::<String>(), f.exit_code.map_or("none".into(), |c| c.to_string()), f.output_tail)).collect::<Vec<_>>().join("\n\n");
     format!(
@@ -534,6 +606,36 @@ mod tests {
         cfg.verify_rules = vec![rule];
         assert!(select_checks(&cfg, &["apps/web/public/demo.html".to_string()]).is_empty());
         assert_eq!(select_checks(&cfg, &["apps/web/src/a.ts".to_string()]).len(), 1);
+    }
+
+    #[test]
+    fn errors_that_only_moved_lines_are_the_same_errors() {
+        let a = error_lines("src/a.ts(10,5): error TS2307: Cannot find module 'x'\nok");
+        let b = error_lines("src/a.ts(42,5): error TS2307: Cannot find module 'x'");
+        assert_eq!(a, b);
+        assert!(!error_lines("src/a.ts(1,1): error TS1: other").is_subset(&b));
+    }
+
+    #[tokio::test]
+    async fn a_failure_that_the_clean_tree_has_too_is_not_the_runs() {
+        let d = tempfile::tempdir().unwrap();
+        let sh = |a: &str| { std::process::Command::new("sh").arg("-c").arg(a).current_dir(d.path()).output().unwrap(); };
+        sh("git init -q && git config user.email t@t && git config user.name t && echo good > a.txt && git add -A && git commit -qm i");
+        let r = backup(d.path()).await.unwrap();
+        std::fs::write(d.path().join("a.txt"), "edited\n").unwrap(); // the run's change
+        let cfg = Config::default();
+        let run = |cmd: &str| { let (cfg, dir) = (cfg.clone(), d.path().to_path_buf()); let cmd = cmd.to_string(); async move { (run_check(&cmd, &dir, &cfg).await, dir) } };
+        let changed = vec!["a.txt".to_string()];
+
+        let stale = run("echo 'x.ts(3,1): error TS2307: stale' ; exit 1").await;
+        let mine = run("grep -q good a.txt || { echo 'error: lost the good line'; exit 1; }").await;
+        let mut cache = BTreeMap::new();
+        let (new, old) = split_preexisting(d.path(), &r, &changed, &[], vec![stale, mine], &mut cache, &cfg).await;
+        assert_eq!(old.len(), 1);
+        assert!(old[0].command.contains("stale"));
+        assert_eq!(new.len(), 1);
+        assert!(new[0].command.contains("lost the good"));
+        assert_eq!(std::fs::read_to_string(d.path().join("a.txt")).unwrap(), "edited\n"); // the agent's file is back
     }
 
     #[test]
