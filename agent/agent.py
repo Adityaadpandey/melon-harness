@@ -325,6 +325,7 @@ class Agent:
         advisor = registry.get("advisor") if any(t.name == "advisor" for t in registry.get_tools()) else None
         if advisor:
             advisor.calls = 0  # the limit is per request
+            advisor.forced = self._fix_run
         registry.gate = review_fix.edit_gate(registry, advisor) if self._fix_run and advisor else None  # a fix run may not edit before the advisor has been consulted
         if self._is_review and self._read_only and not registry.gate:
             registry.gate = lambda name: REVIEW_NO_WORKERS if name == "parallel_tasks" else None

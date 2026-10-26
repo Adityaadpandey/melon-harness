@@ -58,6 +58,28 @@ def render_transcript(messages: list[dict], cap: int = TRANSCRIPT_CAP) -> str:
     return "\n\n".join(head + list(reversed(out)))
 
 
+MIN_FILES, MIN_ROUNDS, MIN_ERRORS = 3, 6, 3
+
+
+def is_serious(messages: list[dict]) -> bool:
+    """Worth a second opinion: the work spans several files after real effort, or keeps failing. A one-file restyle, a vague
+    "make it better" or a quick question is not, and the advisor costs a stronger model reading the whole transcript."""
+    files, rounds, errors = set(), 0, 0
+    for m in messages:
+        if m.get("role") == "tool" and str(m.get("content", "")).startswith(("Error", "Not run")):
+            errors += 1
+        calls = m.get("tool_calls") or []
+        rounds += bool(calls)
+        for c in calls:
+            try:
+                args = json.loads(c.get("function", {}).get("arguments") or "{}")
+            except ValueError:
+                continue
+            if isinstance(args, dict) and isinstance(args.get("path"), str):
+                files.add(args["path"])
+    return errors >= MIN_ERRORS or (len(files) >= MIN_FILES and rounds >= MIN_ROUNDS)
+
+
 class AdvisorParams(BaseModel):
     pass
 
@@ -65,9 +87,10 @@ class AdvisorParams(BaseModel):
 class AdvisorTool(Tool):
     name = "advisor"
     description = (
-        "Ask a stronger reviewer model for advice. Takes no parameters: your whole conversation is forwarded. Call it BEFORE you "
-        "edit (after reading the code), when you think you are done (after saving the work), when stuck, or before changing approach. "
-        "Skip it for trivial one-step tasks."
+        "Ask a stronger reviewer model for advice. Takes no parameters: your whole conversation is forwarded. Only for serious work: "
+        "a change across several files, a bug whose cause you cannot find, or being stuck after repeated failures. Call it before "
+        "committing to the approach or when you think you are done. Never for a one-file edit, a restyle, a vague request or a "
+        "question; it will refuse."
     )
     kind = ToolKind.READ
     schema = AdvisorParams
@@ -76,6 +99,7 @@ class AdvisorTool(Tool):
         super().__init__(config)
         self.client = client
         self.transcript = transcript
+        self.forced = False  # a review-fix run must consult it whatever the size; the agent sets this per request
         self.calls = 0  # advisor calls in this request; the agent resets it per request
         self.last_call_at = -1  # the registry's write count when it was last called, so "consulted after the last edit" can be checked
 
@@ -84,6 +108,8 @@ class AdvisorTool(Tool):
             return ToolResult.error_result("The advisor is not connected in this run. Carry on without it.")
         if self.calls >= self.config.advisor_max_calls:
             return ToolResult.error_result(f"Advisor limit reached ({self.config.advisor_max_calls} calls this request). Decide with what you have.")
+        if not self.forced and not is_serious(self.transcript()):
+            return ToolResult.error_result("The advisor is for serious work (several files, or repeated failures). This task is not there yet: decide with what you have.")
         self.calls += 1
         prompt = [{"role": "system", "content": ADVISOR_SYSTEM},
                   {"role": "user", "content": "TRANSCRIPT SO FAR:\n\n" + render_transcript(self.transcript()) + "\n\nGive your advice now."}]
