@@ -333,3 +333,13 @@ async fn after_a_compaction_the_context_size_is_the_new_history_not_the_summary_
     assert_ne!(cm.latest_usage.total_tokens, 22_466);
     assert!(cm.total_usage.completion_tokens >= 2_519); // the summary call is still billed
 }
+
+#[test]
+fn a_context_bigger_than_the_window_compacts_even_when_the_last_usage_looks_small() {
+    let dir = tempfile::tempdir().unwrap();
+    let mut cm = new_cm(dir.path(), json!({}));
+    cm.context_window = 1000;
+    cm.add_user_message(&"x".repeat(8000)); // ~2000 tokens
+    cm.set_latest_usage(Default::default());
+    assert!(cm.needs_compression());
+}

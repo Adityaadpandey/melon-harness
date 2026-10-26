@@ -203,7 +203,8 @@ impl ContextManager {
     }
 
     pub fn needs_compression(&self) -> bool {
-        self.latest_usage.total_tokens as f64 > self.limit()
+        // the provider's last count can be stale: after a switch to a smaller window, or a huge reply, the real size is bigger
+        self.latest_usage.total_tokens as f64 > self.limit() || self.estimated_tokens() > self.context_window
     }
 
     pub fn set_latest_usage(&mut self, u: TokenUsage) {

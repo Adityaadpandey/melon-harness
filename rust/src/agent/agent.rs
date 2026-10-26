@@ -1059,10 +1059,12 @@ impl Agent {
                 return; // a failed request must not leave a half-written assistant turn in history
             }
 
+            // a cut reply's calls are never run, and their half-written arguments (sometimes megabytes of runaway text) would
+            // sit in the history and block every later request, so only their names are kept
             let calls_json: Option<Vec<Value>> = if tool_calls.is_empty() {
                 None
             } else {
-                Some(tool_calls.iter().map(|tc| json!({"id": tc.call_id, "type": "function", "function": {"name": tc.name, "arguments": Value::Object(tc.arguments.clone()).to_string()}})).collect())
+                Some(tool_calls.iter().map(|tc| json!({"id": tc.call_id, "type": "function", "function": {"name": tc.name, "arguments": if cut { "{}".to_string() } else { Value::Object(tc.arguments.clone()).to_string() }}})).collect())
             };
             {
                 let model = self.session.client.last_model();
