@@ -276,6 +276,8 @@ pub struct Config {
     pub check_references: bool,
     pub require_read_before_edit: bool,
     pub auto_verify: bool,
+    /// Interactive runs skip the checks after a task; the user starts them with /verify
+    pub verify_on_demand: bool,
     pub max_repairs: usize,
     pub verify_timeout_sec: u64,
     pub max_total_tokens: i64,
@@ -360,6 +362,7 @@ impl Default for Config {
             check_references: true,
             require_read_before_edit: true,
             auto_verify: true,
+            verify_on_demand: false,
             max_repairs: 2,
             verify_timeout_sec: 600,
             max_total_tokens: 300_000,

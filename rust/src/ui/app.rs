@@ -799,7 +799,7 @@ impl Cli {
             let bad: Vec<&Value> = checks.iter().filter(|c| c["ok"] != true).collect();
             let review = report["review"]["verdict"].as_str().map(|v| format!("  ·  review {}", v.to_lowercase())).unwrap_or_default();
             let tail = format!("{}{review}", if !checks.is_empty() && bad.is_empty() { format!("  ·  {} checks ok", checks.len()) } else { String::new() });
-            uprintln!("  {}  {}", paint(status, color), paint(&format!("{files} files{tail}  ·  /undo reverts"), MUTED));
+            uprintln!("  {}  {}", paint(status, color), paint(&format!("{files} files{tail}  ·  /verify checks  ·  /undo reverts"), MUTED));
             for c in bad {
                 uprintln!("    {} {}", paint("✗", CORAL), c["command"].as_str().unwrap_or(""));
             }
@@ -1384,6 +1384,31 @@ impl Cli {
                         }
                         if rows.is_empty() {
                             uprintln!("{}", paint("Nothing learned yet. Rejecting an action with feedback, or /learn <rule>, teaches melon.", MUTED));
+                        }
+                    }
+                }
+            }
+            "/verify" => {
+                let files: Vec<String> = self.agent().undo_info.as_ref().and_then(|i| i["files"].as_array().cloned()).unwrap_or_default().iter().filter_map(|v| v.as_str().map(String::from)).collect();
+                let checks = crate::agent::verify::select_checks(&cfg, &files);
+                if files.is_empty() {
+                    uprintln!("{}", paint("Nothing to verify: the last request changed no files.", MUTED));
+                } else if checks.is_empty() {
+                    uprintln!("{}", paint("No checks found for those files (add verify rules in .melon/config.toml).", MUTED));
+                } else {
+                    uprintln!("{}", paint(&format!("Verifying: {}", checks.iter().map(|c| c.0.clone()).collect::<Vec<_>>().join(" && ")), MUTED));
+                    let cfg_r = &cfg;
+                    let results = futures::future::join_all(checks.iter().map(|(cmd, sub)| {
+                        let dir = cfg_r.cwd.join(sub);
+                        async move { crate::agent::verify::run_check(cmd, &dir, cfg_r).await }
+                    }))
+                    .await;
+                    for r in &results {
+                        if r.ok {
+                            uprintln!("  {} {}", paint("✓", MINT), r.command);
+                        } else {
+                            uprintln!("  {} {}", paint("✗", CORAL), r.command);
+                            uprintln!("{}", paint(&r.output_tail, MUTED));
                         }
                     }
                 }

@@ -696,7 +696,8 @@ impl Agent {
                 ));
                 continue;
             }
-            let checks = select_checks(&cfg, &task.changed_files);
+            // interactive: checks run when the user asks (/verify); a fix run still needs them to judge its own work
+            let checks = if cfg.verify_on_demand && !self.fix_run { vec![] } else { select_checks(&cfg, &task.changed_files) };
             // outside git we can't tell what changed, so only verify when asked to
             if task.changed_files.is_empty() && before.is_some() {
                 if !nudged && final_response.is_some() && self.wants_change && (has_file_code(final_response.as_deref().unwrap_or("")) || self.touches == "code") {

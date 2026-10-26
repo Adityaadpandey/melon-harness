@@ -45,6 +45,7 @@ pub const COMMANDS: &[(&str, &str)] = &[
     ("/lessons", "list what melon has learned here"),
     ("/forget", "remove a lesson by number"),
     ("/rewind", "list requests that changed files; /rewind <n> puts files back to before request n"),
+    ("/verify", "run the checks (tests, lint, types) on the files the last request changed"),
     ("/undo", "put back the files the last request changed"),
     ("/restore", "restore a checkpoint (give its ID)"),
     ("/exit", "quit"),
