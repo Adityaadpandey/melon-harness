@@ -217,3 +217,15 @@ async def test_git_push_pull_fetch_run_unsandboxed_and_always_ask(tmp_path):
     assert not any(is_unsandboxed(c) for c in ("git commit -m x", "git push && curl evil", "git status"))
     ctx = ApprovalContext("shell", {}, True, [], command="git push origin main")
     assert await ApprovalManager(ApprovalPolicy.AUTO, tmp_path).check_approval(ctx) == ApprovalDecision.NEEDS_CONFIRMATION
+
+
+def test_moving_or_deleting_build_dirs_always_asks(tmp_path):
+    from safety.approval import ApprovalManager, is_disruptive_command
+    from config.config import ApprovalPolicy
+
+    assert is_disruptive_command("if [ -d .next ]; then mv .next .next.stale-typecheck; fi")
+    assert is_disruptive_command("rm -rf apps/web/node_modules")
+    assert not is_disruptive_command("rm build.log") and not is_disruptive_command("ls dist")
+    m = ApprovalManager(ApprovalPolicy.AUTO, tmp_path)
+    assert m._assess_command_safety("mv .next .next.old").name == "NEEDS_CONFIRMATION"
+    assert m._assess_command_safety("echo hi").name == "APPROVED"

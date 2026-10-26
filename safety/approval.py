@@ -84,6 +84,17 @@ DANGEROUS_PATTERNS = [
     r":\(\)\s*\{\s*:\|:&\s*\}\s*;",
 ]
 
+# Moving or deleting build output and dependency dirs is not a fix for a failing check (`mv .next .next.stale` once turned
+# 7,600 cache files into "your changes"). It is the user's call every time, even in auto mode and even if `mv` was approved before.
+DISRUPTIVE = re.compile(
+    r"\b(?:mv|rm|rmdir|trash)\b[^;&|\n]*?(?:^|[\s/'\"])(?:node_modules|\.next[\w.-]*|\.nuxt|\.turbo|\.cache|dist|build|target|coverage|__pycache__|\.venv|venv)(?:[/\s'\"]|$)"
+)
+
+
+def is_disruptive_command(command: str) -> bool:
+    return bool(DISRUPTIVE.search(command))
+
+
 # Read-only commands that may run without asking. A command is safe only when EVERY
 # piece of it is on this list: "ls; rm x", "cat a > b" or "ls $(rm x)" are not, even
 # though they start with ls/cat. Matching just the first word is how an allowlist leaks.
@@ -238,6 +249,9 @@ class ApprovalManager:
 
         if is_dangerous_command(command):
             return ApprovalDecision.REJECTED
+
+        if is_disruptive_command(command):
+            return ApprovalDecision.REJECTED if self.approval_policy == ApprovalPolicy.NEVER else ApprovalDecision.NEEDS_CONFIRMATION
 
         if self._always_allowed(command) or self._is_verify_command(command):
             return ApprovalDecision.APPROVED
