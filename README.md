@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="docs/banner.svg" alt="melon: the coding agent that proves its work" width="100%">
+  <img src="rust/docs/banner.svg" alt="melon: the coding agent that proves its work" width="100%">
 </p>
 
 <p align="center">
@@ -28,7 +28,7 @@ changed files, a second model's review of the real diff, and every file path in 
 don't exercise the change, it says so.
 
 <p align="center">
-  <img src="docs/screenshot.png" alt="melon working on a real repo: side panel, token breakdown, verification and review" width="100%">
+  <img src="rust/docs/screenshot.png" alt="melon working on a real repo: side panel, token breakdown, verification and review" width="100%">
 </p>
 
 <sub>A real session, not a mock-up. The request was judged hard and routed to the strong model, that provider hit a rate limit and
@@ -257,7 +257,7 @@ flowchart TB
 ## Life of a request
 
 <p align="center">
-  <img src="docs/flow.svg" alt="Request flow: classify, scout, edit, verification gate, review, citation check" width="100%">
+  <img src="rust/docs/flow.svg" alt="Request flow: classify, scout, edit, verification gate, review, citation check" width="100%">
 </p>
 
 The same flow as a diagram you can follow branch by branch:
