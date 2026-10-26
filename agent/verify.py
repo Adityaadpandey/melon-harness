@@ -16,6 +16,13 @@ from tools.builtin.shell import build_environment
 
 MAX_HASH_BYTES = 5_000_000
 OUTPUT_TAIL = 4000
+MAX_CHECK_FILES = 100  # a check command naming thousands of files is a bulk move or a build dir, not an edit
+MAX_COMMAND_SHOWN = 300  # a failing command is echoed back to the model; a long file list must not ride along
+# build output and dependency dirs: never something the agent meant to edit, even when git does not ignore them
+# (`mv .next .next.stale` turned 7,600 cache files into "your changes" and fed them to a linter)
+GENERATED = re.compile(r"(^|/)(node_modules|\.next[^/]*|\.nuxt|\.turbo|\.cache|dist|build|target|coverage|__pycache__|\.venv|venv)/")
+# a change to these can't break a typecheck or a linter, so a rule's checks are skipped when only these changed
+STATIC_SUFFIX = {".html", ".htm", ".md", ".txt", ".svg", ".png", ".jpg", ".jpeg", ".gif", ".ico", ".webp"}
 
 
 async def _git(cwd: Path, *args: str) -> tuple[int, bytes]:
@@ -61,7 +68,7 @@ def changed_since(before: dict[str, str] | None, after: dict[str, str] | None) -
         return []
     # a file that went from dirty to clean is not listed: after "commit this" every committed file looks reverted,
     # and listing them sent a plain commit through checks, a review and a repair that edited code
-    return sorted(p for p, h in after.items() if before.get(p) != h)
+    return sorted(p for p, h in after.items() if before.get(p) != h and not GENERATED.search(p))
 
 
 JS_SUFFIX = {".ts", ".tsx", ".js", ".jsx", ".mjs", ".cjs"}
@@ -147,9 +154,9 @@ def select_checks(config, changed: list[str]) -> list[tuple[str, str]]:
     checks: list[tuple[str, str]] = [(c, ".") for c in config.verify_commands]
     for rule in config.verify_rules:
         hits = [f for f in changed if any(f.startswith(p) for p in rule.paths)]
-        if not hits:
+        if not hits or all(Path(f).suffix.lower() in STATIC_SUFFIX for f in hits):
             continue
-        rel = [os.path.relpath(f, rule.cwd) for f in hits]
+        rel = [os.path.relpath(f, rule.cwd) for f in hits[:MAX_CHECK_FILES]]
         files = " ".join(shlex.quote(f) for f in rel)
         tests = " ".join(shlex.quote(t) for t in related_tests(config.cwd, rule, hits))
         for cmd in rule.commands:
@@ -208,7 +215,7 @@ async def run_check(command: str, cwd: Path, config) -> CheckResult:
 
 def repair_prompt(failures: list[CheckResult], files: list[str]) -> str:
     blocks = "\n\n".join(
-        f"$ {f.command}\n(exit {f.exit_code})\n{f.output_tail}" for f in failures
+        f"$ {f.command[:MAX_COMMAND_SHOWN]}\n(exit {f.exit_code})\n{f.output_tail}" for f in failures
     )
     return (
         "Automated verification FAILED after your changes "

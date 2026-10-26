@@ -202,3 +202,23 @@ async def test_signature_guard_skips_what_the_user_asked_for_and_functions_that_
     changed = ["a.py", "b.py", "test_a.py"]
     assert await signature_breaks(repo, changed, "tidy up a.py") == ["a.py: load() no longer accepts `cache`"]
     assert await signature_breaks(repo, changed, "drop the cache parameter from load") == []
+
+
+def test_generated_dirs_are_not_the_agents_changes():
+    from agent.verify import changed_since
+
+    after = {"src/a.ts": "1", "apps/web/.next.stale-typecheck/BUILD_ID": "2", "node_modules/x/i.js": "3"}
+    assert changed_since({}, after) == ["src/a.ts"]
+
+
+def test_static_only_change_skips_a_rules_checks_and_file_lists_are_capped():
+    from types import SimpleNamespace as NS
+
+    from agent.verify import MAX_CHECK_FILES, select_checks
+
+    rule = NS(paths=["apps/web"], cwd="apps/web", commands=["pnpm typecheck", "biome check {files}"], tests_glob=None)
+    cfg = NS(verify_commands=[], verify_rules=[rule], auto_verify=False, cwd=".")
+    assert select_checks(cfg, ["apps/web/public/demo.html"]) == []
+    many = [f"apps/web/src/f{i}.ts" for i in range(500)]
+    biome = [c for c, _ in select_checks(cfg, many) if c.startswith("biome")][0]
+    assert biome.count("src/f") == MAX_CHECK_FILES

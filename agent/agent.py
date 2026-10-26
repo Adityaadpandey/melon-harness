@@ -764,7 +764,7 @@ class Agent:
                             "type": "function",
                             "function": {
                                 "name": tc.name,
-                                "arguments": json.dumps(tc.arguments),
+                                "arguments": "{}" if cut else json.dumps(tc.arguments),  # a cut call is never run; its half-written text can be 250KB
                             },
                         }
                         for tc in tool_calls

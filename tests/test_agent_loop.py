@@ -644,6 +644,8 @@ async def test_a_cut_off_tool_call_is_not_run_and_the_model_is_told_why(cfg):
         assert not (cfg.cwd / "big.py").exists()  # half a file never reaches the disk
         result = next(m for m in agent.session.client.requests[1] if m["role"] == "tool")
         assert "output token limit" in result["content"]
+        sent = next(m for m in agent.session.client.requests[1] if m.get("tool_calls"))
+        assert sent["tool_calls"][0]["function"]["arguments"] == "{}"  # the half-written text is not re-sent every turn
 
 
 async def test_a_cut_off_answer_is_asked_to_continue(cfg):
