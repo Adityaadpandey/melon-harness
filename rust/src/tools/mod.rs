@@ -247,7 +247,9 @@ fn check(schema: &Value, v: &Value, loc: &str, errors: &mut Vec<String>) -> Valu
         }
         if let Some(m) = schema["maximum"].as_f64() {
             if n > m {
-                errors.push(format!("Parameter '{loc}': Input should be less than or equal to {m}"));
+                // asking for more than allowed (context 20 where 10 is the cap) means "as much as you can give", not a mistake
+                // worth a wasted round trip
+                value = if value.is_i64() || value.is_u64() { json!(m as i64) } else { json!(m) };
             }
         }
     }
@@ -321,5 +323,7 @@ mod tests {
         assert!(validate(&s, &json!({"path": 3})).is_err());
         assert_eq!(validate(&s, &json!({"path": "a", "all": "true"})).unwrap()["all"], true);
         assert!(validate(&s, &json!({"path": "a", "limit": null})).is_ok());
+        let capped = schema_of(json!({"context": {"type": "integer", "maximum": 10}}), &[]);
+        assert_eq!(validate(&capped, &json!({"context": 20})).unwrap()["context"], 10); // over the cap is clamped, not rejected
     }
 }

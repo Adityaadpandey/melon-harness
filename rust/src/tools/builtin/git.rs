@@ -153,7 +153,7 @@ impl Tool for GitTool {
             }
         }
         if let Some(r) = rev {
-            if !lit(r"^[\w./~^@{}:-]+$").is_match(r) {
+            if !lit(r"^[\w./~^@{}:\[\]-]+$").is_match(r) {
                 return ToolResult::error(format!("Unusual revision '{r}'"));
             }
         }
