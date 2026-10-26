@@ -14,6 +14,17 @@ use tokio::process::Command;
 
 const MAX_HASH_BYTES: u64 = 5_000_000;
 const OUTPUT_TAIL: usize = 4000;
+const MAX_CHECK_FILES: usize = 100; // a check command naming thousands of files is a bulk move or a build dir, not an edit
+const MAX_COMMAND_SHOWN: usize = 300; // a failing command is echoed back to the model; a long file list must not ride along
+// a change to these can't break a typecheck or a linter, so a rule's checks are skipped when only these changed
+const STATIC_SUFFIX: &[&str] = &["html", "htm", "md", "txt", "svg", "png", "jpg", "jpeg", "gif", "ico", "webp"];
+
+/// Build output and dependency dirs: never something the agent meant to edit, even when git does not ignore them
+/// (`mv .next .next.stale` turned 7,600 cache files into "your changes" and fed them to a linter).
+fn generated() -> &'static Re {
+    static R: OnceLock<Re> = OnceLock::new();
+    R.get_or_init(|| lit(r"(^|/)(node_modules|\.next[^/]*|\.nuxt|\.turbo|\.cache|dist|build|target|coverage|__pycache__|\.venv|venv)/"))
+}
 
 async fn git(cwd: &Path, args: &[&str]) -> (i32, Vec<u8>) {
     match Command::new("git").args(args).current_dir(cwd).stdout(Stdio::piped()).stderr(Stdio::null()).output().await {
@@ -59,7 +70,7 @@ pub async fn snapshot(cwd: &Path) -> Option<Snapshot> {
 /// A file that went from dirty to clean is not listed: after "commit this" every committed file looks reverted.
 pub fn changed_since(before: Option<&Snapshot>, after: Option<&Snapshot>) -> Vec<String> {
     let (Some(b), Some(a)) = (before, after) else { return vec![] };
-    a.iter().filter(|(p, h)| b.get(*p) != Some(h)).map(|(p, _)| p.clone()).collect()
+    a.iter().filter(|(p, h)| b.get(*p) != Some(h) && !generated().is_match(p)).map(|(p, _)| p.clone()).collect()
 }
 
 const JS_SUFFIX: &[&str] = &["ts", "tsx", "js", "jsx", "mjs", "cjs"];
@@ -181,10 +192,11 @@ pub fn select_checks(config: &Config, changed: &[String]) -> Vec<(String, String
     let mut checks: Vec<(String, String)> = config.verify_commands.iter().map(|c| (c.clone(), ".".into())).collect();
     for rule in &config.verify_rules {
         let hits: Vec<String> = changed.iter().filter(|f| rule.paths.iter().any(|p| f.starts_with(p.as_str()))).cloned().collect();
-        if hits.is_empty() {
+        let only_static = hits.iter().all(|f| Path::new(f).extension().map_or(false, |e| STATIC_SUFFIX.contains(&e.to_string_lossy().to_lowercase().as_str())));
+        if hits.is_empty() || only_static {
             continue;
         }
-        let rel: Vec<String> = hits.iter().map(|f| rel_from(f, &rule.cwd)).collect();
+        let rel: Vec<String> = hits.iter().take(MAX_CHECK_FILES).map(|f| rel_from(f, &rule.cwd)).collect();
         let files = rel.iter().map(|f| quote(f)).collect::<Vec<_>>().join(" ");
         let tests_l = related_tests(&config.cwd, rule, &hits);
         let tests = tests_l.iter().map(|t| quote(t)).collect::<Vec<_>>().join(" ");
@@ -262,9 +274,9 @@ pub async fn run_check(command: &str, cwd: &Path, config: &Config) -> CheckResul
 }
 
 pub fn repair_prompt(failures: &[CheckResult], files: &[String]) -> String {
-    let blocks = failures.iter().map(|f| format!("$ {}\n(exit {})\n{}", f.command, f.exit_code.map_or("none".into(), |c| c.to_string()), f.output_tail)).collect::<Vec<_>>().join("\n\n");
+    let blocks = failures.iter().map(|f| format!("$ {}\n(exit {})\n{}", f.command.chars().take(MAX_COMMAND_SHOWN).collect::<String>(), f.exit_code.map_or("none".into(), |c| c.to_string()), f.output_tail)).collect::<Vec<_>>().join("\n\n");
     format!(
-        "Automated verification FAILED after your changes (files touched: {}).\n\n{blocks}\n\nFind the root cause and make the smallest fix. Do not weaken or delete a test just to make it pass; only change a test if its expectation is genuinely wrong, and say so. Stop when the checks should pass.",
+        "Automated verification FAILED after your changes (files touched: {}).\n\n{blocks}\n\nFind the root cause and make the smallest fix. Do not weaken or delete a test just to make it pass; only change a test if its expectation is genuinely wrong, and say so. If the failure is in files you did not touch, it was already broken: say so and stop. Never move or delete build or cache directories to make a check pass. Stop when the checks should pass.",
         files.iter().take(20).cloned().collect::<Vec<_>>().join(", ")
     )
 }
@@ -509,6 +521,19 @@ mod tests {
         assert!(b[0].0.contains("fewer parameters"));
         let (b, _) = js_breaks("export const g = async (a) => 1;\n", "const g = 2;\n");
         assert!(b[0].0.contains("no longer exported"));
+    }
+
+    #[test]
+    fn generated_dirs_and_static_only_edits_stay_out_of_checks() {
+        let mut after = Snapshot::new();
+        after.insert("src/a.ts".into(), "1".into());
+        after.insert("apps/web/.next.stale-typecheck/BUILD_ID".into(), "2".into());
+        assert_eq!(changed_since(Some(&Snapshot::new()), Some(&after)), vec!["src/a.ts"]);
+        let rule = crate::config::VerifyRule { paths: vec!["apps/web".into()], cwd: "apps/web".into(), commands: vec!["pnpm typecheck".into()], tests_glob: None };
+        let mut cfg = Config::default();
+        cfg.verify_rules = vec![rule];
+        assert!(select_checks(&cfg, &["apps/web/public/demo.html".to_string()]).is_empty());
+        assert_eq!(select_checks(&cfg, &["apps/web/src/a.ts".to_string()]).len(), 1);
     }
 
     #[test]

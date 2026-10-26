@@ -191,10 +191,12 @@ impl Tool for ReadFileTool {
         let mut path = resolve_path(&inv.cwd, p);
         // models sometimes trail junk after the real name ("a.html એકસinvalid?"): if the first word is a file, it was meant
         if !path.exists() {
-            if let Some(word) = p.split_whitespace().next().filter(|w| *w != p) {
-                let cut = resolve_path(&inv.cwd, word);
-                if cut.is_file() {
+            let first = p.split_whitespace().next().unwrap_or("");
+            for guess in [first, p.trim().trim_end_matches(|c| "?!.,".contains(c))] {
+                let cut = resolve_path(&inv.cwd, guess);
+                if guess != p && cut.is_file() {
                     path = cut;
+                    break;
                 }
             }
         }

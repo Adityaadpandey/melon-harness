@@ -222,7 +222,8 @@ def repair_prompt(failures: list[CheckResult], files: list[str]) -> str:
         f"(files touched: {', '.join(files[:20])}).\n\n{blocks}\n\n"
         "Find the root cause and make the smallest fix. Do not weaken or delete "
         "a test just to make it pass; only change a test if its expectation is "
-        "genuinely wrong, and say so. Stop when the checks should pass."
+        "genuinely wrong, and say so. If the failure is in files you did not touch, it was already broken: say so and stop. "
+        "Never move or delete build or cache directories to make a check pass. Stop when the checks should pass."
     )
 
 

@@ -308,6 +308,10 @@ impl LLMClient {
                 };
                 let had_body = req.extra_body.is_some();
                 let mut failure: Option<ProviderError> = None;
+                // chars streamed so far, and tool calls started but not finished. Codex/responses servers take no max_tokens, so a
+                // runaway reply (one 258KB edit once ran 10 minutes and 128k tokens) is stopped here instead.
+                let runaway = cfg.model.max_output_tokens * 4;
+                let (mut written, mut open_calls): (usize, Vec<(String, String)>) = (0, vec![]);
                 {
                     let mut s = adapter.stream(req);
                     while let Some(item) = s.next().await {
@@ -318,8 +322,10 @@ impl LLMClient {
                                     first_token = Some(started.elapsed().as_secs_f64());
                                 }
                                 match &ev {
-                                    StreamEvent::TextDelta(t) => text.push_str(t),
-                                    StreamEvent::ToolCallComplete(c) => calls.push(c.clone()),
+                                    StreamEvent::TextDelta(t) => { text.push_str(t); written += t.len(); }
+                                    StreamEvent::ToolCallStart { call_id, name } => open_calls.push((call_id.clone(), name.clone())),
+                                    StreamEvent::ToolCallDelta { arguments_delta, .. } => written += arguments_delta.len(),
+                                    StreamEvent::ToolCallComplete(c) => { open_calls.retain(|(id, _)| *id != c.call_id); calls.push(c.clone()) }
                                     StreamEvent::MessageComplete { finish_reason, usage: u, reasoning: r, .. } => {
                                         usage = u.clone(); finish = finish_reason.clone(); reasoning = r.clone();
                                         continue; // re-emitted below, in the requested shape
@@ -327,6 +333,12 @@ impl LLMClient {
                                     _ => {}
                                 }
                                 if stream { emitted = true; yield Ok(ev); }
+                                if written > runaway {
+                                    // an empty call per unfinished one tells the agent to resend smaller, not to continue the text
+                                    finish = Some("length".into());
+                                    calls.extend(open_calls.drain(..).map(|(call_id, name)| ToolCall { call_id, name, arguments: Default::default() }));
+                                    break;
+                                }
                             }
                         }
                     }
