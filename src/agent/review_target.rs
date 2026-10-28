@@ -101,7 +101,9 @@ async fn pr_info(cwd: &Path, number: &str) -> (String, String) {
         args.push(number);
     }
     args.extend(["--json", "headRefName,baseRefName", "-q", ".headRefName + \" \" + .baseRefName"]);
-    let child = Command::new("gh").args(&args).current_dir(cwd).stdin(Stdio::null()).stdout(Stdio::piped()).stderr(Stdio::null()).kill_on_drop(true).spawn();
+    let mut cmd = Command::new("gh");
+    cmd.args(&args).current_dir(cwd).stdin(Stdio::null()).stdout(Stdio::piped()).stderr(Stdio::null()).kill_on_drop(true);
+    let child = crate::util::detach::detach(&mut cmd).spawn();
     let Ok(child) = child else { return (String::new(), String::new()) };
     let Ok(Ok(o)) = tokio::time::timeout(Duration::from_secs(15), child.wait_with_output()).await else { return (String::new(), String::new()) };
     let out = String::from_utf8_lossy(&o.stdout).trim().to_string();
@@ -172,7 +174,9 @@ async fn refresh(cwd: &Path, r: &str) -> bool {
 }
 
 async fn fetch(cwd: &Path, refspec: &[&str]) -> bool {
-    let child = Command::new("git").args(["fetch", "-q", "origin"]).args(refspec).current_dir(cwd).stdin(Stdio::null()).stdout(Stdio::null()).stderr(Stdio::null()).kill_on_drop(true).spawn();
+    let mut cmd = Command::new("git");
+    cmd.args(["fetch", "-q", "origin"]).args(refspec).current_dir(cwd).stdin(Stdio::null()).stdout(Stdio::null()).stderr(Stdio::null()).kill_on_drop(true);
+    let child = crate::util::detach::detach(&mut cmd).spawn();
     let Ok(mut child) = child else { return false };
     matches!(tokio::time::timeout(Duration::from_secs(40), child.wait()).await, Ok(Ok(s)) if s.success())
 }

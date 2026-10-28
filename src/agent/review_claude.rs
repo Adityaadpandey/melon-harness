@@ -44,7 +44,9 @@ pub async fn ask_claude(config: &Config, prompt: &str, timeout: u64) -> (String,
     let argv = build_command(config, prompt, &config.review_claude_model);
     // the review runs on your own Claude login, never through a gateway even if a shell or .env happens to export these
     let env: Vec<(String, String)> = std::env::vars().filter(|(k, _)| !matches!(k.as_str(), "ANTHROPIC_BASE_URL" | "ANTHROPIC_API_KEY" | "ANTHROPIC_AUTH_TOKEN")).collect();
-    let Ok(child) = Command::new(&argv[0]).args(&argv[1..]).current_dir(&config.cwd).env_clear().envs(env).stdin(Stdio::null()).stdout(Stdio::piped()).stderr(Stdio::null()).kill_on_drop(true).spawn() else { return (String::new(), 0) };
+    let mut cmd = Command::new(&argv[0]);
+    cmd.args(&argv[1..]).current_dir(&config.cwd).env_clear().envs(env).stdin(Stdio::null()).stdout(Stdio::piped()).stderr(Stdio::null()).kill_on_drop(true);
+    let Ok(child) = crate::util::detach::detach(&mut cmd).spawn() else { return (String::new(), 0) };
     match tokio::time::timeout(Duration::from_secs(timeout), child.wait_with_output()).await {
         Ok(Ok(o)) => parse_output(&String::from_utf8_lossy(&o.stdout)),
         _ => (String::new(), 0),
