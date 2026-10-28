@@ -242,17 +242,9 @@ impl Tool for ShellTool {
             return ToolResult::error(format!("Working directory doesn't exist: {}", cwd.display()));
         }
         let argv = crate::safety::sandbox::wrap_command(&command, vec!["/bin/bash".into(), "-c".into(), command.clone()], &cfg);
-        let mut child = match Command::new(&argv[0])
-            .args(&argv[1..])
-            .current_dir(&cwd)
-            .env_clear()
-            .envs(build_environment(&cfg))
-            .stdin(Stdio::null())
-            .stdout(Stdio::piped())
-            .stderr(Stdio::piped())
-            .process_group(0)
-            .spawn()
-        {
+        let mut cmd = Command::new(&argv[0]);
+        cmd.args(&argv[1..]).current_dir(&cwd).env_clear().envs(build_environment(&cfg)).stdin(Stdio::null()).stdout(Stdio::piped()).stderr(Stdio::piped());
+        let mut child = match crate::util::detach::detach(&mut cmd).spawn() {
             Ok(c) => c,
             Err(e) => return ToolResult::error(format!("Failed to start command: {e}")),
         };

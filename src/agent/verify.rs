@@ -244,7 +244,9 @@ impl CheckResult {
 pub async fn run_check(command: &str, cwd: &Path, config: &Config) -> CheckResult {
     let t = Instant::now();
     let argv = crate::safety::sandbox::wrap(vec!["/bin/bash".into(), "-c".into(), command.into()], config);
-    let spawn = Command::new(&argv[0]).args(&argv[1..]).current_dir(cwd).env_clear().envs(build_environment(config)).stdout(Stdio::piped()).stderr(Stdio::piped()).stdin(Stdio::null()).process_group(0).kill_on_drop(true).spawn();
+    let mut cmd = Command::new(&argv[0]);
+    cmd.args(&argv[1..]).current_dir(cwd).env_clear().envs(build_environment(config)).stdout(Stdio::piped()).stderr(Stdio::piped()).stdin(Stdio::null()).kill_on_drop(true);
+    let spawn = crate::util::detach::detach(&mut cmd).spawn();
     let child = match spawn {
         Ok(c) => c,
         Err(e) => return CheckResult { command: command.into(), ok: false, exit_code: None, seconds: 0.0, output_tail: e.to_string() },

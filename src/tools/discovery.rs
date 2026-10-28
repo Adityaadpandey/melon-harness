@@ -51,7 +51,7 @@ impl Tool for ScriptTool {
             let text = v.as_str().map(String::from).unwrap_or_else(|| v.to_string());
             cmd.env(format!("MELON_ARG_{}", k.to_uppercase()), text);
         }
-        let Ok(mut child) = cmd.spawn() else { return ToolResult::error(format!("could not start: {}", self.command)) };
+        let Ok(mut child) = crate::util::detach::detach(&mut cmd).spawn() else { return ToolResult::error(format!("could not start: {}", self.command)) };
         if let Some(mut stdin) = child.stdin.take() {
             let _ = stdin.write_all(inv.params.to_string().as_bytes()).await;
         }

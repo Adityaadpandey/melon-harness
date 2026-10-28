@@ -17,7 +17,9 @@ pub struct GitTool;
 async fn git(cwd: &Path, argv: &[String]) -> Result<(i32, String, String), String> {
     let mut full = vec!["--no-pager".to_string()];
     full.extend(argv.iter().cloned());
-    let out = tokio::time::timeout(Duration::from_secs(30), Command::new("git").args(&full).current_dir(cwd).kill_on_drop(true).output()).await.map_err(|_| "git timed out".to_string())?.map_err(|e| e.to_string())?;
+    let mut cmd = Command::new("git");
+    cmd.args(&full).current_dir(cwd).kill_on_drop(true);
+    let out = tokio::time::timeout(Duration::from_secs(30), crate::util::detach::detach(&mut cmd).output()).await.map_err(|_| "git timed out".to_string())?.map_err(|e| e.to_string())?;
     Ok((out.status.code().unwrap_or(1), String::from_utf8_lossy(&out.stdout).to_string(), String::from_utf8_lossy(&out.stderr).to_string()))
 }
 

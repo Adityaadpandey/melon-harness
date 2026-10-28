@@ -133,16 +133,9 @@ impl McpClient {
         *self.status.lock().unwrap() = McpStatus::Connecting;
         let res = async {
             let transport = if let Some(cmd) = &self.config.command {
-                let mut child = Command::new(cmd)
-                    .args(&self.config.args)
-                    .envs(&self.config.env)
-                    .current_dir(self.config.cwd.clone().unwrap_or_else(|| self.cwd.clone()))
-                    .stdin(Stdio::piped())
-                    .stdout(Stdio::piped())
-                    .stderr(Stdio::null())
-                    .kill_on_drop(true)
-                    .spawn()
-                    .map_err(|e| e.to_string())?;
+                let mut c = Command::new(cmd);
+                c.args(&self.config.args).envs(&self.config.env).current_dir(self.config.cwd.clone().unwrap_or_else(|| self.cwd.clone())).stdin(Stdio::piped()).stdout(Stdio::piped()).stderr(Stdio::null()).kill_on_drop(true);
+                let mut child = crate::util::detach::detach(&mut c).spawn().map_err(|e| e.to_string())?;
                 let stdin = child.stdin.take().ok_or("no stdin")?;
                 let stdout = child.stdout.take().ok_or("no stdout")?;
                 let pending: Pending = Default::default();

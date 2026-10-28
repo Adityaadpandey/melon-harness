@@ -37,18 +37,9 @@ impl HookSystem {
     }
 
     async fn run_command(&self, command: &str, timeout: Duration, env: &HashMap<String, String>) -> Option<(i32, String)> {
-        let mut child = Command::new("/bin/sh")
-            .arg("-c")
-            .arg(command)
-            .current_dir(&self.cwd)
-            .envs(env)
-            .stdout(Stdio::piped())
-            .stderr(Stdio::piped())
-            .stdin(Stdio::null())
-            .kill_on_drop(true)
-            .process_group(0)
-            .spawn()
-            .ok()?;
+        let mut cmd = Command::new("/bin/sh");
+        cmd.arg("-c").arg(command).current_dir(&self.cwd).envs(env).stdout(Stdio::piped()).stderr(Stdio::piped()).stdin(Stdio::null()).kill_on_drop(true);
+        let mut child = crate::util::detach::detach(&mut cmd).spawn().ok()?;
         let pid = child.id();
         let mut err = child.stderr.take()?;
         let wait = async {
