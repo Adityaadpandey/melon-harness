@@ -237,7 +237,7 @@ impl SymGraph {
     }
 }
 
-fn listed(cwd: &Path) -> Vec<String> {
+pub fn listed(cwd: &Path) -> Vec<String> {
     let Ok(o) = std::process::Command::new("git").args(["ls-files", "--cached", "--others", "--exclude-standard"]).current_dir(cwd).output() else { return vec![] };
     String::from_utf8_lossy(&o.stdout)
         .lines()

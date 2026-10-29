@@ -1,6 +1,6 @@
 use crate::config::ConfigHandle;
 use crate::tools::{schema_of, Tool, ToolInvocation, ToolKind, ToolResult};
-use crate::util::{codegraph, importgraph};
+use crate::util::{codegraph, importgraph, symgraph};
 use async_trait::async_trait;
 use serde_json::{json, Value};
 use std::any::Any;
@@ -15,6 +15,75 @@ pub struct GraphTool {
 impl GraphTool {
     pub fn new(config: ConfigHandle) -> Self {
         GraphTool { _config: config }
+    }
+
+
+    /// find/callers/callees/impact/symbol from melon's own tree-sitter graph (live, no snapshot). None means "nothing
+    /// here knows that name", so the caller can try the graphify snapshot or give the usual not-found answer.
+    fn sym(act: &str, name: Option<&str>, cwd: &Path) -> Option<ToolResult> {
+        let name = name?;
+        let sg = symgraph::load(cwd);
+        let q = name.trim().trim_end_matches("()");
+        // Router.handle / Router::handle -> only the `handle` that sits in Router
+        let (parent, last) = match q.rsplit_once("::").or_else(|| q.rsplit_once('.')) {
+            Some((p, l)) if !l.is_empty() && !l.contains('/') && !p.ends_with(|c: char| c == '/') => (Some(p.rsplit(['.', ':']).next().unwrap_or(p)), l),
+            _ => (None, q),
+        };
+        if act == "find" {
+            let hits = sg.find(last, LIMIT);
+            if hits.is_empty() {
+                return None;
+            }
+            let rows: Vec<String> = hits.iter().map(|(f, d)| format!("{:<32} {:<9} {f}:{}-{}{}", d.name, d.kind, d.line, d.end, d.parent.as_ref().map_or(String::new(), |p| format!("  [in {p}]")))).collect();
+            return Some(ToolResult::ok(format!("{}\n\n(live from the working tree; calls are matched by name, verify with read_file)", rows.join("\n"))));
+        }
+        let mut defs: Vec<(String, symgraph::Def)> = sg.find(last, 200).into_iter().filter(|(_, d)| d.name == last).collect();
+        if let Some(p) = parent {
+            let scoped: Vec<_> = defs.iter().filter(|(_, d)| d.parent.as_deref() == Some(p) || d.name == p).cloned().collect();
+            if !scoped.is_empty() {
+                defs = scoped;
+            }
+        }
+        if defs.is_empty() {
+            return None;
+        }
+        let more = defs.len().saturating_sub(4);
+        defs.truncate(4);
+        let mut out = vec![];
+        for (file, d) in &defs {
+            let head = format!("{} {} at {file}:{}-{}", d.kind, d.name, d.line, d.end);
+            match act {
+                "symbol" => {
+                    let text = std::fs::read_to_string(cwd.join(file)).unwrap_or_default();
+                    let body: Vec<String> = text.lines().enumerate().skip(d.line - 1).take((d.end - d.line + 1).min(200)).map(|(i, l)| format!("{:>5}  {l}", i + 1)).collect();
+                    out.push(format!("{head}\n{}", body.join("\n")));
+                }
+                "callers" => {
+                    let rows = sg.callers(file, &d.name);
+                    let body = rows.iter().take(LIMIT * 2).map(|r| format!("  {}:{}{}", r.file, r.line, r.in_def.as_ref().map_or(String::new(), |f| format!("  in {f}")))).collect::<Vec<_>>().join("\n");
+                    out.push(format!("{head}\n{} call site(s):\n{body}", rows.len()));
+                }
+                "callees" => {
+                    let rows = sg.callees(file, &d.name);
+                    let body = rows.iter().take(LIMIT * 2).map(|(f, c)| format!("  {:<30} {f}:{}", c.name, c.line)).collect::<Vec<_>>().join("\n");
+                    out.push(format!("{head}\ncalls {} definition(s) found in the repo (library calls are not listed):\n{body}", rows.len()));
+                }
+                _ => {
+                    // impact: the same calls, grouped by file so it reads as "what to re-check"
+                    let mut by_file: std::collections::BTreeMap<String, std::collections::BTreeSet<String>> = Default::default();
+                    for r in sg.callers(file, &d.name) {
+                        if r.file != *file {
+                            by_file.entry(r.file).or_default().insert(r.in_def.unwrap_or_else(|| "(top level)".into()));
+                        }
+                    }
+                    let body = by_file.iter().map(|(f, who)| format!("  {f}  ({})", who.iter().cloned().collect::<Vec<_>>().join(", "))).collect::<Vec<_>>().join("\n");
+                    out.push(format!("{head}\n{} other file(s) call it (read their call sites before changing behaviour):\n{body}", by_file.len()));
+                }
+            }
+        }
+        let tail = if more > 0 { format!("\n\n({more} more definitions share this name; use Parent.name to pick one)") } else { String::new() };
+        let note = if act == "symbol" { "" } else { "\n\n(live from the working tree; calls are matched by name, verify with read_file)" };
+        Some(ToolResult::ok(format!("{}{tail}{note}", out.join("\n\n"))))
     }
 
     fn live(act: &str, name: Option<&str>, cwd: &Path) -> ToolResult {
@@ -64,7 +133,7 @@ impl Tool for GraphTool {
         "graph"
     }
     fn description(&self) -> String {
-        "Understand how the code connects. importers/imports/blast/tests are computed live from the working tree (always current): who imports a file, what breaks if it changes, which tests cover it. find/callers/callees/path need a prebuilt graph snapshot (graphify-out/graph.json) and are pointers to verify with read_file. One call replaces several grep/read rounds.".into()
+        "Understand how the code connects. everything is computed live from the working tree (TS/JS, Python, Rust, Go): find a symbol, callers/callees of a function, impact (files that call a symbol), symbol (read one function or class by name instead of the whole file), importers/imports/blast/tests for files. path/community/neighbors/stats need a graphify snapshot (graphify-out/graph.json). Calls are matched by name: verify with read_file. One call replaces several grep/read rounds.".into()
     }
     fn kind(&self) -> ToolKind {
         ToolKind::Read
@@ -75,7 +144,7 @@ impl Tool for GraphTool {
     fn schema(&self) -> Value {
         schema_of(
             json!({
-                "action": {"type": "string", "description": "find (locate symbols/files by name) | callers (who calls NAME; direction checked in source) | callees (what NAME calls) | importers (files that import FILE, live from the working tree; follows @/ aliases) | imports (what FILE imports) | blast (everything that depends on FILE, nearest first) | tests (tests that cover FILE) | neighbors (all relations of NAME) | impact (files that depend on file/symbol NAME: what a change could break) | path (shortest connection NAME -> TO) | community (the module NAME belongs to) | stats"},
+                "action": {"type": "string", "description": "symbol (read the source of one function/class/method by name) | find (locate symbols by name) | callers (who calls NAME; direction checked in source) | callees (what NAME calls) | importers (files that import FILE, live from the working tree; follows @/ aliases) | imports (what FILE imports) | blast (everything that depends on FILE, nearest first) | tests (tests that cover FILE) | neighbors (all relations of NAME) | impact (files that depend on file/symbol NAME: what a change could break) | path (shortest connection NAME -> TO) | community (the module NAME belongs to) | stats"},
                 "name": {"type": ["string", "null"], "description": "Symbol, class or file name (e.g. delTicketTypeCache, ticket.service.ts, apps/web/src/components/ui/DesktopNav.tsx)"},
                 "to": {"type": ["string", "null"], "description": "Second name, for action=path"},
             }),
@@ -85,6 +154,17 @@ impl Tool for GraphTool {
     async fn execute(&self, inv: &ToolInvocation) -> ToolResult {
         let act = inv.str("action").unwrap_or("").to_lowercase();
         let name = inv.str("name").filter(|n| !n.is_empty());
+        if matches!(act.as_str(), "find" | "callers" | "callees" | "impact" | "symbol") {
+            if let Some(r) = Self::sym(&act, name, &inv.cwd) {
+                return r;
+            }
+        }
+        if act == "symbol" {
+            return ToolResult::ok(match name {
+                Some(n) => format!("No symbol named '{n}'. Try action=find with part of the name, or grep."),
+                None => return ToolResult::error("`name` is required for action=symbol"),
+            });
+        }
         let g = codegraph::load(&inv.cwd);
         if matches!(act.as_str(), "importers" | "imports" | "blast" | "tests") || (act == "impact" && g.is_none()) {
             return Self::live(&act, name, &inv.cwd);

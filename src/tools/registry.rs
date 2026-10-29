@@ -498,8 +498,8 @@ pub fn create_default_registry(config: ConfigHandle) -> Arc<ToolRegistry> {
     if cfg.enable_parallel_tasks && in_git {
         registry.register(Arc::new(super::builtin::parallel_tasks::ParallelTasksTool::new(config.clone())));
     }
-    // the tool needs either a graphify snapshot or a repo big enough for the live import graph to be worth a schema
-    if crate::util::codegraph::locate(&cfg.cwd).is_some() || crate::util::importgraph::tracked(&cfg.cwd).len() >= 15 {
+    // the tool needs either a graphify snapshot or a repo big enough for the live symbol graph to be worth a schema
+    if crate::util::codegraph::locate(&cfg.cwd).is_some() || crate::util::symgraph::listed(&cfg.cwd).len() >= 15 {
         registry.register(Arc::new(super::builtin::graph::GraphTool::new(config.clone())));
     }
     for dir in [cfg.cwd.join(".melon").join("tools"), crate::config::loader::get_config_dir().join("tools")] {

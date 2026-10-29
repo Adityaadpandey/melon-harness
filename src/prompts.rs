@@ -147,7 +147,7 @@ fn tool_guidelines_section(tools: &[Arc<dyn Tool>]) -> Option<String> {
     let subs: Vec<&Arc<dyn Tool>> = tools.iter().filter(|t| t.name().starts_with("subagent_")).collect();
     let mut sections: Vec<String> = vec![];
     if names.contains(&"graph") {
-        sections.push("# Code Graph\n\nBefore changing a file, ask `graph` who depends on it: action=importers or blast for what a change can break, tests for what covers it (live from the working tree, follows @/ aliases). find/callers/callees come from a snapshot: confirm those in the source.".into());
+        sections.push("# Code Graph\n\nUse `graph` before grep/read_file when you know a name: symbol reads one function or class by name (cheaper than the whole file), find locates definitions, callers/callees/impact show who a change can break. Before changing a file, importers or blast show what depends on it and tests what covers it. All of it is live from the working tree; calls are matched by name, so confirm a surprising hit in the source.".into());
     }
     if !subs.is_empty() {
         let rows = subs.iter().map(|t| format!("- **{}**: {}", t.name(), crate::util::text::head_chars(t.description().split(". ").next().unwrap_or(""), 140))).collect::<Vec<_>>().join("\n");
@@ -240,7 +240,7 @@ fn pi_snippet(name: &str) -> Option<&'static str> {
         "glob" => "Find files by glob pattern (respects .gitignore)",
         "list_dir" => "List directory contents",
         "todos" => "Step list for long work (5+ steps): `set` the whole list; update it alongside your next real call, never in a turn of its own",
-        "graph" => "Who imports a file, what a change breaks, which tests cover it (live import graph); callers/paths when a graph snapshot exists",
+        "graph" => "Find and read a symbol by name, callers/callees/impact, who imports a file, which tests cover it (all live from the working tree)",
         _ => return None,
     })
 }

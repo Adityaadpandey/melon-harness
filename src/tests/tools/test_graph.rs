@@ -123,3 +123,35 @@ async fn impact_lists_files_that_really_call_into_the_changed_file() {
     // team.ts only reaches cache.ts through svc.ts
     assert!(r.output.contains("src/svc.ts") && !r.output.contains("src/team.ts"), "{}", r.output);
 }
+
+fn git_repo() -> tempfile::TempDir {
+    let d = tempfile::tempdir().unwrap();
+    let p = d.path();
+    super::git(p, &["init", "-q"]);
+    w(p, "lib.py", "def parse(x):\n    return x\n\ndef other():\n    pass\n");
+    w(p, "app.py", "from lib import parse\n\ndef main():\n    parse(1)\n");
+    d
+}
+
+#[tokio::test]
+async fn live_graph_answers_without_any_snapshot() {
+    let d = git_repo();
+    let p = d.path();
+    let r = ask(p, json!({"action": "find", "name": "pars"})).await;
+    assert!(r.output.contains("parse") && r.output.contains("lib.py:1-2"), "{}", r.output);
+    let r = ask(p, json!({"action": "callers", "name": "parse"})).await;
+    assert!(r.output.contains("1 call site") && r.output.contains("app.py:4  in main"), "{}", r.output);
+    let r = ask(p, json!({"action": "callees", "name": "main"})).await;
+    assert!(r.output.contains("parse") && r.output.contains("lib.py:1"), "{}", r.output);
+    let r = ask(p, json!({"action": "impact", "name": "parse"})).await;
+    assert!(r.output.contains("1 other file") && r.output.contains("app.py  (main)"), "{}", r.output);
+}
+
+#[tokio::test]
+async fn symbol_reads_just_that_function() {
+    let d = git_repo();
+    let r = ask(d.path(), json!({"action": "symbol", "name": "parse"})).await;
+    assert!(r.output.contains("    1  def parse(x):") && r.output.contains("return x") && !r.output.contains("other"), "{}", r.output);
+    let r = ask(d.path(), json!({"action": "symbol", "name": "nope"})).await;
+    assert!(r.output.contains("No symbol named"), "{}", r.output);
+}
