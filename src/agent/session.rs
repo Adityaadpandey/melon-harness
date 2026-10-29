@@ -89,6 +89,7 @@ impl Session {
         hook_system.fire(HookTrigger::SessionStart, &[("session_id", session_id.clone())]).await;
         if !cfg.sub_agent && cfg.model_role == "default" {
             crate::util::rank::warm(cfg.cwd.clone(), cfg.forbidden_paths.clone()); // first search of the session finds the index ready
+            crate::util::symgraph::warm(cfg.cwd.clone()); // and the first graph question finds the symbol graph ready
         }
         Arc::new(Session {
             chat_compactor: ChatCompactor::new(client.clone()),

@@ -7,6 +7,7 @@
 //! verify in the source, never a proof.
 use crate::util::importgraph;
 use crate::util::paths::resolve;
+use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::path::Path;
 use std::sync::{Arc, Mutex, OnceLock};
@@ -16,7 +17,7 @@ const EXTS: &[&str] = &["ts", "tsx", "js", "jsx", "mjs", "cjs", "py", "rs", "go"
 const MAX_FILES: usize = 60_000;
 const MAX_BYTES: u64 = 1_000_000;
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Serialize)]
 pub struct Def {
     pub name: String,
     pub kind: &'static str,
@@ -26,7 +27,7 @@ pub struct Def {
     pub parent: Option<String>,
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Call {
     /// Index into the file's defs, or None for code at the top level of the file.
     pub from: Option<usize>,
@@ -34,10 +35,34 @@ pub struct Call {
     pub line: usize,
 }
 
-#[derive(Default, Debug)]
+#[derive(Default, Debug, Serialize, Deserialize)]
 pub struct FileSyms {
     pub defs: Vec<Def>,
     pub calls: Vec<Call>,
+}
+
+const KINDS: &[&str] = &["function", "method", "class", "interface", "type", "enum", "struct", "trait", "mod", "impl"];
+
+/// Kinds are static strings in memory; the saved file holds plain text, mapped back here (an unknown one reads as "symbol").
+#[derive(Deserialize)]
+struct DefRaw {
+    name: String,
+    kind: String,
+    line: usize,
+    end: usize,
+    parent: Option<String>,
+}
+
+impl<'de> Deserialize<'de> for Def {
+    fn deserialize<D: serde::Deserializer<'de>>(d: D) -> Result<Def, D::Error> {
+        DefRaw::deserialize(d).map(Def::from)
+    }
+}
+
+impl From<DefRaw> for Def {
+    fn from(r: DefRaw) -> Def {
+        Def { kind: KINDS.iter().find(|k| **k == r.kind).copied().unwrap_or("symbol"), name: r.name, line: r.line, end: r.end, parent: r.parent }
+    }
 }
 
 fn language(ext: &str) -> Option<Language> {
@@ -139,7 +164,7 @@ pub fn extract(path: &str, src: &str) -> Option<FileSyms> {
     Some(out)
 }
 
-type Stamp = (u64, u128);
+type Stamp = (u64, u64);
 type Entry = (Stamp, Arc<FileSyms>);
 
 pub struct SymGraph {
@@ -252,7 +277,7 @@ fn stamp(p: &Path) -> Option<Stamp> {
     if m.len() > MAX_BYTES {
         return None;
     }
-    let t = m.modified().ok()?.duration_since(std::time::UNIX_EPOCH).ok()?.as_nanos();
+    let t = m.modified().ok()?.duration_since(std::time::UNIX_EPOCH).ok()?.as_nanos() as u64;
     Some((m.len(), t))
 }
 
@@ -289,6 +314,47 @@ fn parse_all(cwd: &Path, todo: Vec<(String, Stamp)>) -> Vec<(String, Entry)> {
     done
 }
 
+fn cache_file(root: &Path) -> std::path::PathBuf {
+    use sha2::{Digest, Sha256};
+    let h = hex::encode(Sha256::digest(root.to_string_lossy().as_bytes()));
+    crate::config::loader::get_data_dir().join("graph").join(format!("{}.json", &h[..16]))
+}
+
+const CACHE_VERSION: u32 = 1;
+
+/// What the last session parsed, if anything. A bad or old file is just ignored: we re-parse and overwrite it.
+fn read_disk(root: &Path) -> HashMap<String, Entry> {
+    let Ok(text) = std::fs::read_to_string(cache_file(root)) else { return HashMap::new() };
+    let Ok((v, files)) = serde_json::from_str::<(u32, HashMap<String, (Stamp, FileSyms)>)>(&text) else { return HashMap::new() };
+    if v != CACHE_VERSION {
+        return HashMap::new();
+    }
+    files.into_iter().map(|(f, (st, s))| (f, (st, Arc::new(s)))).collect()
+}
+
+/// Saved off the calling thread, so an edit never waits on writing the whole repo's graph. Rename keeps readers from
+/// ever seeing half a file. ponytail: rewrites everything; per-file shards if repos get big enough for that to hurt.
+fn write_disk(root: &Path, parsed: &HashMap<String, Entry>) {
+    let path = cache_file(root);
+    let snapshot: Vec<(String, Entry)> = parsed.iter().map(|(f, e)| (f.clone(), e.clone())).collect();
+    std::thread::spawn(move || {
+        let files: HashMap<&String, (&Stamp, &FileSyms)> = snapshot.iter().map(|(f, (st, s))| (f, (st, s.as_ref()))).collect();
+        let Ok(text) = serde_json::to_string(&(CACHE_VERSION, files)) else { return };
+        let _ = std::fs::create_dir_all(path.parent().unwrap_or(Path::new(".")));
+        let tmp = path.with_extension(format!("tmp{}", std::process::id()));
+        if std::fs::write(&tmp, text).is_ok() {
+            let _ = std::fs::rename(&tmp, &path);
+        }
+    });
+}
+
+/// Build the whole repo's graph in the background at startup so the first question finds it ready.
+pub fn warm(cwd: std::path::PathBuf) {
+    std::thread::spawn(move || {
+        load(&cwd);
+    });
+}
+
 type Cache = HashMap<String, (HashMap<String, Entry>, Option<(u64, Arc<SymGraph>)>)>;
 
 /// The graph for this working tree. Unchanged files come from the cache; only new or edited ones are parsed.
@@ -298,6 +364,9 @@ pub fn load(cwd: &Path) -> Arc<SymGraph> {
     let key = cwd.to_string_lossy().to_string();
     let cache = C.get_or_init(|| Mutex::new(HashMap::new()));
     let (mut parsed, last) = cache.lock().unwrap().remove(&key).unwrap_or_default();
+    if parsed.is_empty() {
+        parsed = read_disk(&cwd);
+    }
 
     let mut live: Vec<(String, Stamp)> = listed(&cwd).into_iter().filter_map(|f| stamp(&cwd.join(&f)).map(|s| (f, s))).collect();
     live.sort();
@@ -317,9 +386,13 @@ pub fn load(cwd: &Path) -> Arc<SymGraph> {
             }
         }
     }
+    let changed = !todo.is_empty();
     parsed.extend(parse_all(&cwd, todo));
     let names: std::collections::HashSet<&String> = live.iter().map(|(f, _)| f).collect();
     parsed.retain(|f, _| names.contains(f)); // deleted files drop out
+    if changed || parsed.len() != live.len() {
+        write_disk(&cwd, &parsed);
+    }
     let files = parsed.iter().map(|(f, (_, s))| (f.clone(), s.clone())).collect();
     let g = Arc::new(SymGraph::assemble(files, importgraph::load(&cwd)));
     cache.lock().unwrap().insert(key, (parsed, Some((fingerprint, g.clone()))));
@@ -354,6 +427,17 @@ mod tests {
         let go = extract("a.go", "package a\nfunc (r *R) Do() { fmt.Println(helper()) }\nfunc helper() int { return 1 }").unwrap();
         assert_eq!(names(&go), ["method:Do", "function:helper"]);
         assert!(go.calls.iter().any(|c| c.name == "helper") && go.calls.iter().any(|c| c.name == "Println"));
+    }
+
+    #[test]
+    fn saved_graph_reads_back_the_same() {
+        let s = extract("a.rs", "struct S;\nimpl S { fn new() { make(); } }\nfn make() {}").unwrap();
+        let text = serde_json::to_string(&(CACHE_VERSION, HashMap::from([("a.rs", ((3u64, 9u64), &s))]))).unwrap();
+        let (v, back): (u32, HashMap<String, (Stamp, FileSyms)>) = serde_json::from_str(&text).unwrap();
+        let b = &back["a.rs"].1;
+        assert_eq!((v, back["a.rs"].0), (CACHE_VERSION, (3, 9)));
+        assert_eq!(names(b), names(&s));
+        assert_eq!(b.calls[0].name, "make");
     }
 
     #[test]
