@@ -155,3 +155,12 @@ async fn symbol_reads_just_that_function() {
     let r = ask(d.path(), json!({"action": "symbol", "name": "nope"})).await;
     assert!(r.output.contains("No symbol named"), "{}", r.output);
 }
+
+#[test]
+fn verify_runs_tests_that_import_the_changed_module_not_only_ones_named_after_it() {
+    let d = git_repo();
+    let p = d.path();
+    w(p, "tests/test_flow.py", "from lib import parse\n\ndef test_it():\n    assert parse(1) == 1\n");
+    let checks = crate::agent::verify::detect_checks(p, &["lib.py".to_string()]);
+    assert!(checks.iter().any(|(c, _)| c.contains("pytest") && c.contains("tests/test_flow.py")), "{checks:?}");
+}

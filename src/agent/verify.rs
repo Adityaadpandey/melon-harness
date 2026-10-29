@@ -143,7 +143,15 @@ pub fn detect_checks(cwd: &Path, changed: &[String]) -> Vec<(String, String)> {
     let mut checks: Vec<(String, String)> = vec![];
     let py: Vec<&&String> = live.iter().filter(|f| f.ends_with(".py")).collect();
     if !py.is_empty() {
-        let tests: Vec<String> = py.iter().flat_map(|f| py_tests(&cwd, f)).collect::<std::collections::BTreeSet<_>>().into_iter().collect();
+        // tests named after the file first, then any test that imports it, directly or through one other module
+        let ig = crate::util::importgraph::load(&cwd);
+        let mut tests: Vec<String> = vec![];
+        for t in py.iter().flat_map(|f| py_tests(&cwd, f)).chain(py.iter().flat_map(|f| ig.tests_for(f))) {
+            if t.ends_with(".py") && cwd.join(&t).is_file() && !tests.contains(&t) {
+                tests.push(t);
+            }
+        }
+        tests.truncate(8);
         checks.push((
             if tests.is_empty() {
                 format!("python3 -m py_compile {}", py.iter().map(|f| quote(f)).collect::<Vec<_>>().join(" "))
