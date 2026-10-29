@@ -262,6 +262,68 @@ impl SymGraph {
     }
 }
 
+const MAP_ROWS: usize = 8;
+
+impl SymGraph {
+    /// Definitions whose name is spelled out in the request ("fix parse_invoice totals" -> parse_invoice), best first:
+    /// exact identifiers, then multi-word names whose every word the request uses, ranked by how many places call them.
+    pub fn mentioned(&self, request: &str, limit: usize) -> Vec<(String, Def, usize)> {
+        use crate::util::rank::tokenize;
+        let words: std::collections::HashSet<&str> = request.split(|c: char| !(c.is_alphanumeric() || c == '_' || c == '$')).filter(|w| w.len() >= 3).collect();
+        let want: std::collections::HashSet<String> = tokenize(request).into_iter().collect();
+        let heads: Vec<String> = want.iter().filter(|t| t.len() >= 3).map(|t| t.chars().take(4).collect()).collect();
+        let mut found: Vec<(f64, String, Def, usize)> = vec![];
+        for (name, at) in &self.by_name {
+            // plain short words (run, get, load) show up in ordinary sentences, so only identifier-looking names count as written
+            let exact = words.contains(name.as_str()) && (name.len() >= 6 || name.contains('_') || name.chars().any(char::is_uppercase));
+            if !exact {
+                let low = name.to_lowercase();
+                if !heads.iter().any(|h| low.contains(h.as_str())) {
+                    continue;
+                }
+                let parts = tokenize(name);
+                // a one-word name like `run` or `get` is too common to guess at; it has to be written exactly
+                let distinct: std::collections::HashSet<&String> = parts.iter().collect();
+                if distinct.len() < 2 || !parts.iter().all(|p| want.contains(p)) {
+                    continue;
+                }
+            }
+            for (f, i) in at {
+                let d = &self.files[f].defs[*i];
+                if matches!(d.kind, "impl" | "mod") {
+                    continue;
+                }
+                let callers = self.callers(f, name).len();
+                let score = if exact { 100.0 } else { 10.0 } + (1.0 + callers as f64).ln();
+                found.push((score, f.clone(), d.clone(), callers));
+            }
+        }
+        found.sort_by(|a, b| b.0.partial_cmp(&a.0).unwrap_or(std::cmp::Ordering::Equal).then(a.1.cmp(&b.1)).then(a.2.line.cmp(&b.2.line)));
+        found.into_iter().take(limit).map(|(_, f, d, c)| (f, d, c)).collect()
+    }
+}
+
+/// A few lines for the model about the code the request names: where it is defined, how many places call it, and what
+/// the developer said that area is for. None when the request names nothing the graph knows.
+pub fn task_map(cwd: &Path, request: &str) -> Option<String> {
+    let g = load(cwd);
+    let hits = g.mentioned(request, MAP_ROWS);
+    if hits.is_empty() {
+        return None;
+    }
+    let cfg = crate::util::graphcfg::load(cwd);
+    let mut rows: Vec<String> = hits.iter().map(|(f, d, c)| format!("- {} {} at {f}:{}-{} ({c} call site{})", d.kind, d.name, d.line, d.end, if *c == 1 { "" } else { "s" })).collect();
+    let mut seen = std::collections::BTreeSet::new();
+    for (f, _, _) in &hits {
+        if let Some((dir, note)) = cfg.areas.iter().filter(|(k, _)| f.starts_with(&format!("{k}/"))).max_by_key(|(k, _)| k.len()) {
+            if seen.insert(dir.clone()) {
+                rows.push(format!("- area {dir}/: {note}"));
+            }
+        }
+    }
+    Some(format!("[Code graph: definitions your request names (live, matched by name; read the code before relying on it; graph symbol/callers go deeper)\n{}]", rows.join("\n")))
+}
+
 pub fn listed(cwd: &Path) -> Vec<String> {
     let Ok(o) = std::process::Command::new("git").args(["ls-files", "--cached", "--others", "--exclude-standard"]).current_dir(cwd).output() else { return vec![] };
     let cfg = crate::util::graphcfg::load(cwd);
@@ -443,6 +505,22 @@ mod tests {
         assert_eq!((v, back["a.rs"].0), (CACHE_VERSION, (3, 9)));
         assert_eq!(names(b), names(&s));
         assert_eq!(b.calls[0].name, "make");
+    }
+
+    #[test]
+    fn task_map_names_definitions_callers_and_area_notes() {
+        let d = tempfile::tempdir().unwrap();
+        let p = d.path();
+        std::process::Command::new("git").args(["init", "-q"]).current_dir(p).status().unwrap();
+        std::fs::create_dir_all(p.join("billing")).unwrap();
+        std::fs::write(p.join("billing/invoice.py"), "def parse_invoice(x):\n    return x\n\ndef run():\n    pass\n").unwrap();
+        std::fs::write(p.join("app.py"), "from billing.invoice import parse_invoice\n\ndef main():\n    parse_invoice(1)\n    parse_invoice(2)\n").unwrap();
+        crate::util::graphcfg::save(p, &crate::util::graphcfg::GraphCfg { areas: [("billing".to_string(), "Stripe invoices".to_string())].into(), ..Default::default() }).unwrap();
+        let m = task_map(p, "the totals are wrong, fix parse_invoice").unwrap();
+        assert!(m.contains("function parse_invoice at billing/invoice.py:1-2 (2 call sites)") && m.contains("area billing/: Stripe invoices"), "{m}");
+        // words in different order still find a multi-word name; a bare common word does not
+        assert!(task_map(p, "invoice parse is broken").unwrap().contains("parse_invoice"));
+        assert!(task_map(p, "please run the thing").is_none());
     }
 
     #[test]

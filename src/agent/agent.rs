@@ -501,6 +501,11 @@ impl Agent {
                 message_for_model.push_str(&format!("\n\n{w}"));
             }
         }
+        if self.session.tool_registry.get("graph").is_some() {
+            if let Some(map) = crate::util::symgraph::task_map(&cfg.cwd, message) {
+                message_for_model.push_str(&format!("\n\n{map}"));
+            }
+        }
         self.touches = if wants { oriented.as_ref().map(|o| o.touches.clone()).unwrap_or_default() } else { String::new() };
         self.docs_nudged = false;
         self.session.client.set_auto_effort(effort(difficulty));
