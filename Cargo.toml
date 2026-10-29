@@ -34,6 +34,12 @@ textwrap = "0.16.4"
 tokio = { version = "1.54.1", features = ["full"] }
 tokio-util = "0.7.20"
 toml = "1.1.8"
+tree-sitter = "0.27.1"
+tree-sitter-go = "0.25.0"
+tree-sitter-javascript = "0.25.0"
+tree-sitter-python = "0.25.0"
+tree-sitter-rust = "0.24.2"
+tree-sitter-typescript = "0.23.2"
 unicode-normalization = "0.1.26"
 unicode-width = "0.2.2"
 uuid = { version = "1.29.0", features = ["v4"] }
