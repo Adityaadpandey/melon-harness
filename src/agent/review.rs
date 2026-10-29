@@ -180,7 +180,10 @@ pub async fn review_changes(config: &Config, request: &str, files: &[String], ch
     cfg.max_seconds = 300.0;
     cfg.approval = ApprovalPolicy::Never;
     let mut impact = "(no code graph)".to_string();
-    if let Some(g) = crate::util::codegraph::load(&config.cwd) {
+    let live = crate::util::symgraph::load(&config.cwd).impact(files, 15);
+    if !live.is_empty() {
+        impact = live.iter().map(|(f, l)| format!("- {f} ({})", l.join(", "))).collect::<Vec<_>>().join("\n");
+    } else if let Some(g) = crate::util::codegraph::load(&config.cwd) {
         let rows = g.impact(files, 15);
         impact = if rows.is_empty() { "(none found)".into() } else { rows.iter().map(|(f, l)| format!("- {f} ({})", l.join(", "))).collect::<Vec<_>>().join("\n") };
     }

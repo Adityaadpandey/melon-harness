@@ -265,6 +265,33 @@ impl SymGraph {
 const MAP_ROWS: usize = 8;
 
 impl SymGraph {
+    /// Files outside `files` that call something defined inside them, with the names they call: what a change can break.
+    /// For languages where imports aren't tracked (rust, go) a name that exists in several places is skipped, because a
+    /// call to `new` could mean any of them and the list would fill with files that have nothing to do with the change.
+    pub fn impact(&self, files: &[String], limit: usize) -> Vec<(String, Vec<String>)> {
+        let want: std::collections::HashSet<&str> = files.iter().map(|f| f.trim_start_matches("./")).collect();
+        let mut by_file: std::collections::BTreeMap<String, std::collections::BTreeSet<String>> = Default::default();
+        for f in want.iter() {
+            let Some(s) = self.files.get(*f) else { continue };
+            let tracked = self.imports.out.contains_key(*f);
+            for d in s.defs.iter().filter(|d| !matches!(d.kind, "impl" | "mod")) {
+                if !tracked && self.by_name.get(&d.name).map_or(0, Vec::len) > 1 {
+                    continue;
+                }
+                for r in self.callers(f, &d.name) {
+                    if !want.contains(r.file.as_str()) {
+                        by_file.entry(r.file).or_default().insert(d.name.clone());
+                    }
+                }
+            }
+        }
+        let mut rows: Vec<(String, Vec<String>)> = by_file.into_iter().map(|(f, n)| (f, n.into_iter().collect())).collect();
+        rows.sort_by(|a, b| b.1.len().cmp(&a.1.len()).then(a.0.cmp(&b.0)));
+        rows.into_iter().take(limit).map(|(f, n)| (f, n.into_iter().take(4).collect())).collect()
+    }
+}
+
+impl SymGraph {
     /// Definitions whose name is spelled out in the request ("fix parse_invoice totals" -> parse_invoice), best first:
     /// exact identifiers, then multi-word names whose every word the request uses, ranked by how many places call them.
     pub fn mentioned(&self, request: &str, limit: usize) -> Vec<(String, Def, usize)> {
@@ -521,6 +548,20 @@ mod tests {
         // words in different order still find a multi-word name; a bare common word does not
         assert!(task_map(p, "invoice parse is broken").unwrap().contains("parse_invoice"));
         assert!(task_map(p, "please run the thing").is_none());
+    }
+
+    #[test]
+    fn impact_lists_outside_files_that_call_into_the_changed_ones() {
+        let d = tempfile::tempdir().unwrap();
+        let p = d.path();
+        std::process::Command::new("git").args(["init", "-q"]).current_dir(p).status().unwrap();
+        std::fs::write(p.join("lib.py"), "def parse(x):\n    return x\n\ndef dump(x):\n    return x\n").unwrap();
+        std::fs::write(p.join("app.py"), "from lib import parse, dump\n\ndef main():\n    parse(1)\n    dump(2)\n").unwrap();
+        std::fs::write(p.join("lone.py"), "def solo():\n    pass\n").unwrap();
+        let g = load(p);
+        assert_eq!(g.impact(&["lib.py".into()], 5), [("app.py".to_string(), vec!["dump".to_string(), "parse".to_string()])]);
+        assert!(g.impact(&["lone.py".into()], 5).is_empty());
+        assert!(g.impact(&["app.py".into()], 5).is_empty(), "nothing calls main");
     }
 
     #[test]
