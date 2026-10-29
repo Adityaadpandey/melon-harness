@@ -96,6 +96,9 @@ fn main() {
         let argv: Vec<String> = std::iter::once("melon learn-import".to_string()).chain(raw.into_iter().skip(2)).collect();
         std::process::exit(rt.block_on(agent::learn_import::main(argv)));
     }
+    if raw.get(1).map(String::as_str) == Some("graph") {
+        std::process::exit(util::graphcfg::main(raw.into_iter().skip(2).collect()));
+    }
     if raw.get(1).map(String::as_str) == Some("probe-models") {
         let rt = tokio::runtime::Builder::new_multi_thread().enable_all().build().expect("runtime");
         std::process::exit(rt.block_on(client::probe::main(raw.into_iter().skip(2).collect())));

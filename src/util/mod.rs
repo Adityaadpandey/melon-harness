@@ -18,5 +18,6 @@ pub mod outline;
 pub mod pyscan;
 pub mod rank;
 pub mod repomap;
+pub mod graphcfg;
 pub mod symgraph;
 pub mod templates;

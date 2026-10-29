@@ -264,9 +264,11 @@ impl SymGraph {
 
 pub fn listed(cwd: &Path) -> Vec<String> {
     let Ok(o) = std::process::Command::new("git").args(["ls-files", "--cached", "--others", "--exclude-standard"]).current_dir(cwd).output() else { return vec![] };
+    let cfg = crate::util::graphcfg::load(cwd);
     String::from_utf8_lossy(&o.stdout)
         .lines()
         .filter(|f| Path::new(f).extension().map_or(false, |e| EXTS.contains(&e.to_string_lossy().to_lowercase().as_str())))
+        .filter(|f| !crate::util::graphcfg::is_noise(f) && !cfg.is_ignored(f))
         .take(MAX_FILES)
         .map(String::from)
         .collect()
