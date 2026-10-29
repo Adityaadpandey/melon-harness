@@ -151,11 +151,20 @@ pub fn interview(cwd: &Path, input: &mut dyn BufRead, out: &mut dyn Write) -> us
         answered += 1;
         let _ = save(cwd, &cfg); // after every answer, so ^C loses nothing
     }
-    if answered == 0 {
-        return 0;
-    }
+    let _ = save(cwd, &cfg); // even with no answers: the file marks the repo as asked, so it isn't asked on every start
     let _ = writeln!(out, "\nSaved to .melon/graph.toml ({} left out, {} area notes). Commit it to share with your team.", cfg.ignore.len(), cfg.areas.len());
     answered
+}
+
+/// First time melon opens a repo: the graph is already building in the background, so use the wait to ask.
+pub fn first_run(cwd: &Path) {
+    use crate::ui::style::{paint, MUTED};
+    let started = std::time::Instant::now();
+    println!("{}", paint("While it indexes, a few quick questions keep the graph clean (q skips; `melon graph` asks again any time).\n", MUTED));
+    interview(cwd, &mut std::io::stdin().lock(), &mut std::io::stdout());
+    let g = symgraph::load(cwd); // waits for the indexer if it is still running
+    let syms: usize = g.files.values().map(|f| f.defs.len()).sum();
+    println!("{}", paint(&format!("✓ graph ready: {} files, {syms} symbols ({:.1}s since start)\n", g.files.len(), started.elapsed().as_secs_f64()), MUTED));
 }
 
 pub fn main(args: Vec<String>) -> i32 {

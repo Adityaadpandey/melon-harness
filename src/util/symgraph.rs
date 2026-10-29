@@ -362,6 +362,9 @@ type Cache = HashMap<String, (HashMap<String, Entry>, Option<(u64, Arc<SymGraph>
 /// The graph for this working tree. Unchanged files come from the cache; only new or edited ones are parsed.
 pub fn load(cwd: &Path) -> Arc<SymGraph> {
     static C: OnceLock<Mutex<Cache>> = OnceLock::new();
+    // One build at a time: the background warm-up and an early graph question must share the work, not both parse the repo.
+    static GATE: Mutex<()> = Mutex::new(());
+    let _one_at_a_time = GATE.lock().unwrap_or_else(|e| e.into_inner());
     let cwd = resolve(cwd);
     let key = cwd.to_string_lossy().to_string();
     let cache = C.get_or_init(|| Mutex::new(HashMap::new()));

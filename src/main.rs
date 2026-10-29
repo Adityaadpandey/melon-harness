@@ -213,6 +213,14 @@ async fn run(args: Args) -> i32 {
         let bad = matches!(cli.last_report.as_ref().and_then(|r| r["status"].as_str()), Some("failed" | "verification_failed"));
         return if result.is_none() || bad { 1 } else { 0 };
     }
+    if tty && util::symgraph::listed(&cwd).len() >= 15 {
+        // the symbol graph builds on every core while we get started; a new repo uses that wait to ask about itself
+        util::symgraph::warm(cwd.clone());
+        println!("{}", paint("◆ indexing the code graph in the background", MUTED));
+        if !cwd.join(".melon/graph.toml").exists() {
+            util::graphcfg::first_run(&cwd);
+        }
+    }
     // a terminal tab names the running program; set a title the way Claude Code does, e.g. "✦ melon · tunyt"
     if std::io::stdout().is_terminal() {
         let title = format!("✦ melon · {}", cwd.file_name().map(|n| n.to_string_lossy().to_string()).unwrap_or_default());
