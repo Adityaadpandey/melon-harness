@@ -39,6 +39,14 @@ do not exercise the changed behaviour.</sub>
 
 ## Try it in two minutes
 
+Mac and Linux, no Rust needed:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/Adityaadpandey/melon-harness/main/install.sh | sh
+```
+
+Or grab the tarball for your machine from the [releases page](https://github.com/Adityaadpandey/melon-harness/releases). Building from source:
+
 ```bash
 git clone https://github.com/Adityaadpandey/melon-harness && cd melon-harness
 cargo build --release                                       # binary: target/release/melon
