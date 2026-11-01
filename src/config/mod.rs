@@ -370,7 +370,7 @@ impl Default for Config {
             pricing: HashMap::new(),
             max_seconds: 1800.0,
             compact_at_tokens: 200_000,
-            read_call_budget: 12,
+            read_call_budget: 0, // 0 = no cap; a read-only request runs until the model has its answer
             write_call_budget: 100,
             prune_at_tokens: 180_000,
             cache_ttl_seconds: 300,

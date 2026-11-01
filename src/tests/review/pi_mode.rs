@@ -25,11 +25,11 @@ fn strs(v: &[&str]) -> Vec<String> {
 }
 
 #[test]
-fn pi_mode_gives_the_plain_tools_plus_a_step_list_and_keeps_the_read_call_cap() {
+fn pi_mode_gives_the_plain_tools_plus_a_step_list_and_leaves_reads_uncapped() {
     let dir = tempfile::tempdir().unwrap();
     let c = cfg(dir.path(), json!({}));
     assert_eq!(c.allowed_tools.unwrap(), strs(&["read_file", "write_file", "edit", "shell", "grep", "glob", "list_dir", "graph", "todos", "ask_user", "advisor", "subagent_codebase_investigator"]));
-    assert!(c.read_call_budget == 12 && !c.check_references && !c.auto_scout);
+    assert!(c.read_call_budget == 0 && !c.check_references && !c.auto_scout);
 }
 
 #[test]
