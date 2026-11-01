@@ -109,6 +109,8 @@ pub struct Agent {
     fix_run: bool,
     fix_brief: String,
     read_only: bool,
+    /// Orient was tried and neither model could read the request.
+    orient_down: bool,
     todos_reminded: String,
     pipelined: bool,
     repo_map: Option<String>,
@@ -234,6 +236,7 @@ impl Agent {
             fix_run: false,
             fix_brief: String::new(),
             read_only: false,
+            orient_down: false,
             todos_reminded: String::new(),
             pipelined: false,
             repo_map: None,
@@ -493,7 +496,7 @@ impl Agent {
         }
         self.tidy_if_cache_went_cold(&tx).await;
         let oriented = self.orient(message).await;
-        let wants = oriented.as_ref().map_or_else(|| wants_change(message), |o| o.intent == "change");
+        let wants = oriented.as_ref().map_or_else(|| self.orient_down || wants_change(message), |o| o.intent == "change"); // both models failed to read it: no read-only cap, the main model decides
         let difficulty: &str = oriented.as_ref().map_or_else(|| classify(message).0, |o| o.tier);
         if let Some(o) = &oriented {
             let w = o.hint();
@@ -1203,6 +1206,7 @@ impl Agent {
 
     /// What the request is, how hard, and where to look, read by the fast model next to a map of this repo.
     async fn orient(&mut self, message: &str) -> Option<Orientation> {
+        self.orient_down = false;
         let cfg = self.config.get();
         let role = if cfg.routing.contains_key("fast") { "fast" } else if cfg.routing.contains_key("summarize") { "summarize" } else { "" };
         if !(cfg.auto_orient && !role.is_empty() && cfg.model_role == "default" && !cfg.sub_agent && message.trim().chars().count() >= 20 && !message.starts_with('/')) {
@@ -1213,7 +1217,11 @@ impl Agent {
             self.repo_map = Some(tokio::task::spawn_blocking(move || repo_map(&cwd, &forbidden)).await.unwrap_or_default());
         }
         let t0 = Instant::now();
-        let found = orient(&self.session.client, role, message, self.repo_map.as_deref().unwrap_or("")).await;
+        let map = self.repo_map.clone().unwrap_or_default();
+        let mut found = orient(&self.session.client, role, message, &map).await;
+        if found.is_none() {
+            found = orient(&self.session.client, "default", message, &map).await; // the helper chain is down (bad key, quota): the main model can read a request too
+        }
         let mut f = json!({"ok": found.is_some(), "sec": (t0.elapsed().as_secs_f64() * 100.0).round() / 100.0});
         if let Some(o) = &found {
             f["intent"] = json!(o.intent);
@@ -1222,6 +1230,7 @@ impl Agent {
             f["queries"] = json!(o.queries);
         }
         self.session.tracer.emit("orient", f);
+        self.orient_down = found.is_none();
         found
     }
 

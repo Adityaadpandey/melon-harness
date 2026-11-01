@@ -1,6 +1,6 @@
 //! Understand a request before touching the repo: what kind of job it is, how hard, and where in THIS repo the answer
 //! probably lives. One small call to the fast model reads the request next to a compact map of the repo and answers in
-//! JSON. Every part is optional: when no fast model is configured, or the call fails, the agent falls back to regex rules.
+//! JSON. Every part is optional: when the helper model and the main model both fail, the agent just carries on uncapped.
 use crate::client::llm_client::LLMClient;
 use crate::client::response::StreamEvent;
 use crate::util::search::list_files;
@@ -115,9 +115,9 @@ pub fn parse(reply: &str) -> Option<Orientation> {
     Some(Orientation { intent, tier, touches: pick("touches", &["code", "docs", "config", "none"], "none"), where_: clean("where"), queries, note: d["note"].as_str().unwrap_or("").chars().take(200).collect() })
 }
 
-/// None when the call fails or the answer is not usable: the caller keeps its regex rules.
+/// None when the call fails or the answer is not usable.
 pub async fn orient(client: &Arc<LLMClient>, role: &str, request: &str, repo: &str) -> Option<Orientation> {
-    let prompt = PROMPT.replace("{request}", &request.chars().take(1500).collect::<String>()).replace("{repo}", repo);
+    let prompt = PROMPT.replace("{request}", &request.chars().take(6000).collect::<String>()).replace("{repo}", repo);
     let mut text = String::new();
     let mut s = client.chat_completion(vec![json!({"role": "user", "content": prompt})], None, false, role);
     while let Some(ev) = s.next().await {
