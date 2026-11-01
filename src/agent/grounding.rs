@@ -106,7 +106,7 @@ pub fn correction_prompt(problems: &[Problem]) -> String {
 
 fn edit_verbs() -> &'static Re {
     static R: OnceLock<Re> = OnceLock::new();
-    R.get_or_init(|| lit_i(r"\b(fix|add|implement|change|update|refactor|rename|write|create|remove|delete|replace|make|move|extract|split|convert|migrate|rewrite|patch|build|set up|wire|do the (job|work|task)|go ahead)\b"))
+    R.get_or_init(|| lit_i(r"\b(fix|add|implement|change|update|refactor|rename|write|create|remove|delete|replace|make|move|extract|split|convert|migrate|rewrite|patch|build|set up|wire)\b"))
 }
 fn readonly() -> &'static Re {
     static R: OnceLock<Re> = OnceLock::new();
@@ -125,39 +125,6 @@ pub fn wants_change(request: &str) -> bool {
         return false;
     }
     edit_verbs().is_match(request) && !readonly().is_match(request)
-}
-
-/// What the user actually typed: `@file` attachments are cut out. An attached prompt.yaml has words like "review" and
-/// "don't edit" in its own comments, and those must not decide what the request is.
-pub fn typed_part(message: &str) -> String {
-    let mut out = String::new();
-    let mut rest = message;
-    while let Some(i) = rest.find("<file path=\"") {
-        out.push_str(&rest[..i]);
-        match rest[i..].find("\n</file>") {
-            Some(j) => rest = &rest[i + j + "\n</file>".len()..],
-            None => return out,
-        }
-    }
-    out.push_str(rest);
-    out
-}
-
-/// An attached prompt.yaml whose `type:` is feature, bug, refactor or perf is a task to carry out, even when the
-/// typed words are only "do the job" or just the @mention.
-fn attached_spec_edits(message: &str) -> bool {
-    let Some(i) = message.find("<file path=\"prompt.yaml\">") else { return false };
-    let body = message[i..].split("\n</file>").next().unwrap_or("");
-    body.lines().any(|l| l.strip_prefix("type:").map_or(false, |v| matches!(v.split('#').next().unwrap_or("").trim(), "feature" | "bug" | "refactor" | "perf")))
-}
-
-/// `wants_change` for a full message: judged on the typed words, with a task spec attachment as the fallback.
-pub fn request_wants_change(message: &str) -> bool {
-    let typed = typed_part(message);
-    if wants_change(&typed) {
-        return true;
-    }
-    !reviewy().is_match(&typed) && !readonly().is_match(&typed) && attached_spec_edits(message)
 }
 
 /// A fenced block in a source language (not a command or output the user is meant to run or read).
