@@ -1,6 +1,6 @@
 //! Ported from tests/test_grounding.py.
 use crate::agent::events::AgentEvent;
-use crate::agent::grounding::{extract_refs, has_file_code, shows_second_thoughts, verify_references, wants_change};
+use crate::agent::grounding::{extract_refs, has_file_code, request_wants_change, shows_second_thoughts, typed_part, verify_references, wants_change};
 use crate::config::{ApprovalPolicy, Config};
 use crate::tests::fakes::*;
 use serde_json::json;
@@ -156,4 +156,16 @@ fn a_finding_that_runs_on_is_flagged_but_two_tight_lines_are_not() {
     let rambling = format!("MEDIUM a.ts:9 {}", "this changes how the value flows through the component and then the effect runs again after the render ".repeat(6));
     assert!(!shows_second_thoughts("review it", tight));
     assert!(shows_second_thoughts("review it", &rambling));
+}
+
+#[test]
+fn attached_prompt_yaml_does_not_decide_the_intent() {
+    // the template's own comments say "review", "don't edit" and "investigate"
+    let yaml = "<file path=\"prompt.yaml\">\n# review  just look at the changes and report, don't edit\ntype: feature  # investigate\nobjective: schedule not saved\n</file>";
+    assert_eq!(typed_part(&format!("@prompt.yaml\n\n{yaml}\nplease go")), "@prompt.yaml\n\n\nplease go");
+    assert!(request_wants_change(&format!("@prompt.yaml\n\n{yaml}")), "a feature spec is a task even with only the mention");
+    assert!(request_wants_change(&format!("i asked u to use that as a prompt and do the job pls\n\n{yaml}")));
+    let question = yaml.replace("type: feature", "type: question");
+    assert!(!request_wants_change(&format!("@prompt.yaml\n\n{question}")));
+    assert!(!request_wants_change(&format!("review @prompt.yaml\n\n{yaml}")), "typed words still win");
 }

@@ -3,7 +3,7 @@
 use crate::agent::brevity::{interim_line, HOLD_CHARS, LONG_ANSWER_WORDS};
 use crate::agent::challenge::{challenge_request, is_risky, render as render_objections};
 use crate::agent::events::AgentEvent;
-use crate::agent::grounding::{correction_prompt, has_file_code, shows_second_thoughts, verify_references, wants_change, REWRITE_PROMPT};
+use crate::agent::grounding::{correction_prompt, has_file_code, request_wants_change, shows_second_thoughts, typed_part, verify_references, REWRITE_PROMPT};
 use crate::agent::learn::{judge, Learned};
 use crate::agent::orient::{orient, repo_map, Orientation};
 use crate::agent::review::{merge_reviews, review_changes, ReviewResult};
@@ -361,6 +361,7 @@ impl Agent {
 
     pub async fn run(&mut self, message: &str, tx: Tx) {
         let cfg0 = self.config.get();
+        let typed = typed_part(message); // intent comes from what was typed, not from attached file bodies
         self.session.hook_system.trigger_before_agent(message).await;
         let root = pick_root(&cfg0.cwd, message, self.root_hint.as_deref(), &[]);
         if self.adopt_root(root) {
@@ -416,7 +417,7 @@ impl Agent {
         self.pipeline_answer.clear();
         self.fix_run = false;
         self.fix_brief.clear();
-        if !self.shown.is_empty() && !reviewy().is_match(message) && review_fix::asks_for_fix(message) {
+        if !self.shown.is_empty() && !reviewy().is_match(&typed) && review_fix::asks_for_fix(&typed) {
             // "fix them" after a review: those findings, with everything the review learned
             let picked = review_fix::chosen(message, &self.shown);
             if !picked.is_empty() {
@@ -426,11 +427,11 @@ impl Agent {
                 notice(&tx, format!("Fixing {} finding(s) from the last review: advisor first, then the fix, then an independent check", picked.len()));
             }
         }
-        let alone = reviewy().is_match(message) && one_agent().is_match(message);
+        let alone = reviewy().is_match(&typed) && one_agent().is_match(&typed);
         if alone {
             notice(&tx, "Reviewing with one agent, as asked: no parallel reviewers");
         }
-        if cfg.review_pipeline && cfg.model_role == "default" && reviewy().is_match(message) && !alone {
+        if cfg.review_pipeline && cfg.model_role == "default" && reviewy().is_match(&typed) && !alone {
             let mut results = String::new();
             let (ptx, mut prx) = tokio::sync::mpsc::unbounded_channel::<PipelineEvent>();
             {
@@ -453,7 +454,7 @@ impl Agent {
                 }
             }
             self.pipelined = !results.is_empty();
-            if !results.is_empty() && review_fix::review_and_fix(message) {
+            if !results.is_empty() && review_fix::review_and_fix(&typed) {
                 let picked = review_fix::chosen("", &self.shown);
                 if !picked.is_empty() {
                     self.fix_run = true;
@@ -478,7 +479,7 @@ impl Agent {
             notice(&tx, "Scout finished; starting from its findings");
             message_for_model.push_str(&format!("\n\n---\nScout report (a cheaper read-only agent already searched; start from it, do not repeat its searches, and confirm any line you rely on before editing):\n{scout}"));
         }
-        if cfg.auto_challenge && is_risky(message) {
+        if cfg.auto_challenge && is_risky(&typed) {
             notice(&tx, "Challenger is questioning this request first");
             let (objections, dropped, err) = challenge_request(&cfg, message).await;
             if !err.is_empty() {
@@ -493,8 +494,8 @@ impl Agent {
         }
         self.tidy_if_cache_went_cold(&tx).await;
         let oriented = self.orient(message).await;
-        let wants = oriented.as_ref().map_or_else(|| wants_change(message), |o| o.intent == "change");
-        let difficulty: &str = oriented.as_ref().map_or_else(|| classify(message).0, |o| o.tier);
+        let wants = oriented.as_ref().map_or_else(|| request_wants_change(message), |o| o.intent == "change");
+        let difficulty: &str = oriented.as_ref().map_or_else(|| classify(&typed).0, |o| o.tier);
         if let Some(o) = &oriented {
             let w = o.hint();
             if !w.is_empty() {
@@ -513,7 +514,7 @@ impl Agent {
         if !hint.is_empty() {
             message_for_model.push_str(&format!("\n\n[{hint}]"));
         }
-        self.broad = wants && is_broad(message);
+        self.broad = wants && is_broad(&typed);
         if self.broad {
             message_for_model.push_str(&format!("\n\n[{SWEEP}]"));
         }
@@ -537,7 +538,7 @@ impl Agent {
         self.allowance = std::mem::take(&mut self.extra_calls); // /more applies to this one request
         self.read_only = !wants;
         self.wants_change = wants;
-        self.is_review = reviewy().is_match(message);
+        self.is_review = reviewy().is_match(&typed);
         self.usage_base = self.spent(); // budget is per request
         self.review_sec = 0.0;
         self.tier = "default".into();
@@ -545,7 +546,7 @@ impl Agent {
         if cfg.auto_route && !cfg.model_pinned && cfg.model_role == "default" && (cfg.routing.contains_key("fast") || cfg.routing.contains_key("strong")) {
             let (tier, why) = match &oriented {
                 Some(o) => (o.tier, "read by the fast model".to_string()),
-                None => classify(message),
+                None => classify(&typed),
             };
             let ctx = self.session.context_manager.lock().unwrap().latest_usage.total_tokens;
             let kept = keep_cached_model(tier, ctx);
