@@ -125,8 +125,9 @@ pub fn interview(cwd: &Path, input: &mut dyn BufRead, out: &mut dyn Write) -> us
     let mut answered = 0;
     for q in &qs {
         let (prompt, dir) = match q {
-            Q::Side { dir, files, syms } => (format!("`{dir}/` ({files} files, {syms} symbols) looks like side material. Leave it out of the graph? [Y/n] "), dir),
-            Q::Unused { dir, files } => (format!("Nothing outside `{dir}/` imports it ({files} files). Dead code to leave out? (n = it's loaded by name, keep) [y/N] "), dir),
+            Q::Side { dir, files, syms } => (format!("`{dir}/` ({files} files, {syms} symbols) looks like examples or test data, not your real code. Hide it from the graph? [Y/n] "), dir),
+            Q::Unused { dir, files } => (format!("No other folder uses `{dir}/` ({files} files), so it may be unused. Hide it from the graph?
+  y = yes, it's dead   n = no, it's still used some other way (a plugin, a route, a config)   [y/N] "), dir),
             Q::Area { dir, files, syms } => (format!("What is `{dir}/` for? ({files} files, {syms} symbols; one line, Enter to skip) "), dir),
         };
         let _ = write!(out, "{prompt}");
