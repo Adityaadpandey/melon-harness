@@ -170,7 +170,42 @@ pub fn detect_checks(cwd: &Path, changed: &[String]) -> Vec<(String, String)> {
     }
     let js: Vec<String> = live.iter().filter(|f| Path::new(f.as_str()).extension().map_or(false, |e| JS_SUFFIX.contains(&e.to_string_lossy().as_ref()))).map(|f| f.to_string()).collect();
     checks.extend(eslint(&cwd, &js));
+    checks.extend(config_checks(&cwd, &live));
     checks
+}
+
+fn on_path(tool: &str) -> bool {
+    std::env::var_os("PATH").map_or(false, |p| std::env::split_paths(&p).any(|d| d.join(tool).is_file()))
+}
+
+/// Infra config is where "looks fine" ships broken (an unsupported flag, a bad rule file). Use the real validator when it
+/// is installed: promtool for Prometheus rules, amtool for Alertmanager, `docker compose config` for stack files, and a
+/// plain YAML parse (skipped when PyYAML is missing) for everything else.
+fn config_checks(cwd: &Path, files: &[&String]) -> Vec<(String, String)> {
+    const YAML_PARSE: &str = "import sys\ntry:\n    import yaml\nexcept ImportError:\n    sys.exit(0)\nfor f in sys.argv[1:]:\n    list(yaml.safe_load_all(open(f)))";
+    let mut out = vec![];
+    let mut plain: Vec<String> = vec![];
+    for f in files.iter().filter(|f| f.ends_with(".yml") || f.ends_with(".yaml")) {
+        let name = Path::new(f.as_str()).file_name().map(|n| n.to_string_lossy().to_lowercase()).unwrap_or_default();
+        let body = std::fs::read_to_string(cwd.join(f.as_str())).unwrap_or_default();
+        let special = if name.contains("compose") && on_path("docker") {
+            Some(format!("docker compose -f {} config -q", quote(f)))
+        } else if name.contains("alertmanager") && on_path("amtool") {
+            Some(format!("amtool check-config {}", quote(f)))
+        } else if body.contains("\ngroups:") || body.starts_with("groups:") {
+            on_path("promtool").then(|| format!("promtool check rules {}", quote(f)))
+        } else {
+            None
+        };
+        match special {
+            Some(cmd) => out.push((cmd, ".".to_string())),
+            None => plain.push(quote(f)),
+        }
+    }
+    if !plain.is_empty() && on_path("python3") {
+        out.push((format!("python3 -c {} {}", quote(YAML_PARSE), plain.join(" ")), ".".to_string()));
+    }
+    out
 }
 
 /// Specs (under the rule's cwd, matching tests_glob) that import one of the changed files.

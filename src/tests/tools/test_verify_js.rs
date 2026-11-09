@@ -46,3 +46,17 @@ fn nothing_for_files_with_no_cheap_check() {
     touch(p, "web/a.ts", "x"); // eslint not installed
     assert!(detect_checks(p, &s(&["Sources/main.swift", "web/a.ts", "gone.py"])).is_empty());
 }
+
+#[test]
+fn yaml_config_gets_parsed_so_a_broken_stack_file_is_not_called_done() {
+    // the deploy files an agent hand-edits (alert rules, compose) used to get no check at all
+    let d = tempfile::tempdir().unwrap();
+    let p = d.path();
+    touch(p, "monitoring/rules.yml", "a: 1\n");
+    touch(p, "README.md", "x");
+    let checks = detect_checks(p, &s(&["monitoring/rules.yml", "README.md"]));
+    if std::env::var_os("PATH").map_or(false, |v| std::env::split_paths(&v).any(|d| d.join("python3").is_file())) {
+        assert_eq!(checks.len(), 1);
+        assert!(checks[0].0.starts_with("python3 -c ") && checks[0].0.ends_with("monitoring/rules.yml"));
+    }
+}
