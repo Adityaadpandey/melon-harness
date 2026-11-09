@@ -708,7 +708,7 @@ impl Agent {
             let checks = if cfg.verify_on_demand && !self.fix_run { vec![] } else { select_checks(&cfg, &task.changed_files) };
             // outside git we can't tell what changed, so only verify when asked to
             if task.changed_files.is_empty() && before.is_some() {
-                if !nudged && final_response.is_some() && self.wants_change && (has_file_code(final_response.as_deref().unwrap_or("")) || self.touches == "code") {
+                if !nudged && final_response.is_some() && self.wants_change && !asks_user(final_response.as_deref().unwrap_or("")) && (has_file_code(final_response.as_deref().unwrap_or("")) || self.touches == "code") {
                     // models sometimes paste the solution instead of writing it
                     nudged = true;
                     notice(&tx, "Reply contained code but no file changed; asking the model to apply it");
@@ -1477,5 +1477,22 @@ mod tests {
         assert!(!text_call().is_match("plain answer"));
         assert!(overflow().is_match("This model's maximum context length is 8192 tokens"));
         assert!(not_overflow().is_match("rate limit: too many tokens per minute"));
+    }
+}
+
+/// True when the reply ends by asking the user something, e.g. "Which scope do you want?".
+/// Such a turn is waiting on the user, so "no file changed" is expected, not a miss.
+fn asks_user(reply: &str) -> bool {
+    let tail: String = reply.trim_end().chars().rev().take(400).collect::<Vec<_>>().into_iter().rev().collect();
+    tail.contains('?')
+}
+
+#[cfg(test)]
+mod asks_user_tests {
+    use super::asks_user;
+    #[test]
+    fn question_tail_counts() {
+        assert!(asks_user("Found the schema.\n\nWhich scope do you want first?"));
+        assert!(!asks_user("Here is the code:\n```rust\nfn main() {}\n```"));
     }
 }
