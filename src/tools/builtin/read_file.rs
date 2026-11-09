@@ -207,6 +207,9 @@ impl Tool for ReadFileTool {
             let src = std::fs::read(&path).map(|b| String::from_utf8_lossy(&b).to_string()).unwrap_or_default();
             let name = path.file_name().map(|n| n.to_string_lossy().to_string()).unwrap_or_default();
             let syms: Vec<_> = outline(&name, &src).into_iter().filter(|x| x.name == sym).collect();
+            if outline(&name, &src).is_empty() {
+                return ToolResult::error(format!("{name} has no symbol support, so `symbol` cannot work on it. Read it with offset/limit instead."));
+            }
             if syms.is_empty() {
                 return ToolResult::error(format!("No symbol '{sym}' in {name}. Call outline to list them."));
             }
