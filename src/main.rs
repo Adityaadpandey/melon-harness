@@ -186,6 +186,11 @@ async fn run(args: Args) -> i32 {
     }
 
     let cwd = config.cwd.clone();
+    if tty && !scripted {
+        if let Some(f) = config::models_file::write_if_new(&config) {
+            println!("{}", paint(&format!("◆ wrote {}: which model does which job (all commented out; edit to change)", f.strip_prefix(&cwd).unwrap_or(&f).display()), MUTED));
+        }
+    }
     let mut cli = Cli::new(config);
     let mut resume_id = args.resume_id.clone();
     if args.continue_last && resume_id.is_none() {
