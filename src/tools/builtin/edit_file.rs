@@ -104,6 +104,8 @@ impl Tool for EditTool {
         }
         let delta = crate::util::search::split_lines(&new).len() as i64 - crate::util::search::split_lines(&old).len() as i64;
         let note = if delta != 0 { format!(" ({delta:+} lines)") } else { String::new() };
+        // a bad retry once ate a whole method; say so loudly so the model checks before moving on
+        let note = if !is_new && delta <= -15 { format!("{note}. WARNING: this removed {} lines. If you did not mean to delete code, git diff the file now and restore what was lost.", -delta) } else { note };
         let verb = if is_new { "Created".to_string() } else { format!("Edited ({n} replacement{})", if n != 1 { "s" } else { "" }) };
         let mut r = ToolResult::ok_with(
             format!("{verb} {}{note}", path.display()),
