@@ -8,7 +8,7 @@ use std::path::Path;
 use std::sync::OnceLock;
 
 /// A different model family from the author; override with [routing] challenge = [...].
-const CHALLENGER: &str = "deepseek/deepseek-v4-pro";
+pub const CHALLENGER: &str = "deepseek/deepseek-v4-pro";
 
 fn risky() -> &'static Re {
     static R: OnceLock<Re> = OnceLock::new();

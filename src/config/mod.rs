@@ -1,5 +1,6 @@
 //! Configuration: a typed `Config` filled from `config.toml` (user, then project), the profile and the CLI.
 pub mod loader;
+pub mod models_file;
 pub mod trust;
 
 use serde::{Deserialize, Serialize};
