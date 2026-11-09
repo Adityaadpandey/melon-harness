@@ -17,7 +17,7 @@ impl Default for LoopDetector {
 }
 
 impl LoopDetector {
-    const CHURN_EDITS: usize = 8;
+    const CHURN_EDITS: usize = 5;
 
     /// Said once per file: lots of small edits to one place usually means the approach, not the next edit, is the problem.
     pub fn take_churn(&mut self) -> Option<String> {
@@ -99,7 +99,7 @@ mod tests {
         for i in 0..12 {
             a.insert("new_string".into(), format!("v{i}").into());
             d.record_tool_call("edit", &a);
-            if i == 7 {
+            if i == 4 {
                 assert!(d.take_churn().unwrap().contains("x.rs"));
             }
         }

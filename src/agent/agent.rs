@@ -1170,7 +1170,7 @@ impl Agent {
 
             let churn = self.session.loop_detector.lock().unwrap().take_churn();
             if let Some(c) = churn {
-                self.add_user(&format!("{c}. Stop and check: run the tests or re-read the file to see where it stands. If the edits are not converging, step back and try a different approach, or tell the user what is blocking you."));
+                self.add_user(&format!("{c}. Stop and check: re-read the file and run its check to see where it stands. If the edits are not converging, write the design in two lines (what this file should end up doing, and why the earlier edits missed it) before the next edit, or tell the user what is blocking you."));
             }
             let looped = self.session.loop_detector.lock().unwrap().check_for_loop();
             if let Some(err) = looped {
