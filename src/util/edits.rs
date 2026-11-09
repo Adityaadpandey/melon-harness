@@ -114,7 +114,7 @@ pub fn plan_edits(content: &str, edits: &[(String, String)], replace_all: bool) 
     let eol = if content.contains("\r\n") { "\r\n" } else { "\n" };
     let bom = if content.starts_with('\u{feff}') { "\u{feff}" } else { "" };
     let text = content.strip_prefix('\u{feff}').unwrap_or(content).replace("\r\n", "\n");
-    let mut spans: Vec<(usize, usize, String)> = vec![];
+    let mut spans: Vec<(usize, usize, String, usize)> = vec![];
 
     for (n, (old, new)) in edits.iter().enumerate() {
         let label = if edits.len() > 1 { format!("edit {}: ", n + 1) } else { String::new() };
@@ -156,18 +156,23 @@ pub fn plan_edits(content: &str, edits: &[(String, String)], replace_all: bool) 
         }
         let take = if replace_all { hits.len() } else { 1 };
         for (s, e) in hits.into_iter().take(take) {
-            spans.push((s, e, new.clone()));
+            spans.push((s, e, new.clone(), n + 1));
         }
     }
 
     spans.sort_by_key(|s| (s.0, s.1));
     for w in spans.windows(2) {
         if w[1].0 < w[0].1 {
-            return Err("Edits overlap. Merge changes that touch the same or adjacent lines into one edit.".into());
+            let (a, b) = (&w[0], &w[1]);
+            return Err(if a.3 == b.3 {
+                format!("old_string matches overlapping text at line {}. Use a longer, more specific old_string.", line_of(&text, b.0))
+            } else {
+                format!("edit {} and edit {} overlap around line {}. Merge them into one edit that covers both.", a.3, b.3, line_of(&text, b.0))
+            });
         }
     }
     let mut out = text.clone();
-    for (s, e, new) in spans.iter().rev() {
+    for (s, e, new, _) in spans.iter().rev() {
         out.replace_range(*s..*e, new);
     }
     if out == text {
@@ -200,5 +205,12 @@ mod tests {
         assert_eq!(plan_edits("a\r\nb\r\n", &p("b", "c"), false).unwrap().0, "a\r\nc\r\n");
         assert_eq!(plan_edits("x = 1\ny = 2\n", &p("1|x = 1\n2|y = 2", "x = 3\ny = 4"), false).unwrap().0, "x = 3\ny = 4\n");
         assert_eq!(plan_edits("say “hi”  \n", &p("say \"hi\"", "ok"), false).unwrap().0, "ok\n");
+    }
+
+    #[test]
+    fn overlap_names_the_edits() {
+        let two = vec![("ab".to_string(), "x".to_string()), ("bc".to_string(), "y".to_string())];
+        let e = plan_edits("abc\n", &two, false).unwrap_err();
+        assert!(e.contains("edit 1 and edit 2") && e.contains("line 1"), "{e}");
     }
 }
