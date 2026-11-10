@@ -72,7 +72,12 @@ pub fn classify(status: Option<u16>, message: &str) -> ProviderError {
             e.fallback = true;
             return e;
         }
-        Some(401) | Some(403) => return e,
+        // A rejected key is this model's problem, not the request's: let the next model in the chain answer. One dead
+        // helper key once failed 78 calls in a week (every sub-agent, summary and review) because each call tried it again.
+        Some(401) | Some(403) => {
+            e.fallback = true;
+            return e;
+        }
         _ => {}
     }
     if status == Some(404) || m.contains("no available providers") || m.contains("unsupported_model") {
@@ -110,7 +115,7 @@ mod tests {
         assert!(classify(Some(402), "pay").quota);
         assert!(classify(Some(400), "bad max_tokens").drop_max_tokens);
         let e = classify(Some(401), "no");
-        assert!(!e.retry && !e.fallback);
+        assert!(!e.retry && e.fallback);
         assert!(classify(None, "x").retry);
     }
 }

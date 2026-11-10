@@ -258,7 +258,7 @@ fn error_classification() {
         (Some(403), "MODEL_NOT_IN_PLAN: x", false, true),
         (Some(400), "No available providers match", false, true),
         (Some(404), "model not found", false, true),
-        (Some(401), "bad key", false, false),
+        (Some(401), "bad key", false, true), // not retried, but the next model in the chain gets the request
         (Some(400), "invalid tool schema", false, false),
         (Some(400), "Model is overloaded, try again later", true, true), // odd status, transient text
         (Some(422), "upstream timed out", true, true),
@@ -391,6 +391,19 @@ async fn not_in_plan_falls_back_with_notice_and_cools_model() {
     // next request skips m1 up front instead of paying for another 403
     let (usable, _) = Router::new(c.config.clone()).candidates(&c.registry, "default", false, 0);
     assert_eq!(usable, ["m2"]);
+}
+
+/// A helper model whose key is rejected: the next model answers, and the dead one is not asked again on the next call.
+#[tokio::test]
+async fn a_rejected_key_falls_back_once_and_the_model_is_skipped_afterwards() {
+    let (c, fake) = make_client(
+        vec![("m1", vec![Step::Fail(classify(Some(401), "Invalid 'Authorization' header or token."))]), ("m2", vec![Step::Say("from m2"), Step::Say("again")])],
+        &[("default", &["m2"])],
+    );
+    let evs = collect(&c).await;
+    assert!(notices(&evs).iter().any(|n| n.contains("Falling back from m1 to m2") && n.contains("Authorization")), "{:?}", notices(&evs));
+    collect(&c).await;
+    assert_eq!(fake.models(), ["m1", "m2", "m2"], "the second request goes straight to the model that works");
 }
 
 #[tokio::test]

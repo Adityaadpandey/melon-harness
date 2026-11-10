@@ -394,7 +394,7 @@ impl LLMClient {
                     continue;
                 }
                 if e.fallback {
-                    this.registry.mark_down(&model, if matches!(e.status, Some(403) | Some(404)) { 3600.0 } else { 60.0 });
+                    this.registry.mark_down(&model, if matches!(e.status, Some(401) | Some(403) | Some(404)) { 3600.0 } else { 60.0 }); // a bad key or a missing model stays bad: skip it for the hour
                 }
                 yield Err((e, emitted));
                 return;
