@@ -733,6 +733,9 @@ flowchart TB
 
 - **Read-only sub-agents** called in the same turn run concurrently under a shared cap (`max_parallel_agents`, default 4) with live
   progress. A sub-agent's report has its paths checked on disk; a missing one is flagged at the top with the real file of that name.
+- **Background and follow-up.** A sub-agent called with `background: true` returns at once; its report is handed to the model
+  when it finishes, and a turn does not end while one is still out. Every finished sub-agent returns an id: calling the tool
+  again with `resume` asks that same agent a follow-up with everything it already read (the last 6 are kept).
 - **`parallel_tasks`** (guarded mode) fans write-capable workers out into separate **git worktrees**, merges them in dependency
   order into `melon/<run>/integration`, detects overlap, re-runs real conflicts on top of the merged state, and flags them for review
   instead of resolving them by guessing. `--parallel` lets the model plan the split; `--graph tasks.json` is explicit.
