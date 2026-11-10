@@ -26,5 +26,6 @@ pub mod skills;
 pub mod task;
 pub mod verify;
 pub mod review_claude;
+pub mod ledger;
 pub mod review_memory;
 pub mod review_repro;
