@@ -232,6 +232,22 @@ async fn go(_path: &Path, text: &str, cwd: &Path) -> Vec<String> {
     out.lines().filter_map(|l| re.captures(l).and_then(|c| c[1].clone())).collect()
 }
 
+/// Syntax only, through rustfmt: an unclosed brace or a stray token, in milliseconds. Type errors need `cargo check`,
+/// which takes far longer than an edit should wait, so those stay with the project's own check.
+async fn rust(_path: &Path, text: &str, cwd: &Path) -> Vec<String> {
+    if which::which("rustfmt").is_err() {
+        return vec![];
+    }
+    let Some((code, out)) = run(&["rustfmt", "--edition", "2021", "--emit", "stdout"], text, cwd).await else { return vec![] };
+    if code.unwrap_or(0) == 0 {
+        return vec![];
+    }
+    // "error: mismatched closing delimiter: `}`" then " --> <stdin>:3:8" on the next line
+    let at = lit(r"^\s*--> <stdin>:(\d+:\d+)");
+    let lines: Vec<&str> = out.lines().collect();
+    lines.windows(2).filter_map(|w| Some(format!("{} {}", at.captures(w[1]).and_then(|c| c[1].clone())?, w[0].strip_prefix("error: ")?))).collect()
+}
+
 fn data(path: &Path, text: &str) -> Vec<String> {
     if path.extension().map_or(false, |e| e == "json") {
         match serde_json::from_str::<Value>(text) {
@@ -253,6 +269,7 @@ pub async fn problems(path: &Path, text: &str, cwd: &Path) -> Vec<String> {
         s if TS_SUFFIX.contains(&s) => typescript(path, text, cwd).await,
         "js" | "mjs" | "cjs" if which::which("node").is_ok() => node(path, text, cwd).await,
         "go" => go(path, text, cwd).await,
+        "rs" => rust(path, text, cwd).await,
         "json" | "toml" => data(path, text),
         _ => vec![],
     }
@@ -284,4 +301,19 @@ pub fn render(rel: &str, found: &[String]) -> String {
 #[allow(dead_code)]
 fn _silence() {
     let _ = lit_i("x");
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    #[tokio::test]
+    async fn a_broken_rust_edit_is_reported_and_a_sound_one_is_quiet() {
+        if which::which("rustfmt").is_err() {
+            return;
+        }
+        let dir = std::env::temp_dir();
+        let found = new_problems(Path::new("a.rs"), Some("fn main() {}\n"), "fn main() {\n    foo(\n}\n", &dir).await;
+        assert!(found.iter().any(|p| p.starts_with("2:8 mismatched closing delimiter")), "{found:?}");
+        assert!(new_problems(Path::new("a.rs"), None, "fn main() { let x = 1; }\n", &dir).await.is_empty());
+    }
 }
