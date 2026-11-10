@@ -140,7 +140,7 @@ async fn live_graph_answers_without_any_snapshot() {
     let r = ask(p, json!({"action": "find", "name": "pars"})).await;
     assert!(r.output.contains("parse") && r.output.contains("lib.py:1-2"), "{}", r.output);
     let r = ask(p, json!({"action": "callers", "name": "parse"})).await;
-    assert!(r.output.contains("1 call site") && r.output.contains("app.py:4  in main"), "{}", r.output);
+    assert!(r.output.contains("used in 1 place") && r.output.contains("app.py:4  in main"), "{}", r.output);
     let r = ask(p, json!({"action": "callees", "name": "main"})).await;
     assert!(r.output.contains("parse") && r.output.contains("lib.py:1"), "{}", r.output);
     let r = ask(p, json!({"action": "impact", "name": "parse"})).await;

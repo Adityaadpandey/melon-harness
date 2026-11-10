@@ -39,7 +39,9 @@ impl GraphTool {
         }
         let mut defs: Vec<(String, symgraph::Def)> = sg.find(last, 200).into_iter().filter(|(_, d)| d.name == last).collect();
         if let Some(p) = parent {
-            let scoped: Vec<_> = defs.iter().filter(|(_, d)| d.parent.as_deref() == Some(p) || d.name == p).cloned().collect();
+            // Router.handle -> the handle in Router; symgraph::load -> the load in symgraph.rs
+            let stem = |f: &str| f.rsplit('/').next().unwrap_or("").rsplit_once('.').map_or(String::new(), |x| x.0.to_string());
+            let scoped: Vec<_> = defs.iter().filter(|(f, d)| d.parent.as_deref() == Some(p) || d.name == p || stem(f) == p).cloned().collect();
             if !scoped.is_empty() {
                 defs = scoped;
             }
@@ -61,7 +63,7 @@ impl GraphTool {
                 "callers" => {
                     let rows = sg.callers(file, &d.name);
                     let body = rows.iter().take(LIMIT * 2).map(|r| format!("  {}:{}{}", r.file, r.line, r.in_def.as_ref().map_or(String::new(), |f| format!("  in {f}")))).collect::<Vec<_>>().join("\n");
-                    out.push(format!("{head}\n{} call site(s):\n{body}", rows.len()));
+                    out.push(format!("{head}\nused in {} place(s) (calls, type mentions, JSX, passed as a callback):\n{body}", rows.len()));
                 }
                 "callees" => {
                     let rows = sg.callees(file, &d.name);

@@ -33,12 +33,64 @@ pub struct Call {
     pub from: Option<usize>,
     pub name: String,
     pub line: usize,
+    /// What the name was written after, which is how a call is told apart from its namesakes:
+    /// `symgraph::load()` -> "symgraph", `Config::new()` -> "Config", `cfg.load()` -> ".cfg", `a.b().load()` -> ".",
+    /// plain `load()` or a type mentioned by name -> None.
+    #[serde(default)]
+    pub qual: Option<String>,
 }
 
 #[derive(Default, Debug, Serialize, Deserialize)]
 pub struct FileSyms {
     pub defs: Vec<Def>,
     pub calls: Vec<Call>,
+    /// Rust `use` lines, name -> the module it came from: `use crate::util::importgraph::load;` -> load: importgraph.
+    /// A later plain `load()` in that file then means importgraph's, not every `load` in the repo.
+    #[serde(default)]
+    pub uses: HashMap<String, String>,
+}
+
+/// Method names the standard library answers for almost every value. `x.len()` on an unknown receiver says nothing about
+/// a `len` this repo defines, so no link is claimed. ponytail: a fixed list; real receiver types would need a type checker.
+const EVERYWHERE: &[&str] = &[
+    "len", "is_empty", "push", "pop", "insert", "remove", "get", "set", "clone", "iter", "map", "filter", "find", "contains", "extend", "join", "next", "take", "clear", "first", "last", "keys", "values", "sort",
+    "to_string", "into", "from", "default", "fmt", "eq", "cmp", "hash", "as_str", "parse", "write", "read", "flush", "lock", "send", "recv", "trim", "split", "replace", "starts_with", "ends_with", "append", "unwrap",
+];
+
+/// Names a Rust `use` brings in, each with the last module on its path: `use a::b::{c, d::e, f as g};` -> c: b, e: d, g: b.
+fn rust_uses(n: Node, src: &str, module: &str, out: &mut HashMap<String, String>) {
+    let leaf = |t: &str| t.rsplit("::").next().unwrap_or(t).to_string();
+    match n.kind() {
+        "identifier" | "type_identifier" if !module.is_empty() => {
+            out.insert(text(n, src).to_string(), module.to_string());
+        }
+        "scoped_identifier" => {
+            if let (Some(p), Some(name)) = (n.child_by_field_name("path"), n.child_by_field_name("name")) {
+                out.insert(text(name, src).to_string(), leaf(text(p, src)));
+            }
+        }
+        "use_as_clause" => {
+            if let (Some(p), Some(alias)) = (n.child_by_field_name("path"), n.child_by_field_name("alias")) {
+                let from = if p.kind() == "scoped_identifier" { p.child_by_field_name("path").map_or(module.to_string(), |x| leaf(text(x, src))) } else { module.to_string() };
+                out.insert(text(alias, src).to_string(), from);
+            }
+        }
+        "scoped_use_list" => {
+            let m = n.child_by_field_name("path").map_or(module.to_string(), |p| leaf(text(p, src)));
+            if let Some(list) = n.child_by_field_name("list") {
+                let mut c = list.walk();
+                for child in list.children(&mut c) {
+                    rust_uses(child, src, &m, out);
+                }
+            }
+        }
+        _ => {
+            let mut c = n.walk();
+            for child in n.children(&mut c) {
+                rust_uses(child, src, module, out);
+            }
+        }
+    }
 }
 
 const KINDS: &[&str] = &["function", "method", "class", "interface", "type", "enum", "struct", "trait", "mod", "impl"];
@@ -111,30 +163,51 @@ fn def_of(n: Node, src: &str) -> Option<(String, &'static str)> {
     (!name.is_empty()).then(|| (name.to_string(), kind))
 }
 
-/// `a.b.c(x)` -> "c", `Foo::new(x)` -> "new", `run(x)` -> "run".
-fn callee(n: Node, src: &str) -> Option<String> {
-    let field = match n.kind() {
-        "identifier" | "property_identifier" | "field_identifier" | "type_identifier" => return Some(text(n, src).to_string()),
-        "member_expression" => "property",
-        "attribute" => "attribute",
-        "field_expression" | "selector_expression" => "field",
-        "scoped_identifier" => "name",
-        "generic_function" => "function",
+/// The called name and what it was written after: `a.b.c(x)` -> ("c", "."), `cfg.load()` -> ("load", ".cfg"),
+/// `Foo::new(x)` -> ("new", "Foo"), `run(x)` -> ("run", None).
+fn callee(n: Node, src: &str) -> Option<(String, Option<String>)> {
+    let (field, on) = match n.kind() {
+        "identifier" | "property_identifier" | "field_identifier" | "type_identifier" => return Some((text(n, src).to_string(), None)),
+        "member_expression" => ("property", "object"),
+        "attribute" => ("attribute", "object"),
+        "field_expression" => ("field", "value"),
+        "selector_expression" => ("field", "operand"),
+        "scoped_identifier" => ("name", "path"),
+        "generic_function" => return callee(n.child_by_field_name("function")?, src),
         _ => return None,
     };
-    callee(n.child_by_field_name(field)?, src)
+    let (name, _) = callee(n.child_by_field_name(field)?, src)?;
+    let owner = n.child_by_field_name(on);
+    let qual = if n.kind() == "scoped_identifier" {
+        // crate::util::symgraph::load -> symgraph
+        owner.map(|o| text(o, src).rsplit("::").next().unwrap_or("").split('<').next().unwrap_or("").to_string())
+    } else {
+        // a plain receiver keeps its name (self, this, a Go package); anything longer is just "some value"
+        Some(match owner {
+            Some(o) if matches!(o.kind(), "identifier" | "self" | "this") => format!(".{}", text(o, src)),
+            _ => ".".to_string(),
+        })
+    };
+    Some((name, qual.filter(|q| !q.is_empty())))
 }
 
-fn walk(n: Node, src: &str, cur: Option<usize>, parent: &Option<String>, out: &mut FileSyms, depth: usize) {
+/// `refs` is on for JS/TS/Python, where a function handed over by name (`router.get("/x", handler)`, `onClick={save}`)
+/// is how most of them get run, so it counts as a use.
+fn walk(n: Node, src: &str, cur: Option<usize>, parent: &Option<String>, out: &mut FileSyms, depth: usize, refs: bool) {
     if depth > 600 {
         return; // pathological nesting (minified bundles); the stack matters more than the last 0.1%
+    }
+    if n.kind() == "use_declaration" {
+        return rust_uses(n, src, "", &mut out.uses);
     }
     let (mut cur, mut parent_here) = (cur, parent.clone());
     if let Some((name, mut kind)) = def_of(n, src) {
         if kind == "function" && parent.is_some() {
             kind = "method";
         }
-        out.defs.push(Def { name: name.clone(), kind, line: n.start_position().row + 1, end: n.end_position().row + 1, parent: parent.clone() });
+        // Go writes the owner in front: func (r *Router) Handle() -> parent Router
+        let owner = n.child_by_field_name("receiver").and_then(|r| text(r, src).split(|c: char| !(c.is_alphanumeric() || c == '_')).filter(|w| !w.is_empty()).last().map(String::from));
+        out.defs.push(Def { name: name.clone(), kind, line: n.start_position().row + 1, end: n.end_position().row + 1, parent: owner.or_else(|| parent.clone()) });
         cur = Some(out.defs.len() - 1);
         if matches!(kind, "class" | "impl" | "trait" | "interface" | "mod") {
             parent_here = Some(name);
@@ -145,12 +218,31 @@ fn walk(n: Node, src: &str, cur: Option<usize>, parent: &Option<String>, out: &m
         "new_expression" => n.child_by_field_name("constructor"),
         _ => None,
     };
-    if let Some(name) = target.and_then(|t| callee(t, src)) {
-        out.calls.push(Call { from: cur, name, line: n.start_position().row + 1 });
+    let line = n.start_position().row + 1;
+    if let Some((name, qual)) = target.and_then(|t| callee(t, src)) {
+        // Config::new() is also a use of Config
+        if let Some(ty) = qual.as_ref().filter(|q| q.starts_with(char::is_uppercase) && q.as_str() != "Self") {
+            out.calls.push(Call { from: cur, name: ty.clone(), line, qual: None });
+        }
+        out.calls.push(Call { from: cur, name, line, qual });
+    } else {
+        let up = n.parent();
+        let named_here = |field: &str| up.and_then(|p| p.child_by_field_name(field)).map_or(false, |x| x.id() == n.id());
+        let used = match n.kind() {
+            // <SiteChrome> renders it, which is the only way a component is ever "called"
+            "jsx_opening_element" | "jsx_self_closing_element" => n.child_by_field_name("name").and_then(|t| callee(t, src)).map(|(name, _)| name).filter(|name| name.starts_with(char::is_uppercase)),
+            // a type written anywhere but its own definition: fn f(c: Config), Config { .. }, x as Config
+            "type_identifier" if !named_here("name") && !(named_here("type") && up.map_or(false, |p| p.kind() == "impl_item")) => Some(text(n, src).to_string()),
+            "identifier" if refs && up.map_or(false, |p| matches!(p.kind(), "arguments" | "argument_list" | "jsx_expression")) => Some(text(n, src).to_string()),
+            _ => None,
+        };
+        if let Some(name) = used {
+            out.calls.push(Call { from: cur, name, line, qual: None });
+        }
     }
     let mut c = n.walk();
     for child in n.children(&mut c) {
-        walk(child, src, cur, &parent_here, out, depth + 1);
+        walk(child, src, cur, &parent_here, out, depth + 1, refs);
     }
 }
 
@@ -160,7 +252,7 @@ pub fn extract(path: &str, src: &str) -> Option<FileSyms> {
     p.set_language(&language(&ext)?).ok()?;
     let tree = p.parse(src, None)?;
     let mut out = FileSyms::default();
-    walk(tree.root_node(), src, None, &None, &mut out, 0);
+    walk(tree.root_node(), src, None, &None, &mut out, 0, !matches!(ext.as_str(), "rs" | "go"));
     Some(out)
 }
 
@@ -205,8 +297,55 @@ impl SymGraph {
         }
         // Imports are only tracked for py/js/ts. For the rest, any file may mean it.
         match self.imports.out.get(from_file) {
-            Some(out) if self.imports.out.contains_key(def_file) => out.contains(def_file),
+            // directly, or through a barrel: import { x } from "./lib" where lib/index.ts re-exports from lib/x.ts
+            Some(out) if self.imports.out.contains_key(def_file) => {
+                let barrel = |m: &String| m.rsplit('/').next().map_or(false, |n| n.starts_with("index.") || n == "__init__.py");
+                out.contains(def_file) || out.iter().any(|m| barrel(m) && self.imports.out.get(m).map_or(false, |o| o.contains(def_file)))
+            }
             _ => true,
+        }
+    }
+
+    /// Does this call mean that definition? With tracked imports (py/js/ts) the import decides. Rust and Go have no
+    /// import graph here, so the way the call is written decides instead:
+    ///   symgraph::load()  only the `load` in symgraph.rs (or symgraph/mod.rs), or a method of a type named symgraph
+    ///   Config::new()     only the `new` inside impl Config
+    ///   self.save()       a method in this file if there is one
+    ///   load()            a free function, the one in this file when this file has one
+    ///   x.load()          some method; claimed only when few methods share the name, else it would be a guess
+    fn means(&self, from_file: &str, call: &Call, def_file: &str, def: &Def) -> bool {
+        if !self.reachable(from_file, def_file) {
+            return false;
+        }
+        if self.imports.out.contains_key(from_file) && self.imports.out.contains_key(def_file) {
+            return true;
+        }
+        let local = |method: bool| self.files.get(from_file).map_or(false, |s| s.defs.iter().any(|d| d.name == call.name && d.parent.is_some() == method && !matches!(d.kind, "impl" | "mod")));
+        let home = |q: &str| {
+            let mut parts = def_file.rsplit('/');
+            let stem = parts.next().unwrap_or("").rsplit_once('.').map_or("", |x| x.0);
+            stem == q || (parts.next() == Some(q) && (matches!(stem, "mod" | "lib" | "main") || def_file.ends_with(".go")))
+        };
+        let fits = |q: &str, d: &Def, f: &str| -> bool {
+            let mut parts = f.rsplit('/');
+            let stem = parts.next().unwrap_or("").rsplit_once('.').map_or("", |x| x.0);
+            d.parent.as_deref() == Some(q) || (d.parent.is_none() && (stem == q || (parts.next() == Some(q) && matches!(stem, "mod" | "lib" | "main"))))
+        };
+        // a plain name the file brought in with `use`: follow the use, unless it points at a re-export we can't see through
+        let imported = self.files.get(from_file).and_then(|s| s.uses.get(&call.name)).filter(|m| call.qual.is_none() && self.by_name.get(&call.name).into_iter().flatten().any(|(f, i)| fits(m, &self.files[f].defs[*i], f)));
+        if let Some(m) = imported {
+            return fits(m, def, def_file);
+        }
+        match call.qual.as_deref() {
+            None => def.parent.is_none() && (from_file == def_file || !local(false)),
+            Some("Self" | ".self" | ".this") => def.parent.is_some() && (from_file == def_file || !local(true)),
+            Some(q) if q.starts_with('.') => {
+                let pkg = q.len() > 1 && home(&q[1..]);
+                let methods = self.by_name.get(&call.name).into_iter().flatten().filter(|(f, i)| self.files[f].defs[*i].parent.is_some()).count();
+                pkg || (def.parent.is_some() && methods <= 3 && !EVERYWHERE.contains(&call.name.as_str()))
+            }
+            Some("crate" | "super") => def.parent.is_none(),
+            Some(q) => fits(q, def, def_file),
         }
     }
 
@@ -227,12 +366,13 @@ impl SymGraph {
 
     /// Places that call the definition `name` in `file`.
     pub fn callers(&self, file: &str, name: &str) -> Vec<Ref> {
+        let targets: Vec<&Def> = self.files.get(file).map(|s| s.defs.iter().filter(|d| d.name == name).collect()).unwrap_or_default();
         let mut out: Vec<Ref> = self
             .called
             .get(name)
             .into_iter()
             .flatten()
-            .filter(|(f, _)| self.reachable(f, file))
+            .filter(|(f, i)| targets.iter().any(|d| self.means(f, &self.files[f].calls[*i], file, d)))
             .map(|(f, i)| {
                 let s = &self.files[f];
                 let c = &s.calls[*i];
@@ -240,6 +380,7 @@ impl SymGraph {
             })
             .collect();
         out.sort_by(|a, b| (&a.file, a.line).cmp(&(&b.file, b.line)));
+        out.dedup(); // Config::new() counts once on its line, not as a call and a type use
         out
     }
 
@@ -252,7 +393,7 @@ impl SymGraph {
             let _ = d;
             for c in s.calls.iter().filter(|c| c.from == Some(di)) {
                 for (f, i) in self.by_name.get(&c.name).into_iter().flatten() {
-                    if self.reachable(file, f) && seen.insert((f.clone(), *i)) {
+                    if self.means(file, c, f, &self.files[f].defs[*i]) && seen.insert((f.clone(), *i)) {
                         out.push((f.clone(), self.files[f].defs[*i].clone()));
                     }
                 }
@@ -266,18 +407,12 @@ const MAP_ROWS: usize = 8;
 
 impl SymGraph {
     /// Files outside `files` that call something defined inside them, with the names they call: what a change can break.
-    /// For languages where imports aren't tracked (rust, go) a name that exists in several places is skipped, because a
-    /// call to `new` could mean any of them and the list would fill with files that have nothing to do with the change.
     pub fn impact(&self, files: &[String], limit: usize) -> Vec<(String, Vec<String>)> {
         let want: std::collections::HashSet<&str> = files.iter().map(|f| f.trim_start_matches("./")).collect();
         let mut by_file: std::collections::BTreeMap<String, std::collections::BTreeSet<String>> = Default::default();
         for f in want.iter() {
             let Some(s) = self.files.get(*f) else { continue };
-            let tracked = self.imports.out.contains_key(*f);
             for d in s.defs.iter().filter(|d| !matches!(d.kind, "impl" | "mod")) {
-                if !tracked && self.by_name.get(&d.name).map_or(0, Vec::len) > 1 {
-                    continue;
-                }
                 for r in self.callers(f, &d.name) {
                     if !want.contains(r.file.as_str()) {
                         by_file.entry(r.file).or_default().insert(d.name.clone());
@@ -411,7 +546,7 @@ fn cache_file(root: &Path) -> std::path::PathBuf {
     crate::config::loader::get_data_dir().join("graph").join(format!("{}.json", &h[..16]))
 }
 
-const CACHE_VERSION: u32 = 1;
+const CACHE_VERSION: u32 = 3; // 2: calls carry what they were written after, and types / JSX / handed-over functions count as uses
 
 /// What the last session parsed, if anything. A bad or old file is just ignored: we re-parse and overwrite it.
 fn read_disk(root: &Path) -> HashMap<String, Entry> {
@@ -506,7 +641,9 @@ mod tests {
         let s = extract("a.ts", "export function load() { return parse(x); }\nconst run = () => { load(); api.send(1); };\nclass Router { handle() { load(); } }").unwrap();
         assert_eq!(names(&s), ["function:load", "function:run", "class:Router", "method:handle"]);
         let by: Vec<(String, Option<usize>)> = s.calls.iter().map(|c| (c.name.clone(), c.from)).collect();
-        assert_eq!(by, [("parse".into(), Some(0)), ("load".into(), Some(1)), ("send".into(), Some(1)), ("load".into(), Some(3))]);
+        // `x` is there because it is handed to parse(): a function passed by name counts as a use
+        assert_eq!(by, [("parse".into(), Some(0)), ("x".into(), Some(0)), ("load".into(), Some(1)), ("send".into(), Some(1)), ("load".into(), Some(3))]);
+        assert_eq!(s.calls[3].qual.as_deref(), Some(".api"));
         assert_eq!(s.defs[3].parent.as_deref(), Some("Router"));
     }
 
@@ -517,10 +654,58 @@ mod tests {
         assert_eq!(py.calls[0].name, "helper");
         let rs = extract("a.rs", "struct S;\nimpl S { fn new() -> S { make(); S } }\nfn make() {}").unwrap();
         assert_eq!(names(&rs), ["struct:S", "impl:S", "method:new", "function:make"]);
-        assert_eq!(rs.calls[0].name, "make");
+        assert!(rs.calls.iter().any(|c| c.name == "make" && c.qual.is_none()));
         let go = extract("a.go", "package a\nfunc (r *R) Do() { fmt.Println(helper()) }\nfunc helper() int { return 1 }").unwrap();
         assert_eq!(names(&go), ["method:Do", "function:helper"]);
+        assert_eq!(go.defs[0].parent.as_deref(), Some("R"));
         assert!(go.calls.iter().any(|c| c.name == "helper") && go.calls.iter().any(|c| c.name == "Println"));
+    }
+
+    fn repo(files: &[(&str, &str)]) -> tempfile::TempDir {
+        let d = tempfile::tempdir().unwrap();
+        std::process::Command::new("git").args(["init", "-q"]).current_dir(d.path()).status().unwrap();
+        for (f, text) in files {
+            std::fs::create_dir_all(d.path().join(f).parent().unwrap()).unwrap();
+            std::fs::write(d.path().join(f), text).unwrap();
+        }
+        d
+    }
+
+    fn who(g: &SymGraph, file: &str, name: &str) -> Vec<String> {
+        g.callers(file, name).into_iter().map(|r| format!("{}:{}", r.file, r.line)).collect()
+    }
+
+    /// Rust has no import graph here, so three functions all called `load` are told apart by how each call is written.
+    #[test]
+    fn rust_calls_go_to_the_load_they_name() {
+        let d = repo(&[
+            ("src/cache.rs", "pub fn load() {}\n"),
+            ("src/config.rs", "pub struct Config;\nimpl Config {\n    pub fn load() -> Config { Config }\n}\npub fn load() {}\n"),
+            ("src/app.rs", "use crate::cache::load;\nfn a() { load(); }\nfn b() { crate::config::load(); }\nfn c(x: Config) { Config::load(); x.len(); }\n"),
+            ("src/list.rs", "pub struct List;\nimpl List {\n    pub fn len(&self) -> usize { 0 }\n}\n"),
+        ]);
+        let g = load(d.path());
+        assert_eq!(who(&g, "src/cache.rs", "load"), ["src/app.rs:2"], "the one the `use` line brought in");
+        let cfg = g.callers("src/config.rs", "load");
+        assert_eq!(cfg.iter().map(|r| r.line).collect::<Vec<_>>(), [3, 4], "the module's function and the type's method, not cache's");
+        // a type is used where it is mentioned, even though nobody "calls" it
+        assert_eq!(who(&g, "src/config.rs", "Config"), ["src/app.rs:4", "src/config.rs:3"]);
+        assert_eq!(g.impact(&["src/config.rs".into()], 5)[0].0, "src/app.rs");
+        assert!(who(&g, "src/list.rs", "len").is_empty(), "x.len() could be any value's len");
+    }
+
+    /// A React component is run by rendering it, a handler by passing it, and both often arrive through an index file.
+    #[test]
+    fn components_callbacks_and_barrel_imports_count_as_uses() {
+        let d = repo(&[
+            ("ui/Nav.tsx", "export function Nav() { return null; }\n"),
+            ("ui/index.ts", "export { Nav } from './Nav';\n"),
+            ("lib/save.ts", "export function save() {}\n"),
+            ("app.tsx", "import { Nav } from './ui';\nimport { save } from './lib/save';\nexport function App() {\n  return <div onClick={save}><Nav /></div>;\n}\n"),
+        ]);
+        let g = load(d.path());
+        assert_eq!(who(&g, "ui/Nav.tsx", "Nav"), ["app.tsx:4"]);
+        assert_eq!(who(&g, "lib/save.ts", "save"), ["app.tsx:4"]);
     }
 
     #[test]
