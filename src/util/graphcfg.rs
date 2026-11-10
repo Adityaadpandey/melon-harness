@@ -21,6 +21,21 @@ pub struct GraphCfg {
     pub ignore: Vec<String>,
     pub keep: Vec<String>,
     pub areas: BTreeMap<String, String>,
+    /// What melon learned about one symbol, kept next to the code it is about: "src/pay.ts::charge" -> the note.
+    pub notes: BTreeMap<String, SymNote>,
+}
+
+/// A fact about one function or class, with a fingerprint of its body from when the fact was written. If the body has
+/// changed since, the note is still shown but marked, because it may no longer be true.
+#[derive(Default, Serialize, Deserialize, Clone, Debug)]
+pub struct SymNote {
+    pub text: String,
+    pub stamp: String,
+}
+
+fn stamp(body: &str) -> String {
+    use sha2::{Digest, Sha256};
+    hex::encode(Sha256::digest(body.as_bytes()))[..12].to_string()
 }
 
 fn file(cwd: &Path) -> std::path::PathBuf {
@@ -45,6 +60,23 @@ pub fn is_noise(rel: &str) -> bool {
 }
 
 impl GraphCfg {
+    /// "note: retries twice, then queues" for a symbol that has one, with a warning when the code moved on.
+    pub fn note_for(&self, cwd: &Path, file: &str, d: &symgraph::Def) -> Option<String> {
+        let n = self.notes.get(&format!("{file}::{}", d.name))?;
+        let stale = n.stamp != stamp(&symgraph::SymGraph::body(cwd, file, d));
+        Some(format!("note: {}{}", n.text, if stale { " (the code changed after this note was written: check it still holds)" } else { "" }))
+    }
+
+    /// Pin `text` to a symbol, or remove its note when `text` is empty.
+    pub fn set_note(&mut self, cwd: &Path, file: &str, d: &symgraph::Def, text: &str) {
+        let key = format!("{file}::{}", d.name);
+        if text.trim().is_empty() {
+            self.notes.remove(&key);
+        } else {
+            self.notes.insert(key, SymNote { text: text.trim().to_string(), stamp: stamp(&symgraph::SymGraph::body(cwd, file, d)) });
+        }
+    }
+
     pub fn is_ignored(&self, rel: &str) -> bool {
         self.ignore.iter().any(|p| {
             if let Some(dir) = p.strip_suffix('/') {

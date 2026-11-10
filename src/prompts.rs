@@ -271,7 +271,7 @@ fn pi_snippet(name: &str) -> Option<&'static str> {
         "glob" => "Find files by glob pattern (respects .gitignore)",
         "list_dir" => "List directory contents",
         "todos" => "Step list for long work (5+ steps): `set` the whole list; update it alongside your next real call, never in a turn of its own",
-        "graph" => "Find and read a symbol by name, callers/callees/impact, who imports a file, which tests cover it (all live from the working tree)",
+        "graph" => "Find and read a symbol by name; trace follows who uses it (or what it calls) several hops in one call; impact, who imports a file, which tests cover it; note pins a fact to a symbol. Live from the working tree: use it before grep when you know a name",
         _ => return None,
     })
 }

@@ -447,6 +447,9 @@ In the order to reach for them, cheapest first:
    `find`, `symbol`, `callers`, `callees` and `impact` need no snapshot. A use is a call, a type mention, a rendered JSX
    component or a function passed by name; in Rust and Go a call goes to the definition it names (`symgraph::load`,
    `Config::new`, a `use` line). Check what the model would see with `melon graph callers parse_invoice`.
+   `trace` follows callers (or callees) several hops in one call and `path` finds the chain of calls between two functions.
+   An edit that changes or removes a function's signature comes back with the places that use it, and `note` pins a fact
+   to a symbol in `.melon/graph.toml`: it is shown whenever that symbol comes up, and marked once the code has changed.
 6. **`grep` / `glob`**: exact strings. They respect `.gitignore`, find dotfiles, never touch secrets, and use smart-case.
 
 With `--no-pi`, a non-trivial request starts with a **scout**, a read-only investigator on a cheap model, so the main context begins

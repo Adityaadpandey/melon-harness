@@ -37,23 +37,16 @@ impl GraphTool {
             let rows: Vec<String> = hits.iter().map(|(f, d)| format!("{:<32} {:<9} {f}:{}-{}{}", d.name, d.kind, d.line, d.end, d.parent.as_ref().map_or(String::new(), |p| format!("  [in {p}]")))).collect();
             return Some(ToolResult::ok(format!("{}\n\n(live from the working tree; calls are matched by name, verify with read_file)", rows.join("\n"))));
         }
-        let mut defs: Vec<(String, symgraph::Def)> = sg.find(last, 200).into_iter().filter(|(_, d)| d.name == last).collect();
-        if let Some(p) = parent {
-            // Router.handle -> the handle in Router; symgraph::load -> the load in symgraph.rs
-            let stem = |f: &str| f.rsplit('/').next().unwrap_or("").rsplit_once('.').map_or(String::new(), |x| x.0.to_string());
-            let scoped: Vec<_> = defs.iter().filter(|(f, d)| d.parent.as_deref() == Some(p) || d.name == p || stem(f) == p).cloned().collect();
-            if !scoped.is_empty() {
-                defs = scoped;
-            }
-        }
+        let mut defs = Self::pick(&sg, q);
         if defs.is_empty() {
             return None;
         }
+        let cfg = crate::util::graphcfg::load(cwd);
         let more = defs.len().saturating_sub(4);
         defs.truncate(4);
         let mut out = vec![];
         for (file, d) in &defs {
-            let head = format!("{} {} at {file}:{}-{}", d.kind, d.name, d.line, d.end);
+            let head = format!("{} {} at {file}:{}-{}{}", d.kind, d.name, d.line, d.end, cfg.note_for(cwd, file, d).map_or(String::new(), |n| format!("\n{n}")));
             match act {
                 "symbol" => {
                     let text = std::fs::read_to_string(cwd.join(file)).unwrap_or_default();
@@ -86,6 +79,66 @@ impl GraphTool {
         let tail = if more > 0 { format!("\n\n({more} more definitions share this name; use Parent.name to pick one)") } else { String::new() };
         let note = if act == "symbol" { "" } else { "\n\n(live from the working tree; calls are matched by name, verify with read_file)" };
         Some(ToolResult::ok(format!("{}{tail}{note}", out.join("\n\n"))))
+    }
+
+    /// Every definition a name can mean. `Router.handle` is the handle in Router, `symgraph::load` the load in symgraph.rs.
+    fn pick(sg: &symgraph::SymGraph, q: &str) -> Vec<(String, symgraph::Def)> {
+        let q = q.trim().trim_end_matches("()");
+        let (parent, last) = match q.rsplit_once("::").or_else(|| q.rsplit_once('.')) {
+            Some((p, l)) if !l.is_empty() && !l.contains('/') && !p.ends_with(|c: char| c == '/') => (Some(p.rsplit(['.', ':']).next().unwrap_or(p)), l),
+            _ => (None, q),
+        };
+        let mut defs: Vec<(String, symgraph::Def)> = sg.find(last, 200).into_iter().filter(|(_, d)| d.name == last && !matches!(d.kind, "impl" | "mod")).collect();
+        if let Some(p) = parent {
+            let stem = |f: &str| f.rsplit('/').next().unwrap_or("").rsplit_once('.').map_or(String::new(), |x| x.0.to_string());
+            let scoped: Vec<_> = defs.iter().filter(|(f, d)| d.parent.as_deref() == Some(p) || d.name == p || stem(f) == p).cloned().collect();
+            if !scoped.is_empty() {
+                defs = scoped;
+            }
+        }
+        defs
+    }
+
+    /// trace, path and note: several hops in one call, and a fact pinned to a symbol. None when the name is unknown.
+    fn walk(act: &str, inv: &ToolInvocation) -> Option<ToolResult> {
+        let cwd = &inv.cwd;
+        let name = inv.str("name").filter(|n| !n.is_empty())?;
+        let sg = symgraph::load(cwd);
+        let defs = Self::pick(&sg, name);
+        let (file, d) = defs.first()?;
+        let also = if defs.len() > 1 { format!("\n({} more definitions share this name; use Parent.name or file_stem::name to pick another)", defs.len() - 1) } else { String::new() };
+        let head = format!("{} {} at {file}:{}-{}", d.kind, d.name, d.line, d.end);
+        match act {
+            "trace" => {
+                let up = !matches!(inv.str("direction"), Some("down" | "callees"));
+                let depth = inv.params.get("depth").and_then(Value::as_u64).unwrap_or(2).clamp(1, 4) as usize;
+                let rows = sg.trace(file, &d.name, up, depth, 60);
+                if rows.is_empty() {
+                    return Some(ToolResult::ok(format!("{head}\nNothing {} in the repo.{also}", if up { "uses it" } else { "is called from it" })));
+                }
+                let body = rows.iter().map(|(hop, f, n, line)| format!("{}{n}  {f}:{line}", "  ".repeat(*hop))).collect::<Vec<_>>().join("\n");
+                let what = if up { "who uses it, then who uses those (a change here can reach all of them)" } else { "what it calls, then what those call" };
+                Some(ToolResult::ok(format!("{head}\n{what}, {depth} hop(s), indented by distance:\n{body}{}{also}\n\n(live from the working tree; calls are matched by name, verify with read_file)", if rows.len() >= 60 { "\n... stopped at 60 rows; trace one of these names to go on" } else { "" })))
+            }
+            "path" => {
+                let to = inv.str("to").filter(|t| !t.is_empty())?;
+                let to = to.trim_end_matches("()").rsplit([':', '.']).next().unwrap_or(to);
+                let chain = defs.iter().find_map(|(f, d)| sg.path(f, &d.name, to))?;
+                Some(ToolResult::ok(format!("{}\n\n(each step calls the next; live from the working tree, matched by name)", chain.iter().map(|(f, n, l)| if *l > 0 { format!("{n} ({f}:{l})") } else { format!("{n} ({f})") }).collect::<Vec<_>>().join("\n  -> "))))
+            }
+            _ => {
+                if defs.len() > 1 {
+                    return Some(ToolResult::error(format!("'{name}' means {} definitions: {}. Say which with Parent.name or file_stem::name.", defs.len(), defs.iter().take(5).map(|(f, d)| format!("{f}:{}", d.line)).collect::<Vec<_>>().join(", "))));
+                }
+                let text = inv.str("text").unwrap_or("");
+                let mut cfg = crate::util::graphcfg::load(cwd);
+                cfg.set_note(cwd, file, d, text);
+                match crate::util::graphcfg::save(cwd, &cfg) {
+                    Ok(()) => Some(ToolResult::ok(if text.trim().is_empty() { format!("Removed the note on {head}.") } else { format!("Noted on {head}. It is shown whenever this symbol comes up, and marked if the code changes.") })),
+                    Err(e) => Some(ToolResult::error(format!("Could not save .melon/graph.toml: {e}"))),
+                }
+            }
+        }
     }
 
     fn live(act: &str, name: Option<&str>, cwd: &Path) -> ToolResult {
@@ -135,7 +188,7 @@ impl Tool for GraphTool {
         "graph"
     }
     fn description(&self) -> String {
-        "Understand how the code connects. everything is computed live from the working tree (TS/JS, Python, Rust, Go, Java, C#, PHP, Ruby): find a symbol, callers/callees of a function, impact (files that call a symbol), symbol (read one function or class by name instead of the whole file), importers/imports/blast/tests for files. path/community/neighbors/stats need a graphify snapshot (graphify-out/graph.json). Calls are matched by name: verify with read_file. One call replaces several grep/read rounds.".into()
+        "Understand how the code connects. everything is computed live from the working tree (TS/JS, Python, Rust, Go, Java, C#, PHP, Ruby): find a symbol, trace (several hops of callers or callees in one call), callers/callees of a function, impact (files that call a symbol), symbol (read one function or class by name instead of the whole file), importers/imports/blast/tests for files. path/community/neighbors/stats need a graphify snapshot (graphify-out/graph.json). Calls are matched by name: verify with read_file. One call replaces several grep/read rounds.".into()
     }
     fn kind(&self) -> ToolKind {
         ToolKind::Read
@@ -143,12 +196,19 @@ impl Tool for GraphTool {
     fn as_any(&self) -> &dyn Any {
         self
     }
+    /// Everything here only reads, except pinning a note, which writes .melon/graph.toml.
+    fn is_mutating(&self, params: &Value) -> bool {
+        params["action"] == "note"
+    }
     fn schema(&self) -> Value {
         schema_of(
             json!({
-                "action": {"type": "string", "description": "symbol (read the source of one function/class/method by name) | find (locate symbols by name) | callers (who calls NAME; direction checked in source) | callees (what NAME calls) | importers (files that import FILE, live from the working tree; follows @/ aliases) | imports (what FILE imports) | blast (everything that depends on FILE, nearest first) | tests (tests that cover FILE) | neighbors (all relations of NAME) | impact (files that depend on file/symbol NAME: what a change could break) | path (shortest connection NAME -> TO) | community (the module NAME belongs to) | stats"},
+                "action": {"type": "string", "description": "symbol (read the source of one function/class/method by name) | find (locate symbols by name) | trace (follow NAME several hops in ONE call: direction=up for who uses it and who uses those, down for what it calls) | callers (who uses NAME, one hop) | callees (what NAME calls) | note (pin TEXT to NAME: a fact worth keeping about that function, shown whenever it comes up again; empty text removes it) | importers (files that import FILE, live from the working tree; follows @/ aliases) | imports (what FILE imports) | blast (everything that depends on FILE, nearest first) | tests (tests that cover FILE) | neighbors (all relations of NAME) | impact (files that depend on file/symbol NAME: what a change could break) | path (shortest connection NAME -> TO) | community (the module NAME belongs to) | stats"},
                 "name": {"type": ["string", "null"], "description": "Symbol, class or file name (e.g. delTicketTypeCache, ticket.service.ts, apps/web/src/components/ui/DesktopNav.tsx)"},
                 "to": {"type": ["string", "null"], "description": "Second name, for action=path"},
+                "direction": {"type": ["string", "null"], "description": "For action=trace: up (default) or down"},
+                "depth": {"type": ["integer", "null"], "description": "For action=trace: hops to follow, 1-4 (default 2)"},
+                "text": {"type": ["string", "null"], "description": "For action=note: the fact to keep, one or two sentences"},
             }),
             &["action"],
         )
@@ -160,6 +220,12 @@ impl Tool for GraphTool {
             if let Some(r) = Self::sym(&act, name, &inv.cwd) {
                 return r;
             }
+        }
+        if matches!(act.as_str(), "trace" | "note") || (act == "path" && codegraph::locate(&inv.cwd).is_none()) {
+            return Self::walk(&act, inv).unwrap_or_else(|| ToolResult::ok(match act.as_str() {
+                "path" => "No chain of calls found between those two names (give `name` and `to`; calls are matched by name).".to_string(),
+                _ => format!("No symbol named '{}'. Try action=find with part of the name.", name.unwrap_or("")),
+            }));
         }
         if act == "symbol" {
             return ToolResult::ok(match name {

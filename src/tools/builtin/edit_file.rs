@@ -107,6 +107,9 @@ impl Tool for EditTool {
         // a bad retry once ate a whole method; say so loudly so the model checks before moving on
         let note = if !is_new && delta <= -15 { format!("{note}. WARNING: this removed {} lines. If you did not mean to delete code, git diff the file now and restore what was lost.", -delta) } else { note };
         let verb = if is_new { "Created".to_string() } else { format!("Edited ({n} replacement{})", if n != 1 { "s" } else { "" }) };
+        // a changed or removed signature comes with the places that use it, straight from the graph
+        let uses = if is_new { None } else { crate::util::symgraph::edit_note(&inv.cwd, &path, &old, &new) };
+        let note = format!("{note}{}", uses.map_or(String::new(), |u| format!("\n{u}")));
         let mut r = ToolResult::ok_with(
             format!("{verb} {}{note}", path.display()),
             json!({"path": path.to_string_lossy(), "replaced_count": n, "line_diff": delta, "is_new_file": is_new}),

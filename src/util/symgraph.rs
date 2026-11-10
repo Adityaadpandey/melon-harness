@@ -261,7 +261,8 @@ fn walk(n: Node, src: &str, cur: Option<usize>, parent: &Option<String>, out: &m
             "jsx_opening_element" | "jsx_self_closing_element" => n.child_by_field_name("name").and_then(|t| callee(t, src)).map(|(name, _)| name).filter(|name| name.starts_with(char::is_uppercase)),
             // a type written anywhere but its own definition: fn f(c: Config), Config { .. }, x as Config
             "type_identifier" if !named_here("name") && !(named_here("type") && up.map_or(false, |p| p.kind() == "impl_item")) => Some(text(n, src).to_string()),
-            "identifier" if refs && up.map_or(false, |p| matches!(p.kind(), "arguments" | "argument_list" | "jsx_expression")) => Some(text(n, src).to_string()),
+            // handed over by name, or the class this one extends
+            "identifier" if refs && up.map_or(false, |p| matches!(p.kind(), "arguments" | "argument_list" | "jsx_expression" | "extends_clause" | "class_heritage")) => Some(text(n, src).to_string()),
             _ => None,
         };
         if let Some(name) = used {
@@ -435,8 +436,130 @@ impl SymGraph {
 
 const MAP_ROWS: usize = 8;
 
+/// One row of a walk through the graph: how many hops from the start, then where.
+pub type Hop = (usize, String, String, usize);
+
+impl SymGraph {
+    /// Follow the links several hops in one go, as an indented tree in visiting order.
+    ///   up   = who calls it, and who calls those ("what breaks if I change this")
+    ///   down = what it calls, and what those call ("how does this actually work")
+    /// A place already shown is not expanded twice, and the walk stops at `limit` rows so a hub like `log` stays readable.
+    pub fn trace(&self, file: &str, name: &str, up: bool, depth: usize, limit: usize) -> Vec<Hop> {
+        let mut out: Vec<Hop> = vec![];
+        let mut seen: std::collections::HashSet<(String, String)> = [(file.to_string(), name.to_string())].into();
+        let mut stack: Vec<(usize, String, String)> = vec![(0, file.to_string(), name.to_string())];
+        while let Some((d, f, n)) = stack.pop() {
+            if d >= depth || out.len() >= limit {
+                continue;
+            }
+            let next: Vec<(String, String, usize)> = if up {
+                self.callers(&f, &n).into_iter().map(|r| (r.file, r.in_def.unwrap_or_else(|| "(top level)".into()), r.line)).collect()
+            } else {
+                self.callees(&f, &n).into_iter().filter(|(_, c)| matches!(c.kind, "function" | "method")).map(|(cf, c)| (cf, c.name, c.line)).collect()
+            };
+            let at = out.iter().position(|h| h.0 == d && h.1 == f && h.2 == n).map_or(out.len(), |i| i + 1);
+            let mut fresh = vec![];
+            for (nf, nn, line) in next {
+                if seen.insert((nf.clone(), nn.clone())) {
+                    fresh.push((d + 1, nf, nn, line));
+                }
+            }
+            // children go right under their parent, and are expanded next
+            for h in fresh.iter().rev() {
+                if h.2 != "(top level)" {
+                    stack.push((h.0, h.1.clone(), h.2.clone()));
+                }
+            }
+            let room = limit.saturating_sub(out.len());
+            out.splice(at..at, fresh.into_iter().take(room));
+        }
+        out
+    }
+
+    /// The shortest chain of calls from one function down to another, e.g. handler -> service -> repo.save.
+    pub fn path(&self, file: &str, name: &str, to: &str) -> Option<Vec<(String, String, usize)>> {
+        let start = (file.to_string(), name.to_string());
+        let mut from: HashMap<(String, String), Option<(String, String)>> = HashMap::from([(start.clone(), None)]);
+        let mut lines: HashMap<(String, String), usize> = HashMap::new();
+        let mut queue = std::collections::VecDeque::from([start]);
+        while let Some(cur) = queue.pop_front() {
+            if cur.1 == to && from[&cur].is_some() {
+                let mut chain = vec![];
+                let mut at = Some(cur);
+                while let Some(x) = at {
+                    at = from[&x].clone();
+                    chain.push((x.0.clone(), x.1.clone(), lines.get(&x).copied().unwrap_or(0)));
+                }
+                chain.reverse();
+                return Some(chain);
+            }
+            if from.len() > 5000 {
+                break;
+            }
+            for (f, d) in self.callees(&cur.0, &cur.1) {
+                let key = (f, d.name);
+                if !from.contains_key(&key) {
+                    from.insert(key.clone(), Some(cur.clone()));
+                    lines.insert(key.clone(), d.line);
+                    queue.push_back(key);
+                }
+            }
+        }
+        None
+    }
+}
+
+/// What an edit should say about the rest of the repo. When a function's first line changed (a parameter added, a
+/// rename) or the function is gone, the places that use it are listed right in the edit result, so the next step is
+/// "update these three callers" instead of a grep to find out whether there are any:
+///   [graph: the signature of `parse_invoice` changed and it is used in 2 other place(s): app.py:4 (main), jobs.py:9 (nightly). ...]
+/// ponytail: compares the first line of each definition only, so a change on a later line of a multi-line signature is missed.
+pub fn edit_note(cwd: &Path, path: &Path, old: &str, new: &str) -> Option<String> {
+    let root = resolve(cwd);
+    let rel = resolve(path).strip_prefix(&root).ok()?.to_string_lossy().replace('\\', "/");
+    let (before, after) = (extract(&rel, old)?, extract(&rel, new)?);
+    let head = |src: &str, d: &Def| src.lines().nth(d.line - 1).unwrap_or("").trim().to_string();
+    let now: HashMap<(&str, Option<&str>), String> = after.defs.iter().map(|d| ((d.name.as_str(), d.parent.as_deref()), head(new, d))).collect();
+    let mut changed: Vec<(&str, &str)> = vec![];
+    for d in before.defs.iter().filter(|d| !matches!(d.kind, "impl" | "mod")) {
+        match now.get(&(d.name.as_str(), d.parent.as_deref())) {
+            None if !after.defs.iter().any(|x| x.name == d.name) => changed.push((&d.name, "was removed or renamed")),
+            Some(h) if *h != head(old, d) => changed.push((&d.name, "changed")),
+            _ => {}
+        }
+    }
+    if changed.is_empty() {
+        return None;
+    }
+    let g = load(cwd);
+    let mut rows = vec![];
+    for (name, what) in changed.into_iter().take(3) {
+        let mut uses = g.callers(&rel, name);
+        if what != "changed" {
+            // the definition is gone, so match the calls by name; skip names another definition still answers for
+            if g.by_name.get(name).map_or(false, |v| !v.is_empty()) {
+                continue;
+            }
+            uses = g.called.get(name).into_iter().flatten().filter(|(f, _)| g.reachable(f, &rel)).map(|(f, i)| { let s = &g.files[f]; let c = &s.calls[*i]; Ref { file: f.clone(), in_def: c.from.map(|d| s.defs[d].name.clone()), line: c.line } }).collect();
+        }
+        uses.retain(|r| r.in_def.as_deref() != Some(name));
+        if uses.is_empty() {
+            continue;
+        }
+        let list = uses.iter().take(8).map(|r| format!("{}:{}{}", r.file, r.line, r.in_def.as_ref().map_or(String::new(), |d| format!(" ({d})")))).collect::<Vec<_>>().join(", ");
+        let more = if uses.len() > 8 { format!(", and {} more (graph callers {name})", uses.len() - 8) } else { String::new() };
+        rows.push(format!("[graph: the signature of `{name}` {what} and it is used in {} other place(s): {list}{more}. Update them, or check they still fit.]", uses.len()));
+    }
+    (!rows.is_empty()).then(|| rows.join("\n"))
+}
+
 impl SymGraph {
     /// Files outside `files` that call something defined inside them, with the names they call: what a change can break.
+    /// The source lines of one definition, for hashing or showing.
+    pub fn body(cwd: &Path, file: &str, d: &Def) -> String {
+        std::fs::read_to_string(cwd.join(file)).unwrap_or_default().lines().skip(d.line - 1).take(d.end - d.line + 1).collect::<Vec<_>>().join("\n")
+    }
+
     pub fn impact(&self, files: &[String], limit: usize) -> Vec<(String, Vec<String>)> {
         let want: std::collections::HashSet<&str> = files.iter().map(|f| f.trim_start_matches("./")).collect();
         let mut by_file: std::collections::BTreeMap<String, std::collections::BTreeSet<String>> = Default::default();
@@ -504,7 +627,25 @@ pub fn task_map(cwd: &Path, request: &str) -> Option<String> {
         return None;
     }
     let cfg = crate::util::graphcfg::load(cwd);
-    let mut rows: Vec<String> = hits.iter().map(|(f, d, c)| format!("- {} {} at {f}:{}-{} ({c} call site{})", d.kind, d.name, d.line, d.end, if *c == 1 { "" } else { "s" })).collect();
+    let mut rows: Vec<String> = vec![];
+    for (n, (f, d, c)) in hits.iter().enumerate() {
+        rows.push(format!("- {} {} at {f}:{}-{} ({c} call site{})", d.kind, d.name, d.line, d.end, if *c == 1 { "" } else { "s" }));
+        if let Some(note) = cfg.note_for(cwd, f, d) {
+            rows.push(format!("    {note}"));
+        }
+        // the first few also get their neighbours, so the model starts with the surrounding code already mapped
+        if n < 3 {
+            let short = |v: Vec<String>| if v.is_empty() { None } else { Some(v.into_iter().take(4).collect::<Vec<_>>().join(", ")) };
+            let mut from: Vec<String> = g.callers(f, &d.name).into_iter().map(|r| format!("{}:{}", r.file, r.line)).collect();
+            from.dedup();
+            if let Some(s) = short(from) {
+                rows.push(format!("    used from: {s}"));
+            }
+            if let Some(s) = short(g.callees(f, &d.name).into_iter().filter(|(_, x)| matches!(x.kind, "function" | "method")).map(|(cf, x)| format!("{} ({cf}:{})", x.name, x.line)).collect()) {
+                rows.push(format!("    calls: {s}"));
+            }
+        }
+    }
     let mut seen = std::collections::BTreeSet::new();
     for (f, _, _) in &hits {
         if let Some((dir, note)) = cfg.areas.iter().filter(|(k, _)| f.starts_with(&format!("{k}/"))).max_by_key(|(k, _)| k.len()) {
@@ -513,7 +654,7 @@ pub fn task_map(cwd: &Path, request: &str) -> Option<String> {
             }
         }
     }
-    Some(format!("[Code graph: definitions your request names (live, matched by name; read the code before relying on it; graph symbol/callers go deeper)\n{}]", rows.join("\n")))
+    Some(format!("[Code graph: definitions your request names (live, matched by name; read the code before relying on it; graph symbol/trace go deeper)\n{}]", rows.join("\n")))
 }
 
 /// One line for a grep whose pattern is the name of something defined here, e.g. `parse_invoice` or `\bparse_invoice\(`:
@@ -794,6 +935,48 @@ mod tests {
         let h = grep_hint(d.path(), "\\bparse_invoice\\(").unwrap();
         assert!(h.contains("function parse_invoice is defined at lib.py:1-2, used in 1 place(s)"), "{h}");
         assert!(grep_hint(d.path(), "parse.*invoice").is_none() && grep_hint(d.path(), "nothing_here").is_none());
+    }
+
+    /// route -> service -> repo, three files. One trace call answers "what does changing save() reach" and one path
+    /// call answers "how does the route get to save()", where grep would need a round per hop.
+    #[test]
+    fn trace_and_path_follow_several_hops_and_an_edit_names_the_callers_it_affects() {
+        let d = repo(&[
+            ("repo.py", "def save(x):\n    return x\n"),
+            ("service.py", "from repo import save\n\ndef charge(x):\n    return save(x)\n"),
+            ("route.py", "from service import charge\n\ndef pay(x):\n    return charge(x)\n"),
+        ]);
+        let p = d.path();
+        let g = load(p);
+        let up: Vec<String> = g.trace("repo.py", "save", true, 3, 20).into_iter().map(|(hop, f, n, _)| format!("{hop} {f} {n}")).collect();
+        assert_eq!(up, ["1 service.py charge", "2 route.py pay"]);
+        let down: Vec<String> = g.trace("route.py", "pay", false, 3, 20).into_iter().map(|(hop, _, n, _)| format!("{hop} {n}")).collect();
+        assert_eq!(down, ["1 charge", "2 save"]);
+        let chain: Vec<String> = g.path("route.py", "pay", "save").unwrap().into_iter().map(|(_, n, _)| n).collect();
+        assert_eq!(chain, ["pay", "charge", "save"]);
+        assert!(g.path("repo.py", "save", "pay").is_none(), "calls only run downwards");
+
+        // save() grows a parameter: the edit result itself says who has to change
+        let (old, new) = ("def save(x):\n    return x\n", "def save(x, retries):\n    return x\n");
+        std::fs::write(p.join("repo.py"), new).unwrap();
+        let note = edit_note(p, &p.join("repo.py"), old, new).unwrap();
+        assert!(note.contains("signature of `save` changed") && note.contains("service.py:4 (charge)"), "{note}");
+        // a body-only change is nobody else's business
+        assert!(edit_note(p, &p.join("repo.py"), new, "def save(x, retries):\n    return [x]\n").is_none());
+    }
+
+    #[test]
+    fn a_note_stays_with_its_symbol_and_is_marked_once_the_code_changes() {
+        let d = repo(&[("pay.py", "def charge(x):\n    return x\n")]);
+        let p = d.path();
+        let def = load(p).find("charge", 1).remove(0).1;
+        let mut cfg = crate::util::graphcfg::load(p);
+        cfg.set_note(p, "pay.py", &def, "retries twice, then queues");
+        crate::util::graphcfg::save(p, &cfg).unwrap();
+        let cfg = crate::util::graphcfg::load(p);
+        assert_eq!(cfg.note_for(p, "pay.py", &def).unwrap(), "note: retries twice, then queues");
+        std::fs::write(p.join("pay.py"), "def charge(x):\n    return x + 1\n").unwrap();
+        assert!(cfg.note_for(p, "pay.py", &def).unwrap().contains("code changed after this note"));
     }
 
     #[test]

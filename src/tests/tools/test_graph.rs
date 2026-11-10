@@ -164,3 +164,21 @@ fn verify_runs_tests_that_import_the_changed_module_not_only_ones_named_after_it
     let checks = crate::agent::verify::detect_checks(p, &["lib.py".to_string()]);
     assert!(checks.iter().any(|(c, _)| c.contains("pytest") && c.contains("tests/test_flow.py")), "{checks:?}");
 }
+
+/// The three things a model can now do in one call each: walk the callers, find the chain between two functions, and
+/// leave a fact on a function that the next lookup shows again.
+#[tokio::test]
+async fn trace_path_and_note_through_the_tool() {
+    let d = git_repo();
+    let p = d.path();
+    let r = ask(p, json!({"action": "trace", "name": "parse", "direction": "up", "depth": 2})).await;
+    assert!(r.output.contains("main  app.py:4"), "{}", r.output);
+    let r = ask(p, json!({"action": "path", "name": "main", "to": "parse"})).await;
+    assert!(r.output.contains("main (app.py)") && r.output.contains("-> parse (lib.py:1)"), "{}", r.output);
+    let r = ask(p, json!({"action": "note", "name": "parse", "text": "input is already validated by the route"})).await;
+    assert!(r.success, "{:?}", r.error);
+    let r = ask(p, json!({"action": "callers", "name": "parse"})).await;
+    assert!(r.output.contains("note: input is already validated by the route"), "{}", r.output);
+    let r = ask(p, json!({"action": "trace", "name": "nothing_like_this"})).await;
+    assert!(r.output.contains("No symbol named"), "{}", r.output);
+}
