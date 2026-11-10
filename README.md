@@ -674,6 +674,10 @@ flowchart LR
   extra_body           = { thinking_token_budget = 4096, chat_template_kwargs = { enable_thinking = true } }
   ```
 
+  A model that garbles several tool calls in one reply can be held to one at a time with
+  `extra_body = { parallel_tool_calls = false }`. A reply that carries its thinking inline as `<think>...</think>` is split
+  automatically: the thinking is kept out of the answer.
+
   `extra_body` is merged into every request last, so it also overrides melon's own thinking switch for that server. A
   thinking budget matters on local models: thinking and the answer share `max_tokens`, and without a cap the thinking can
   use all of it and leave no tool call.

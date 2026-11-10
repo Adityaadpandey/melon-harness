@@ -48,6 +48,71 @@ fn tool_defs(tools: &[Value]) -> Vec<Value> {
         .collect()
 }
 
+/// Gemini's function declarations take one type per field, not a list: `["string", "null"]` becomes `"string"`.
+fn single_types(v: &mut Value) {
+    match v {
+        Value::Object(o) => {
+            if let Some(Value::Array(types)) = o.get("type") {
+                let first = types.iter().find(|t| t.as_str() != Some("null")).cloned().unwrap_or(json!("string"));
+                o.insert("type".into(), first);
+            }
+            o.values_mut().for_each(single_types);
+        }
+        Value::Array(a) => a.iter_mut().for_each(single_types),
+        _ => {}
+    }
+}
+
+/// Splits a reply that carries its thinking inline, as `<think>...</think>` before the answer. Servers with no
+/// reasoning parser (plain vLLM, llama.cpp, Ollama with some templates) send it that way, and without this the
+/// thinking would be shown as the answer and sent back on every later turn.
+/// Only a reply that *opens* with the tag is split, so an answer that merely mentions `<think>` is left alone.
+#[derive(Default)]
+pub struct ThinkSplit {
+    state: u8, // 0 = nothing decided yet, 1 = inside the thinking, 2 = answer (pass everything through)
+    held: String,
+}
+
+impl ThinkSplit {
+    /// One streamed piece in, (answer text, thinking text) out. A tag cut in two by the stream is held until it completes.
+    pub fn feed(&mut self, chunk: &str) -> (String, String) {
+        if self.state == 2 {
+            return (chunk.to_string(), String::new());
+        }
+        self.held.push_str(chunk);
+        if self.state == 0 {
+            let lead = self.held.trim_start();
+            if let Some(rest) = lead.strip_prefix("<think>") {
+                self.held = rest.to_string();
+                self.state = 1;
+            } else if "<think>".starts_with(lead) {
+                return (String::new(), String::new()); // could still become the tag
+            } else {
+                self.state = 2;
+                return (std::mem::take(&mut self.held), String::new());
+            }
+        }
+        if let Some(i) = self.held.find("</think>") {
+            let (thinking, answer) = (self.held[..i].to_string(), self.held[i + 8..].trim_start().to_string());
+            self.held.clear();
+            self.state = 2;
+            return (answer, thinking);
+        }
+        // keep back a tail that may be the start of the closing tag
+        let keep = (1..8).rev().find(|n| self.held.ends_with(&"</think>"[..*n])).unwrap_or(0);
+        let cut = self.held.len() - keep;
+        let thinking = self.held[..cut].to_string();
+        self.held = self.held[cut..].to_string();
+        (String::new(), thinking)
+    }
+
+    /// What is still held when the stream ends: an unfinished thought stays thinking, anything else is answer.
+    pub fn finish(&mut self) -> (String, String) {
+        let rest = std::mem::take(&mut self.held);
+        if self.state == 1 { (String::new(), rest) } else { (rest, String::new()) }
+    }
+}
+
 const REASONING_FIELDS: [&str; 3] = ["reasoning_content", "reasoning", "reasoning_text"];
 
 /// History as this server should see it. Thinking goes back to the model that wrote it, on every turn: DeepSeek, Kimi
@@ -213,7 +278,9 @@ impl Adapter for OpenAIChatAdapter {
             // the user's own fields go last: they know their server better than our family tables do
             for (k, v) in &self.compat.extra_body { b.insert(k.clone(), v.clone()); }
             if let Some(tools) = req.tools.as_ref().filter(|t| !t.is_empty()) {
-                b.insert("tools".into(), json!(tool_defs(tools)));
+                let mut defs = json!(tool_defs(tools));
+                if req.model.to_lowercase().contains("gemini") { single_types(&mut defs); }
+                b.insert("tools".into(), defs);
                 b.insert("tool_choice".into(), json!("auto"));
             }
             let mut rb = self.client.post(format!("{}/chat/completions", self.base_url)).bearer_auth(&self.api_key).json(&body);
@@ -226,6 +293,7 @@ impl Adapter for OpenAIChatAdapter {
             let mut calls: BTreeMap<i64, (String, String, String)> = BTreeMap::new();
             let mut reasoning = String::new();
             let (mut done, mut wrote) = (false, false);
+            let mut think = ThinkSplit::default();
             let mut data = sse_data(resp);
             while let Some(payload) = data.next().await {
                 let payload = payload?;
@@ -249,7 +317,9 @@ impl Adapter for OpenAIChatAdapter {
                 if let Some(t) = REASONING_FIELDS.iter().find_map(|f| delta[*f].as_str().filter(|s| !s.is_empty())) { reasoning.push_str(t); }
                 if let Some(c) = delta["content"].as_str().filter(|s| !s.is_empty()) {
                     wrote = true;
-                    yield StreamEvent::TextDelta(c.to_string());
+                    let (answer, thinking) = think.feed(c);
+                    reasoning.push_str(&thinking);
+                    if !answer.is_empty() { yield StreamEvent::TextDelta(answer); }
                 }
                 for d in delta["tool_calls"].as_array().into_iter().flatten() {
                     let id = d["id"].as_str().unwrap_or("");
@@ -269,6 +339,9 @@ impl Adapter for OpenAIChatAdapter {
                     }
                 }
             }
+            let (answer, thinking) = think.finish();
+            reasoning.push_str(&thinking);
+            if !answer.is_empty() { yield StreamEvent::TextDelta(answer); }
             if finish.is_none() && !done {
                 // neither a finish_reason nor [DONE]: the server died mid-reply (a local llama.cpp or vLLM crash looks like
                 // this). With nothing received the call is simply retried; with half a reply it counts as cut off, so

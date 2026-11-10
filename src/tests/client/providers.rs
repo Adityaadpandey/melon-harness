@@ -138,6 +138,17 @@ fn completed_calls(evs: &[StreamEvent]) -> Vec<(String, String, Value)> {
 
 // ---------------------------------------------------------------- openai stream parsing
 
+#[tokio::test]
+async fn inline_think_tags_become_thinking_even_when_the_stream_cuts_a_tag_in_two() {
+    let evs = consume(vec![chunk(Some("<thi"), None, None, None), chunk(Some("nk>check the por"), None, None, None), chunk(Some("t</thi"), None, None, None), chunk(Some("nk>\n\nIt is 8080."), None, Some("stop"), None)]).await;
+    let text: String = evs.iter().filter_map(|e| if let StreamEvent::TextDelta(t) = e { Some(t.as_str()) } else { None }).collect();
+    assert_eq!(text, "It is 8080.");
+    assert!(matches!(evs.last(), Some(StreamEvent::MessageComplete { reasoning: Some(r), .. }) if r == "check the port"));
+    // an answer that only talks about the tag is not touched
+    let mut s = crate::client::adapters::ThinkSplit::default();
+    assert_eq!(s.feed("Use a <think> block").0, "Use a <think> block");
+}
+
 #[test]
 fn a_strict_server_gets_tool_names_and_an_assistant_line_before_a_user_note() {
     let history = vec![
