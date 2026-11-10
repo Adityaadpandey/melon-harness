@@ -23,8 +23,10 @@ fn system_prompt_stays_lean() {
     let reg = create_default_registry(ConfigHandle::new(c.clone()));
     let prompt = crate::prompts::get_system_prompt(&c, None, &reg.get_tools(), &[]);
     // Python measured with tiktoken (< 1600). Here only the bytes/4 estimate exists, which reads ~20% higher on English
-    // prose and "-" style punctuation, so the ceiling is 2000: still far below the ~3000 this guard was written against.
-    assert!(estimate_tokens(&prompt) < 2000, "{} tokens", estimate_tokens(&prompt));
+    // prose and "-" style punctuation, so the ceiling was 2000. It is 2200 since the scope and honesty rules for open models and the "how to brief a
+    // sub-agent" lines went in (about 170 tokens that pay for themselves in fewer wasted turns); still far below the ~3000
+    // this guard was written against.
+    assert!(estimate_tokens(&prompt) < 2200, "{} tokens", estimate_tokens(&prompt));
 }
 
 #[test]

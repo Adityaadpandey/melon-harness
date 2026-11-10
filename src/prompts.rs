@@ -14,6 +14,8 @@ const TUNED: &[&str] = &["claude", "codex/", "gpt-", "o1", "o3", "o4", "gemini",
 const OPEN_MODEL_NOTES: &[&str] = &[
     "Call tools only through the tool-calling interface. A tool call written as text, XML or JSON in your reply is not run, and code shown only in your reply is not saved: change files with the edit tools.",
     "Before ending your turn, check your last paragraph: if it is a plan or a promise of work not done (\"I will...\", \"next I would...\"), do that work now with tool calls. A question or a bug report is the exception: there the deliverable is your assessment, so answer and stop.",
+    "The request as written is the deliverable: do not quietly narrow it, widen it or swap it for an easier one. If part of it is blocked, finish every other part in full and say plainly which part you left and why.",
+    "If you raised a concern and the user said to go ahead anyway, that is their decision: do it without arguing again. When corrected, fix it and move on, with no long apology. In the final answer keep what you ran and saw apart from what you assume.",
     "When you have enough to act, act: do not re-derive what is already established in the conversation, re-read a file you just edited to check it (the edit result says what changed and reports new errors), or narrate options you will not pursue.",
 ];
 
@@ -163,7 +165,7 @@ fn tool_guidelines_section(tools: &[Arc<dyn Tool>]) -> Option<String> {
     }
     if !subs.is_empty() {
         let rows = subs.iter().map(|t| format!("- **{}**: {}", t.name(), crate::util::text::head_chars(t.description().split(". ").next().unwrap_or(""), 140))).collect::<Vec<_>>().join("\n");
-        sections.push(format!("# Delegation\n\nUse sub-agents for broad exploration or independent investigation, not for a lookup one call can answer. Give each a bounded goal and the context it needs, run independent ones in parallel, never let two edit the same files, and check their reports like any evidence.\n\nSub-agents:\n{rows}"));
+        sections.push(format!("# Delegation\n\nUse sub-agents for broad exploration or independent investigation, not for a lookup one call can answer. Each has seen none of this conversation: give it the goal, what you already know, the exact names and paths, and the answer shape you want back (\"file:line per claim, under 200 words\"). Never delegate the understanding (\"based on your findings, fix it\"): read the report, decide, then act. Run independent ones in parallel, never let two edit the same files, and check their reports like any evidence.\n\nSub-agents:\n{rows}"));
     }
     (!sections.is_empty()).then(|| sections.join("\n\n"))
 }
@@ -220,7 +222,7 @@ Describe any partial edits, unfinished investigation, commands currently running
 List only tasks still required to satisfy the original request. Include checks that have not run or have failed and need attention.
 
 ## NEXT STEP
-Give the single immediate action the next session should take first. Be concrete and avoid restarting completed investigation without a reason.
+Give the single immediate action the next session should take first. Quote the latest user request or your own last stated step word for word, so the task does not drift. Be concrete and avoid restarting completed investigation without a reason.
 
 ## USER MESSAGES
 List every message the user wrote (not tool results, not harness notices like budget checks or playbooks), oldest first. Copy lists, file:line references, URLs and constraints verbatim; a pasted list of 10 issues keeps all 10. Short chatter ("pls cont") can be one line.
@@ -343,7 +345,7 @@ fn pi_prompt(config: &Config, tools: &[Arc<dyn Tool>], skills: &[Skill]) -> Stri
         "If the requested approach looks wrong (insecure, unscalable, duplicates existing code), say so in one line with the better option; use it when it clearly serves the same goal, else ask.".into(),
     ]);
     if explorer.is_some() {
-        g.push("Wider than 2-3 files: ask the searcher; do not redo its searches.".into());
+        g.push("Wider than 2-3 files: ask the searcher; do not redo its searches. It has seen none of this conversation, so give it the question, the names and paths you already know, and the answer shape you want back.".into());
     }
     g.extend([
         "Keep existing callers working: don't drop or rename a parameter or export unless the request asks for it.".to_string(),
@@ -405,7 +407,7 @@ mod tests {
     fn notes_by_family() {
         assert!(model_notes("claude-opus-5").is_empty());
         assert!(model_notes("codex/gpt-5.6-luna").is_empty());
-        assert_eq!(model_notes("moonshotai/Kimi-K3").len(), 4);
-        assert_eq!(model_notes("openai/gpt-oss-120b").len(), 3);
+        assert_eq!(model_notes("moonshotai/Kimi-K3").len(), 6);
+        assert_eq!(model_notes("openai/gpt-oss-120b").len(), 5);
     }
 }
