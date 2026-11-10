@@ -643,6 +643,16 @@ pub(crate) fn claim_lines(batch: &[Finding]) -> String {
     batch.iter().enumerate().map(|(n, f)| format!("{}. {} | {} | {} | fix: {}", n + 1, f.severity, f.where_, f.what, if f.fix.is_empty() { "(none)" } else { &f.fix })).collect::<Vec<_>>().join("\n")
 }
 
+/// Which claims are worth a verifier. A LOW claim costs the same to check as a HIGH one and changes nothing the user
+/// does next, so it is reported unverified; so is whatever passes the cap. `found` arrives sorted, worst first.
+/// Returns (to check, left unverified).
+pub(crate) fn split_for_verification(found: Vec<Finding>) -> (Vec<Finding>, Vec<Finding>) {
+    let (mut worth, minor): (Vec<Finding>, Vec<Finding>) = found.into_iter().partition(|f| severity_rank(&f.severity) <= 2);
+    let mut skipped = worth.split_off(worth.len().min(MAX_VERIFIED));
+    skipped.extend(minor);
+    (worth, skipped)
+}
+
 /// Claims go to verifiers six at a time (in parallel), so each claim gets turns of its own. A claim the verifier could not
 /// decide gets one more look from a fresh verifier with a bigger budget; if it is still undecided it stays PLAUSIBLE.
 pub(crate) async fn verify(config: &Config, role: &str, findings: &mut Vec<Finding>) {
@@ -1152,11 +1162,10 @@ pub(crate) async fn run_review(config: &Config, request: &str, target: Option<&T
 
     fix_paths(&mut found, &cwd).await;
     found = drop_missing_files(found, &files);
-    let extra = if found.len() > MAX_VERIFIED { found.split_off(MAX_VERIFIED) } else { vec![] };
-    let mut to_check = found;
+    let (mut to_check, extra) = split_for_verification(found);
     if !to_check.is_empty() && !light {
         // a quick pass on a small change is shown as the reviewer's claims, marked unverified, like Claude Code's low effort
-        say(format!("Verifying {} finding(s); the verifier tries to refute and score each", to_check.len()));
+        say(format!("Verifying {} finding(s); the verifier tries to refute and score each{}", to_check.len(), if extra.is_empty() { String::new() } else { format!(" ({} minor or surplus left unverified)", extra.len()) }));
         verify(config, &role, &mut to_check).await;
     }
     let mut found = merge_same_cause(to_check);
@@ -1195,6 +1204,17 @@ mod tests {
 
     fn f(sev: &str, v: &str) -> Finding {
         Finding { severity: sev.into(), where_: "a.ts:1".into(), what: "The insert can throw and 500 the whole list. More detail follows here".into(), fix: "catch it".into(), verdict: v.into(), ..Default::default() }
+    }
+
+    #[test]
+    fn only_findings_that_matter_get_a_verifier() {
+        let all = vec![f("HIGH", "UNCHECKED"), f("MEDIUM", "UNCHECKED"), f("LOW", "UNCHECKED"), f("", "UNCHECKED")];
+        let (check, skip) = split_for_verification(all);
+        assert_eq!((check.len(), skip.len()), (2, 2)); // LOW and unlabelled wait unverified
+        let many: Vec<Finding> = (0..MAX_VERIFIED + 3).map(|_| f("HIGH", "UNCHECKED")).collect();
+        let (check, skip) = split_for_verification(many);
+        assert_eq!((check.len(), skip.len()), (MAX_VERIFIED, 3));
+        assert!(split_for_verification(vec![f("LOW", "UNCHECKED")]).0.is_empty()); // an all-minor review needs no verifier at all
     }
 
     #[test]
