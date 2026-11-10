@@ -313,6 +313,7 @@ impl Adapter for OpenAIChatAdapter {
             let mut finish: Option<String> = None;
             let mut usage: Option<TokenUsage> = None;
             let mut calls: BTreeMap<i64, (String, String, String)> = BTreeMap::new();
+            let mut sent: std::collections::BTreeSet<i64> = Default::default();
             let mut reasoning = String::new();
             let (mut done, mut wrote) = (false, false);
             let mut think = ThinkSplit::default();
@@ -346,6 +347,14 @@ impl Adapter for OpenAIChatAdapter {
                 for d in delta["tool_calls"].as_array().into_iter().flatten() {
                     let id = d["id"].as_str().unwrap_or("");
                     let slot = call_slot(&calls, d["index"].as_i64(), id);
+                    // the model has moved on to call N, so calls before it are finished: hand them over now and the agent
+                    // can start a read while the rest of the reply is still arriving
+                    let ready: Vec<i64> = calls.range(..slot).filter(|(k, c)| !sent.contains(*k) && !c.1.is_empty() && serde_json::from_str::<Value>(&c.2).is_ok()).map(|(k, _)| *k).collect();
+                    for k in ready {
+                        let c = &calls[&k];
+                        sent.insert(k);
+                        yield StreamEvent::ToolCallComplete(ToolCall { call_id: if c.0.is_empty() { format!("call_{k}") } else { c.0.clone() }, name: c.1.clone(), arguments: parse_tool_call_arguments(&c.2) });
+                    }
                     let call = calls.entry(slot).or_insert_with(|| (String::new(), String::new(), String::new()));
                     if !id.is_empty() { call.0 = id.to_string(); }
                     let f = &d["function"];
@@ -372,7 +381,7 @@ impl Adapter for OpenAIChatAdapter {
                 if !wrote && calls.is_empty() { Err(classify(None, "stream ended unexpectedly, before any reply"))?; }
                 finish = Some("length".into());
             }
-            for (idx, c) in calls {
+            for (idx, c) in calls.into_iter().filter(|(k, _)| !sent.contains(k)) {
                 let id = if c.0.is_empty() { format!("call_{idx}") } else { c.0 };
                 yield StreamEvent::ToolCallComplete(ToolCall { call_id: id, name: c.1, arguments: parse_tool_call_arguments(&c.2) });
             }
@@ -532,6 +541,13 @@ impl Adapter for AnthropicAdapter {
                                 }
                             }
                             _ => {}
+                        }
+                    }
+                    "content_block_stop" => {
+                        // this call is complete; later ones may still be streaming
+                        if let Some((id, name, args)) = tools.remove(&ev["index"].as_i64().unwrap_or(-1)) {
+                            let arguments = if args.trim().is_empty() { Map::new() } else { parse_tool_call_arguments(&args) };
+                            yield StreamEvent::ToolCallComplete(ToolCall { call_id: id, name, arguments });
                         }
                     }
                     "message_delta" => {

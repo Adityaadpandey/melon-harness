@@ -616,3 +616,26 @@ async fn a_server_without_the_switch_is_asked_again_without_it_and_remembered() 
     collect(&c).await;
     assert_eq!(*fake.bodies.lock().unwrap(), [Some(json!({"thinking": {"type": "enabled"}})), None, None]);
 }
+
+/// Two calls in one reply: the first is handed over as soon as the second begins, not at the end of the stream, so the
+/// agent can already be reading a.rs while the arguments of the second call are still arriving.
+#[tokio::test]
+async fn a_finished_tool_call_is_handed_over_before_the_reply_ends() {
+    let evs = consume(vec![
+        chunk(None, Some(json!([tc(Some(0), Some("c0"), Some("read_file"), "{\"path\":")])), None, None),
+        chunk(None, Some(json!([tc(Some(0), None, None, "\"a.rs\"}")])), None, None),
+        chunk(None, Some(json!([tc(Some(1), Some("c1"), Some("read_file"), "{\"path\":")])), None, None),
+        chunk(None, Some(json!([tc(Some(1), None, None, "\"b.rs\"}")])), Some("tool_calls"), None),
+    ])
+    .await;
+    let order: Vec<String> = evs
+        .iter()
+        .filter_map(|e| match e {
+            StreamEvent::ToolCallComplete(c) => Some(format!("done {}", c.call_id)),
+            StreamEvent::ToolCallStart { call_id, .. } => Some(format!("start {call_id}")),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(order, ["start c0", "done c0", "start c1", "done c1"]);
+    assert_eq!(completed_calls(&evs).len(), 2, "each call is delivered once");
+}

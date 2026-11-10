@@ -142,6 +142,8 @@ pub struct Agent {
     cut_continues: usize,
     text_calls: usize,
     empty_replies: usize,
+    /// Read-only calls already running because the model finished writing them mid-reply: call id -> (the call, its result).
+    early: std::collections::HashMap<String, (ToolCall, tokio::task::JoinHandle<ToolResult>)>,
     plan_told: bool,
     todo_idle: usize,
     quiet_rounds: usize,
@@ -267,6 +269,7 @@ impl Agent {
             cut_continues: 0,
             text_calls: 0,
             empty_replies: 0,
+            early: Default::default(),
             plan_told: false,
             todo_idle: 0,
             quiet_rounds: 0,
@@ -1073,6 +1076,8 @@ impl Agent {
             let role = self.role(task);
             self.last_role = role.clone();
 
+            // early reads from a reply whose calls were then not run (cut off, rejected): their results are not wanted
+            self.early.drain().for_each(|(_, (_, run))| run.abort());
             let mut tool_calls: Vec<ToolCall> = vec![];
             let (mut usage, mut cut, mut reasoning): (Option<TokenUsage>, bool, Option<String>) = (None, false, None);
             let (mut failed, mut overflowed) = (false, false);
@@ -1096,7 +1101,17 @@ impl Agent {
                         }
                     }
                     StreamEvent::Notice(n) => notice(&tx, n),
-                    StreamEvent::ToolCallComplete(tc) => tool_calls.push(tc),
+                    StreamEvent::ToolCallComplete(tc) => {
+                        // "read a.rs, read b.rs, grep x" in one reply: a.rs is being read while b.rs is still being written.
+                        // Only while every call so far is read-only, so nothing ever runs ahead of an edit or a command.
+                        let fixed = self.session.tool_registry.repair(&tc);
+                        tool_calls.push(tc);
+                        if cfg.early_tools && tool_calls.iter().all(|c| self.is_parallel_safe(&self.session.tool_registry.repair(c))) {
+                            let (session, cwd, call) = (self.session.clone(), cfg.cwd.clone(), fixed.clone());
+                            let run = tokio::spawn(async move { session.tool_registry.invoke(&call.name, Value::Object(call.arguments.clone()), &cwd, &session.hook_system, Some(&session.approval_manager), &call.call_id).await });
+                            self.early.insert(fixed.call_id.clone(), (fixed, run));
+                        }
+                    }
                     StreamEvent::Error(err) => {
                         if overflow().is_match(&err) && !not_overflow().is_match(&err) && !self.overflow_retried {
                             overflowed = true; // the provider says the prompt is too big: compact and ask again, once
@@ -1536,7 +1551,14 @@ impl Agent {
             let session = self.session.clone();
             let futs = batch.iter().map(|tc| {
                 let (session, cwd) = (session.clone(), cwd.clone());
-                async move { session.tool_registry.invoke(&tc.name, Value::Object(tc.arguments.clone()), &cwd, &session.hook_system, Some(&session.approval_manager), &tc.call_id).await }
+                // already running since mid-reply, if it is still the same call
+                let started = self.early.remove(&tc.call_id).and_then(|(call, run)| if call.name == tc.name && call.arguments == tc.arguments { Some(run) } else { run.abort(); None });
+                async move {
+                    if let Some(Ok(done)) = match started { Some(run) => Some(run.await), None => None } {
+                        return done;
+                    }
+                    session.tool_registry.invoke(&tc.name, Value::Object(tc.arguments.clone()), &cwd, &session.hook_system, Some(&session.approval_manager), &tc.call_id).await
+                }
             });
             let results: Vec<ToolResult> = futures::future::join_all(futs).await;
             for (tc, result) in batch.iter().zip(results) {

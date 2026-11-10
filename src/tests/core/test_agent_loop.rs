@@ -240,6 +240,48 @@ async fn read_only_calls_run_concurrently_in_order() {
     assert_eq!(outs, vec!["0", "1", "2", "3", "4"]);
 }
 
+/// Counts its runs. A read that was started while the reply was still streaming must be picked up, not run a second time.
+struct CountTool(Arc<std::sync::atomic::AtomicUsize>);
+
+#[async_trait]
+impl Tool for CountTool {
+    fn name(&self) -> &str {
+        "count"
+    }
+    fn description(&self) -> String {
+        "counts".into()
+    }
+    fn kind(&self) -> ToolKind {
+        ToolKind::Read
+    }
+    fn schema(&self) -> Value {
+        schema_of(json!({"tag": {"type": "string", "default": "x"}}), &[])
+    }
+    fn as_any(&self) -> &dyn std::any::Any {
+        self
+    }
+    async fn execute(&self, inv: &ToolInvocation) -> ToolResult {
+        self.0.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+        ToolResult::ok(inv.str("tag").unwrap_or("x"))
+    }
+}
+
+#[tokio::test]
+async fn reads_started_mid_reply_run_once_and_nothing_runs_ahead_of_a_write() {
+    let tmp = tempfile::tempdir().unwrap();
+    let n = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+    let reads: Vec<(&str, Value)> = (0..3).map(|i| ("count", json!({"tag": i.to_string()}))).collect();
+    // second reply: a write first, so the read after it must wait for its turn (it has to see v1)
+    let mixed = vec![("write_file", json!({"path": "f.txt", "content": "v1"})), ("read_file", json!({"path": "f.txt"}))];
+    let mut agent = scripted(cfg(tmp.path(), json!({})), vec![calls(reads), calls(mixed), text("done")]).await;
+    agent.session.tool_registry.register(Arc::new(CountTool(n.clone())));
+    let events = run(&mut agent, "go").await;
+    let outs: Vec<String> = completed(&events).into_iter().map(|(_, r)| r.output).collect();
+    assert_eq!(outs[..3], ["0", "1", "2"]);
+    assert_eq!(n.load(std::sync::atomic::Ordering::SeqCst), 3, "each read ran exactly once");
+    assert!(outs[4].contains("v1"), "{}", outs[4]);
+}
+
 #[tokio::test]
 async fn writes_are_barriers_and_stay_ordered() {
     let tmp = tempfile::tempdir().unwrap();

@@ -283,6 +283,8 @@ pub struct Config {
     pub max_parallel_agents: usize,
     /// With more MCP tools than this connected, their schemas are held back and loaded on demand through `tool_search`.
     pub mcp_defer_above: usize,
+    /// Start a read-only tool call as soon as the model finishes writing it, while later calls are still streaming.
+    pub early_tools: bool,
     pub enable_parallel_tasks: bool,
     pub auto_challenge: bool,
     pub auto_learn: bool,
@@ -374,6 +376,7 @@ impl Default for Config {
             model_pinned: false,
             max_parallel_agents: 4,
             mcp_defer_above: 15,
+            early_tools: true,
             enable_parallel_tasks: true,
             auto_challenge: false,
             auto_learn: false,
