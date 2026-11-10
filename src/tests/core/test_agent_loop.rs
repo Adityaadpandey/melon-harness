@@ -502,16 +502,18 @@ async fn a_run_that_starts_read_only_but_edits_is_no_longer_capped() {
 }
 
 #[tokio::test]
-async fn more_allows_exactly_that_many_calls_for_one_request_only() {
+async fn the_hard_stop_follows_the_models_estimate_but_never_passes_the_configured_budget() {
     let tmp = tempfile::tempdir().unwrap();
-    let mut agent = scripted(cfg(tmp.path(), json!({"read_call_budget": 20})), vec![text("ok")]).await;
-    agent.extra_calls = 10;
+    let mut agent = scripted(cfg(tmp.path(), json!({"read_call_budget": 100})), vec![text("ok")]).await;
     run(&mut agent, "explain things").await;
-    assert_eq!(agent.call_limit(), 10);
-    assert_eq!(agent.extra_calls, 0);
-    *agent.session.client.script.lock().unwrap() = Some(vec![text("ok")].into());
-    run(&mut agent, "explain more").await;
-    assert_eq!(agent.call_limit(), 20);
+    agent.estimate = 0;
+    assert_eq!(agent.call_limit(), 100); // no estimate: the configured budget, as before
+    agent.estimate = 4;
+    assert_eq!(agent.call_limit(), 25); // the floor
+    agent.estimate = 20;
+    assert_eq!(agent.call_limit(), 60);
+    agent.estimate = 50;
+    assert_eq!(agent.call_limit(), 100); // 150 wanted, the configured budget is the ceiling
 }
 
 #[tokio::test]

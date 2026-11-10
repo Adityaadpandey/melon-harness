@@ -5,6 +5,7 @@ use crate::agent::challenge::{challenge_request, is_risky, render as render_obje
 use crate::agent::events::AgentEvent;
 use crate::agent::grounding::{correction_prompt, has_file_code, shows_second_thoughts, verify_references, wants_change, REWRITE_PROMPT};
 use crate::agent::learn::{judge, Learned};
+use crate::agent::ledger;
 use crate::agent::orient::{orient, repo_map, Orientation};
 use crate::agent::review::{merge_reviews, review_changes, ReviewResult};
 use crate::agent::review_fix;
@@ -98,11 +99,11 @@ pub struct Agent {
     thrash: usize,
     overflow_retried: bool,
     pub(crate) last_model_call: Option<Instant>,
-    /// Did the last request stop at the call budget? /more only makes sense then.
+    /// Did the last request stop at the hard round limit?
     pub capped_last: bool,
-    /// Set by /more, consumed by the next request.
-    pub extra_calls: usize,
-    allowance: usize,
+    /// Tool rounds the model said this request needs (0 = it gave no number). The hard limit is a multiple of it.
+    pub(crate) estimate: usize,
+    over_noted: bool,
     calls_used: usize,
     calls_warned: bool,
     shown: Vec<Finding>,
@@ -230,8 +231,8 @@ impl Agent {
             overflow_retried: false,
             last_model_call: None,
             capped_last: false,
-            extra_calls: 0,
-            allowance: 0,
+            estimate: 0,
+            over_noted: false,
             calls_used: 0,
             calls_warned: false,
             shown: vec![],
@@ -361,15 +362,20 @@ impl Agent {
         self.tier.clone()
     }
 
-    /// Read-only requests (review, explain, find) get a hard cap on tool rounds; requests that change files and
-    /// sub-agents are not capped here (they have turn and token budgets).
+    /// The hard stop on tool rounds. With the model's own estimate it is a multiple of it (a runaway catcher, see
+    /// `ledger::backstop`), still never above the configured budget; without one it is the configured budget.
+    /// Sub-agents are not capped here (they have turn and token budgets).
     pub(crate) fn call_limit(&self) -> usize {
         let cfg = self.config.get();
         let budget = if self.read_only { cfg.read_call_budget } else { cfg.write_call_budget };
-        if cfg.model_role != "default" || budget == 0 {
+        if cfg.model_role != "default" {
             return 0;
         }
-        if self.allowance > 0 { self.allowance } else { budget } // after /more: exactly that many more calls
+        match (self.estimate, budget) {
+            (0, b) => b,
+            (e, 0) => ledger::backstop(e),
+            (e, b) => ledger::backstop(e).min(b),
+        }
     }
 
     pub async fn run(&mut self, message: &str, tx: Tx) {
@@ -516,6 +522,10 @@ impl Agent {
             if !w.is_empty() {
                 message_for_model.push_str(&format!("\n\n{w}"));
             }
+            if o.rounds > 0 {
+                // rides on this message only, so the cached prefix before it is untouched
+                message_for_model.push_str(&format!("\n\n[Target: about {} tool rounds. A round is one turn, however many calls it holds, so batch independent lookups. Finishing within it earns points and overshooting costs them; if the work truly needs more, say how many and why, then carry on.]", o.rounds));
+            }
         }
         if self.session.tool_registry.get("graph").is_some() {
             if let Some(map) = crate::util::symgraph::task_map(&cfg.cwd, message) {
@@ -552,7 +562,8 @@ impl Agent {
         self.edited = false;
         self.fix_nudged = false;
         self.capped_last = false;
-        self.allowance = std::mem::take(&mut self.extra_calls); // /more applies to this one request
+        self.estimate = oriented.as_ref().map_or(0, |o| o.rounds);
+        self.over_noted = false;
         self.read_only = !wants;
         self.wants_change = wants;
         self.is_review = reviewy().is_match(message);
@@ -894,6 +905,13 @@ impl Agent {
                 self.checkpoints.remove(0);
             }
         }
+        if self.estimate > 0 {
+            let cut = self.capped_last || self.budget_hit || task.status == TaskStatus::Failed;
+            let intent = if self.is_review { "review" } else if self.wants_change { "change" } else { "ask" };
+            let pts = ledger::record(&crate::config::loader::get_data_dir(), intent, self.estimate, self.calls_used, cut);
+            notice(&tx, ledger::verdict(self.estimate, self.calls_used, cut, pts));
+            self.session.tracer.emit("calibration", json!({"estimate": self.estimate, "actual": self.calls_used, "cut": cut, "points": pts}));
+        }
         self.last_answer = final_response.clone().unwrap_or_default();
         if let Some(fr) = &final_response {
             if fr.split_whitespace().count() > LONG_ANSWER_WORDS && !reviewy().is_match(message) {
@@ -966,10 +984,14 @@ impl Agent {
             }
             let limit = self.call_limit();
             if limit > 0 && self.calls_used >= limit {
-                self.wrap_up(task, &tx, &format!("Call budget reached ({limit} tool rounds)"), &format!("The {limit}-round budget for this request is spent (the user can type /more to allow 10 more)")).await;
+                self.wrap_up(task, &tx, &format!("Call budget reached ({limit} tool rounds)"), &format!("The {limit}-round limit for this request is reached")).await;
                 self.budget_hit = false; // the answer was produced; this is not a token-budget failure
                 self.capped_last = true;
                 return;
+            }
+            if self.estimate > 0 && self.calls_used > self.estimate && !self.over_noted {
+                self.over_noted = true;
+                self.add_user(&format!("You are past your estimate of {} rounds ({} used). Keep going only if the work needs it: say in one line what is taking longer, then batch what is left into parallel calls.", self.estimate, self.calls_used));
             }
             if limit > 0 && self.calls_used >= ((limit as f64 * 0.7) as usize).max(1) && !self.calls_warned {
                 self.calls_warned = true;
@@ -1005,6 +1027,10 @@ impl Agent {
                 let state = if job.returncode() == Some(0) { "finished".to_string() } else { format!("failed (exit {})", job.returncode().unwrap_or(-1)) };
                 notice(&tx, format!("Background job {} {state} in {:.0}s: {}", job.id, job.started.elapsed().as_secs_f64(), job.command));
                 self.add_user(&format!("[background job {} `{}` {state}; last output:]\n{}", job.id, job.command, job.tail(15)));
+            }
+            for (id, name, report) in crate::tools::subagents::finished(self.config.key()) {
+                notice(&tx, format!("Background sub-agent {name} finished"));
+                self.add_user(&format!("[background sub-agent '{name}' ({id}) finished; check its report like any evidence before relying on it:]\n{report}"));
             }
             self.remind_each_turn();
             self.session.increment_turn();
@@ -1164,6 +1190,13 @@ impl Agent {
                     self.add_user(&format!("{} step(s) on your list are still open: {}. Finish them (fix, or mark done with a one-line reason it is fine) before you answer.", left.len(), left.iter().take(6).cloned().collect::<Vec<_>>().join("; ")));
                     continue;
                 }
+                let waiting = crate::tools::subagents::pending(self.config.key());
+                if waiting > 0 {
+                    // the model has nothing more to do itself, but work it started is still out: its reports are part of the answer
+                    notice(&tx, format!("Waiting for {waiting} background sub-agent(s)"));
+                    crate::tools::subagents::wait_for_report(self.config.key()).await;
+                    continue;
+                }
                 self.prune(false, false);
                 return;
             }
@@ -1247,14 +1280,16 @@ impl Agent {
         }
         let t0 = Instant::now();
         let map = self.repo_map.clone().unwrap_or_default();
-        let mut found = orient(&self.session.client, role, message, &map, "").await;
+        let track = ledger::track_record(&crate::config::loader::get_data_dir());
+        let mut found = orient(&self.session.client, role, message, &map, &track).await;
         if found.is_none() {
-            found = orient(&self.session.client, "default", message, &map, "").await; // the helper chain is down (bad key, quota): the main model can read a request too
+            found = orient(&self.session.client, "default", message, &map, &track).await; // the helper chain is down (bad key, quota): the main model can read a request too
         }
         let mut f = json!({"ok": found.is_some(), "sec": (t0.elapsed().as_secs_f64() * 100.0).round() / 100.0});
         if let Some(o) = &found {
             f["intent"] = json!(o.intent);
             f["tier"] = json!(o.tier);
+            f["rounds"] = json!(o.rounds);
             f["where"] = json!(o.where_);
             f["queries"] = json!(o.queries);
         }

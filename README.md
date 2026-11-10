@@ -785,7 +785,7 @@ A full-screen terminal UI with its own look, not a clone.
   resuming redraws the whole conversation, compacted parts marked, plus cost, side panel and trace. `/sessions` lists them.
 
 Commands: `/help /clear /compact /context /cost /model /effort /approval /permissions /plan /challenge /verify /diff /agents /hooks
-/verbose /more /skills /expand /config /stats /tools /mcp /connect /save /sessions /resume /checkpoint /restore /undo /rewind /jobs
+/verbose /skills /expand /config /stats /tools /mcp /connect /save /sessions /resume /checkpoint /restore /undo /rewind /jobs
 /copy /learn /forget /exit`, plus your own (below).
 
 ## Extending: MCP, hooks, commands, project tools

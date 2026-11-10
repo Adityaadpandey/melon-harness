@@ -1095,14 +1095,6 @@ impl Cli {
                 }
             }
             "/verbose" => uprintln!("{}", paint(&format!("  output: {}", if self.tui.toggle_quiet() { "quiet" } else { "verbose" }), MUTED)),
-            "/more" => {
-                if !self.agent().capped_last {
-                    uprintln!("{}", paint("  /more only applies after a request stopped at its round budget.", MUTED));
-                } else {
-                    self.agent().extra_calls = 10;
-                    self.run_turn("Continue from where you stopped. You have 10 more tool rounds; batch independent lookups as parallel calls, spend them on what is still unknown, then answer.").await;
-                }
-            }
             "/challenge" => {
                 if args.is_empty() {
                     uprintln!("{}", paint("Usage: /challenge <your idea or plan>. A second model argues against it.", MUTED));
