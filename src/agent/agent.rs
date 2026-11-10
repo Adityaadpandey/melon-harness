@@ -839,7 +839,9 @@ impl Agent {
                     self.back_to_work(&mut task, &tx);
                     continue;
                 };
-                if self.fix_run && !task.expired() {
+                // a review that is about to send the work back is not the one to prove: the fix changes first, then it is proven once
+                let will_repair = res.verdict == "ISSUES" && reviews < max_reviews && task.repairs < task.max_repairs;
+                if self.fix_run && !will_repair && !task.expired() {
                     notice(&tx, "A fresh verifier is trying to prove the fix works (it runs the checks and the findings' triggers in a copy)");
                     let checks_text = task.verification.iter().map(|c| format!("{}={}", c["command"].as_str().unwrap_or(""), if c["ok"] == true { "ok" } else { "FAILED" })).collect::<Vec<_>>().join(", ");
                     let fv = verify_fix(&cfg, &cfg.review_pipeline_role, &cfg.cwd, &self.fix_brief, &fr, &task.changed_files, &checks_text).await;
