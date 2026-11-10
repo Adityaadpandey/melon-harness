@@ -486,6 +486,24 @@ pub fn task_map(cwd: &Path, request: &str) -> Option<String> {
     Some(format!("[Code graph: definitions your request names (live, matched by name; read the code before relying on it; graph symbol/callers go deeper)\n{}]", rows.join("\n")))
 }
 
+/// One line for a grep whose pattern is the name of something defined here, e.g. `parse_invoice` or `\bparse_invoice\(`:
+/// "[graph: function parse_invoice is defined at billing/invoice.py:1-2, used in 2 places; ...]". None for any other pattern,
+/// for a name defined in many places, and in repos too small to be offered the graph tool.
+pub fn grep_hint(cwd: &Path, pattern: &str) -> Option<String> {
+    let name = pattern.trim_start_matches("\\b").trim_end_matches("\\(").trim_end_matches('(').trim_end_matches("\\b");
+    if name.len() < 4 || !name.chars().all(|c| c.is_alphanumeric() || c == '_') {
+        return None;
+    }
+    let g = load(cwd);
+    let defs: Vec<&(String, usize)> = g.by_name.get(name)?.iter().filter(|(f, i)| !matches!(g.files[f].defs[*i].kind, "impl" | "mod")).collect();
+    if g.files.len() < 15 || defs.len() != 1 {
+        return None;
+    }
+    let (f, i) = defs[0];
+    let d = &g.files[f].defs[*i];
+    Some(format!("[graph: {} {name} is defined at {f}:{}-{}, used in {} place(s). `graph callers {name}` lists them without the noise, `graph symbol {name}` reads just its body.]", d.kind, d.line, d.end, g.callers(f, name).len()))
+}
+
 pub fn listed(cwd: &Path) -> Vec<String> {
     let Ok(o) = std::process::Command::new("git").args(["ls-files", "--cached", "--others", "--exclude-standard"]).current_dir(cwd).output() else { return vec![] };
     let cfg = crate::util::graphcfg::load(cwd);
@@ -706,6 +724,17 @@ mod tests {
         let g = load(d.path());
         assert_eq!(who(&g, "ui/Nav.tsx", "Nav"), ["app.tsx:4"]);
         assert_eq!(who(&g, "lib/save.ts", "save"), ["app.tsx:4"]);
+    }
+
+    #[test]
+    fn grep_for_a_known_name_points_at_the_graph() {
+        let mut files: Vec<(String, String)> = (0..15).map(|i| (format!("m{i}.py"), format!("def filler_{i}():\n    pass\n"))).collect();
+        files.push(("lib.py".into(), "def parse_invoice(x):\n    return x\n".into()));
+        files.push(("app.py".into(), "from lib import parse_invoice\nparse_invoice(1)\n".into()));
+        let d = repo(&files.iter().map(|(a, b)| (a.as_str(), b.as_str())).collect::<Vec<_>>());
+        let h = grep_hint(d.path(), "\\bparse_invoice\\(").unwrap();
+        assert!(h.contains("function parse_invoice is defined at lib.py:1-2, used in 1 place(s)"), "{h}");
+        assert!(grep_hint(d.path(), "parse.*invoice").is_none() && grep_hint(d.path(), "nothing_here").is_none());
     }
 
     #[test]

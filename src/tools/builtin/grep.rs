@@ -98,6 +98,10 @@ impl Tool for GrepTool {
             let cut: String = body.chars().take(MAX_GREP_CHARS).collect();
             body = format!("{}\n... output clipped; narrow the pattern, path or glob, or use files_only", cut.rsplit_once('\n').map_or(cut.as_str(), |x| x.0));
         }
+        // grepping for a name the graph knows: say so, because the graph answers "who uses it" in one call
+        if let Some(h) = crate::util::symgraph::grep_hint(&inv.cwd, &pattern).filter(|_| res.total > 3) {
+            body.push_str(&format!("\n{h}"));
+        }
         ToolResult::ok_with(body, meta)
     }
 }
