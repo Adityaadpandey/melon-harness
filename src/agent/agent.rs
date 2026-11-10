@@ -1386,7 +1386,7 @@ impl Agent {
     /// a clear so the agent does not rediscover what is left to do.
     pub(crate) fn remind_todos(&mut self) {
         let text = self.todos().and_then(|t| t.as_any().downcast_ref::<TodosTool>().map(|t| t.render())).unwrap_or_default();
-        if !text.is_empty() && text.contains("[ ]") && text != self.todos_reminded {
+        if !text.is_empty() && (text.contains("[ ]") || text.contains("[~]")) && text != self.todos_reminded {
             self.todos_reminded = text.clone();
             // the list is only as current as the last `todos set`: say so, or a list nobody ticked reads as ten open steps
             self.add_user(&format!("Task list as last set (old tool results were cleared). Steps you already finished but did not tick are still shown open: tick them with `todos` first, then carry on with the rest.\n{text}"));

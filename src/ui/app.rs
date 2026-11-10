@@ -894,7 +894,7 @@ impl Cli {
         }
         if let (Some(todos), Some(map)) = (session.tool_registry.get("todos"), snap.todos.as_object().filter(|m| !m.is_empty())) {
             if let Some(t) = todos.as_any().downcast_ref::<crate::tools::builtin::todo::TodosTool>() {
-                t.replace(map.iter().map(|(id, v)| crate::tools::builtin::todo::Todo { id: id.clone(), content: v["content"].as_str().unwrap_or("").into(), done: v["done"].as_bool().unwrap_or(false) }).collect());
+                t.replace(map.iter().map(|(id, v)| crate::tools::builtin::todo::Todo { id: id.clone(), content: v["content"].as_str().unwrap_or("").into(), done: v["done"].as_bool().unwrap_or(false), active: false }).collect());
             }
         }
         // the new session starts with no one to ask; without this a resumed run refuses every edit

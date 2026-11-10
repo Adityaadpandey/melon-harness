@@ -625,6 +625,11 @@ async fn todos_complete_by_the_id_the_model_gave_in_set_or_by_a_unique_phrase() 
     assert!(t.execute(&inv(tmp.path(), json!({"action": "complete", "id": "inspect"}))).await.success);
     assert!(t.execute(&inv(tmp.path(), json!({"action": "complete", "id": "lint"}))).await.success); // unique phrase of the step
     assert!(!t.execute(&inv(tmp.path(), json!({"action": "complete", "id": "nope"}))).await.success);
+    // one step in progress at a time, whichever way it was said
+    t.execute(&inv(tmp.path(), json!({"action": "set", "items": [{"content": "a", "status": "done"}, {"content": "b", "status": "in_progress"}, {"content": "c", "status": "in_progress"}]}))).await;
+    assert_eq!(t.render(), "[x] a\n[~] b\n[ ] c");
+    t.execute(&inv(tmp.path(), json!({"action": "start", "id": "c"}))).await;
+    assert_eq!(t.render(), "[x] a\n[ ] b\n[~] c");
 }
 
 #[tokio::test]
