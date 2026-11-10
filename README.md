@@ -649,6 +649,10 @@ flowchart LR
   your own vLLM/SGLang/LM Studio, `reasoning_effort` for gpt-oss. A server that refuses the switch gets the request again without
   it.
 - `melon probe-models` shows which of your configured models actually answer.
+- `melon insights [--days 7] [--json]` reads melon's own trace files and shows, per model, how many calls failed or were
+  retried, how much of the prompt came from cache, how many tool calls were malformed, and how often the loop had to step in
+  (empty reply, tool call written as text, cut-off reply, loop). Per tool it shows the error rate and the most common error.
+  It ends with a short "worth a look" list, so prompts and compat settings get tuned from what happened, not from memory.
 - **Any provider, directly.** `provider:model` skips the gateway and calls that API with its own key:
   `melon -m groq:llama-3.3-70b`, `-m anthropic:claude-sonnet-5-5`, `-m ollama:qwen3:8b`. Built in: openai, anthropic, gemini,
   openrouter, groq, deepseek, mistral, xai, together, fireworks, cerebras, moonshot, zai, ollama, lmstudio. Set the key

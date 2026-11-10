@@ -320,6 +320,12 @@ impl Agent {
         self.add_user(&format!("<system-reminder>\n{text}\n</system-reminder>"));
     }
 
+    /// Record that the loop had to step in ("empty_reply", "text_call", ...). `melon insights` counts these per model,
+    /// which is how we learn which family needs a prompt note or a compat flag.
+    fn nudged(&self, kind: &str) {
+        self.session.tracer.emit("nudge", json!({"kind": kind}));
+    }
+
     fn spent(&self) -> i64 {
         let cm = self.session.context_manager.lock().unwrap();
         let u = &cm.total_usage;
@@ -1087,6 +1093,7 @@ impl Agent {
 
             if overflowed {
                 self.overflow_retried = true;
+                self.nudged("overflow");
                 notice(&tx, "The model refused the prompt as too long; compacting and retrying");
                 if self.compact(true).await {
                     continue;
@@ -1132,17 +1139,20 @@ impl Agent {
                 }
                 if text_call().is_match(&response_text) && self.text_calls < 2 {
                     self.text_calls += 1;
+                    self.nudged("text_call");
                     self.remind("Your last reply wrote a tool call as text. Text is not run, so nothing happened. Make the call through the tool-calling interface.");
                     continue;
                 }
                 if response_text.trim().is_empty() && !cut && self.empty_replies < 2 {
                     // thinking with nothing after it: common on open models, and the user would see a blank answer
                     self.empty_replies += 1;
+                    self.nudged("empty_reply");
                     self.remind("Your last reply had no text and no tool call, so the user saw nothing. If work is left, make the next tool call now. If you are done, write the answer as plain text.");
                     continue;
                 }
                 if cut && self.cut_continues < 2 {
                     self.cut_continues += 1;
+                    self.nudged("cut_off");
                     self.add_user("Your last reply was cut off by the output token limit. Continue exactly where it stopped, without repeating what you already wrote or apologising; if you were inside a code block or table, reopen it first. Keep what remains short, or do it in smaller pieces through tool calls.");
                     continue;
                 }
@@ -1150,6 +1160,7 @@ impl Agent {
                 if !left.is_empty() && self.sweep_pushed < 2 {
                     // a sweep that ends with open steps stops after the first few files, which is what this guards against
                     self.sweep_pushed += 1;
+                    self.nudged("stopped_early");
                     self.add_user(&format!("{} step(s) on your list are still open: {}. Finish them (fix, or mark done with a one-line reason it is fine) before you answer.", left.len(), left.iter().take(6).cloned().collect::<Vec<_>>().join("; ")));
                     continue;
                 }
@@ -1161,6 +1172,7 @@ impl Agent {
             if cut {
                 // the last call's arguments are probably truncated: running it would write half a file, and "not valid JSON"
                 // made the model resend the same oversized call. Run none of them and say why.
+                self.nudged("cut_call");
                 notice(&tx, "The reply hit the output token limit; its tool calls were not run");
                 results = tool_calls.iter().map(|tc| (tc.call_id.clone(), CUT_CALL.to_string(), true)).collect();
             } else {
@@ -1185,11 +1197,13 @@ impl Agent {
 
             let churn = self.session.loop_detector.lock().unwrap().take_churn();
             if let Some(c) = churn {
+                self.nudged("edit_churn");
                 self.add_user(&format!("{c}. Stop and check: re-read the file and run its check to see where it stands. If the edits are not converging, write the design in two lines (what this file should end up doing, and why the earlier edits missed it) before the next edit, or tell the user what is blocking you."));
             }
             let looped = self.session.loop_detector.lock().unwrap().check_for_loop();
             if let Some(err) = looped {
                 loop_warnings += 1;
+                self.nudged("loop");
                 self.escalated = true; // stuck: bring in the strong model
                 if loop_warnings >= 3 {
                     // the model was told twice and kept going; stop burning budget

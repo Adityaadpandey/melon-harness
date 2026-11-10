@@ -1,6 +1,7 @@
 //! Small shared helpers: paths, text, regex, tracing, the result archive and the cost summary.
 pub mod archive;
 pub mod cost;
+pub mod insights;
 pub mod detach;
 pub mod edits;
 pub mod paths;
