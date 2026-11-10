@@ -1,0 +1,70 @@
+melon Source-Available License (Use-Only)
+
+Copyright (c) 2026 Adityaadpandey. All rights reserved.
+
+1. Definitions
+
+"Software" means the melon program: its compiled binaries, documentation,
+and everything else in this repository.
+
+"Source Code" means the Software in human-readable form, including all
+files in this repository, and any part, copy, or adaptation of them.
+
+"You" means the individual or entity using the Software.
+
+2. Permission to use
+
+Subject to these terms, you may download, install, run, and use the
+Software for any purpose, including commercial purposes. You own the
+output you produce with the Software.
+
+Building and running the Software on your own machines is allowed.
+
+3. What you may not do
+
+Except as this license expressly allows, you may not:
+
+(a) copy, modify, adapt, translate, or create derivative works of the
+    Source Code;
+(b) distribute, publish, sublicense, sell, or otherwise make available
+    the Source Code, or any part of it, in any form. This includes
+    forks, mirrors, gists, snippets, and public or private repositories
+    that others can access;
+(c) reuse the Source Code, or a substantial part of it, in another
+    project, product, or service;
+(d) remove, alter, or obscure copyright or license notices.
+
+4. Redistributing binaries
+
+You may redistribute unmodified, official compiled binaries of the
+Software, provided that this license text is included with them and
+that you do not charge a separate fee for the Source Code.
+
+5. Third-party components
+
+The Software depends on third-party libraries. Each library remains
+under its own license, and those licenses apply to that library. Nothing
+in this license changes those terms.
+
+6. Ownership
+
+The Software and the Source Code remain the property of the copyright
+holder. No right is granted except the rights stated in this license.
+
+7. Termination
+
+This license ends automatically if you breach any of its terms. When it
+ends, you must stop using and delete all copies of the Source Code you
+hold. Section 6 continues to apply after termination.
+
+8. No warranty
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS
+OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF
+MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE, AND NON-INFRINGEMENT.
+
+9. Limitation of liability
+
+IN NO EVENT SHALL THE COPYRIGHT HOLDER BE LIABLE FOR ANY CLAIM, DAMAGES,
+OR OTHER LIABILITY ARISING FROM, OUT OF, OR IN CONNECTION WITH THE
+SOFTWARE OR ITS USE.
