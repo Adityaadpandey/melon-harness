@@ -1247,9 +1247,9 @@ impl Agent {
         }
         let t0 = Instant::now();
         let map = self.repo_map.clone().unwrap_or_default();
-        let mut found = orient(&self.session.client, role, message, &map).await;
+        let mut found = orient(&self.session.client, role, message, &map, "").await;
         if found.is_none() {
-            found = orient(&self.session.client, "default", message, &map).await; // the helper chain is down (bad key, quota): the main model can read a request too
+            found = orient(&self.session.client, "default", message, &map, "").await; // the helper chain is down (bad key, quota): the main model can read a request too
         }
         let mut f = json!({"ok": found.is_some(), "sec": (t0.elapsed().as_secs_f64() * 100.0).round() / 100.0});
         if let Some(o) = &found {

@@ -36,14 +36,14 @@ fn reply(json_text: &str) -> Vec<StreamEvent> {
 async fn a_failed_call_means_no_orientation() {
     let dir = tempfile::tempdir().unwrap();
     let a = scripted(config(dir.path()), vec![error("boom")]).await;
-    assert!(orient(&a.session.client, "fast", "review the change i have", "FOLDERS: x").await.is_none());
+    assert!(orient(&a.session.client, "fast", "review the change i have", "FOLDERS: x", "").await.is_none());
 }
 
 #[tokio::test]
 async fn the_fast_model_answer_is_used() {
     let dir = tempfile::tempdir().unwrap();
     let a = scripted(config(dir.path()), vec![reply(r#"{"intent": "review", "tier": "fast"}"#)]).await;
-    let got = orient(&a.session.client, "fast", "review the change i have", "FOLDERS: x").await.unwrap();
+    let got = orient(&a.session.client, "fast", "review the change i have", "FOLDERS: x", "").await.unwrap();
     assert_eq!((got.intent.as_str(), got.tier), ("review", "fast"));
 }
 

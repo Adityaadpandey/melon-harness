@@ -21,6 +21,8 @@ pub struct Orientation {
     pub where_: Vec<String>,
     pub queries: Vec<String>,
     pub note: String,
+    /// Tool rounds the request should take, by the model's own guess. 0 means it gave none.
+    pub rounds: usize,
 }
 
 impl Orientation {
@@ -85,6 +87,7 @@ REQUEST: {request}
 
 REPO MAP:
 {repo}
+{track}
 
 Fields:
 "intent": "change" (the user wants files edited or created), "review" (check code, a diff or a PR and report), "investigate" (find a cause or trace how something works), "explain" (answer a question about the code), "git" (commit, branch, push, status), or "other".
@@ -93,8 +96,14 @@ Fields:
 "touches": what the finished work should change: "code" (source files: a bug fix or feature), "docs" (markdown, comments or notes only), "config" (CI, build, env or infra files), or "none" (nothing is edited).
 "where": up to 5 paths or folders from the map where the answer most likely lives (only ones that appear in the map; [] if you cannot tell).
 "queries": up to 3 plain-word search queries that would find the relevant code (identifiers, domain words the user used, synonyms a developer would have used in code); [] if the request names exact files.
+"rounds": a whole number, 1 to 60: how many tool rounds the agent will need. A round is one model turn, however many calls run in parallel inside it. Roughly: 1-3 for a lookup or a one-file answer, 4-8 for a small fix or a question across a few files, 10-25 for a feature or a bug with an unknown cause, up to 60 for a sweep of the whole repo. It is scored afterwards: finishing within it earns points, going over loses them, and stopping early with the job undone loses the most. Give the number you really expect.
 "note": at most one short sentence: the one thing worth knowing before starting (for example that the uncommitted change is what the user means), or "".
 "#;
+
+/// Past the cap a guess is noise; a missing or zero one means the agent runs on its configured budget instead.
+fn rounds_from(v: &Value) -> usize {
+    v.as_u64().map_or(0, |n| (n as usize).min(60))
+}
 
 pub fn parse(reply: &str) -> Option<Orientation> {
     let (s, e) = (reply.find('{')?, reply.rfind('}')?);
@@ -112,12 +121,13 @@ pub fn parse(reply: &str) -> Option<Orientation> {
     let clean = |k: &str| -> Vec<String> { d[k].as_array().map(|a| a.iter().filter_map(|x| x.as_str().map(|s| s.chars().take(120).collect())).take(5).collect()).unwrap_or_default() };
     let mut queries = clean("queries");
     queries.truncate(3);
-    Some(Orientation { intent, tier, touches: pick("touches", &["code", "docs", "config", "none"], "none"), where_: clean("where"), queries, note: d["note"].as_str().unwrap_or("").chars().take(200).collect() })
+    Some(Orientation { intent, tier, touches: pick("touches", &["code", "docs", "config", "none"], "none"), where_: clean("where"), queries, note: d["note"].as_str().unwrap_or("").chars().take(200).collect(), rounds: rounds_from(&d["rounds"]) })
 }
 
 /// None when the call fails or the answer is not usable.
-pub async fn orient(client: &Arc<LLMClient>, role: &str, request: &str, repo: &str) -> Option<Orientation> {
-    let prompt = PROMPT.replace("{request}", &request.chars().take(6000).collect::<String>()).replace("{repo}", repo);
+/// `track` is the agent's own record of past estimates (see `ledger::track_record`), or "".
+pub async fn orient(client: &Arc<LLMClient>, role: &str, request: &str, repo: &str, track: &str) -> Option<Orientation> {
+    let prompt = PROMPT.replace("{request}", &request.chars().take(6000).collect::<String>()).replace("{repo}", repo).replace("{track}", track);
     let mut text = String::new();
     let mut s = client.chat_completion(vec![json!({"role": "user", "content": prompt})], None, false, role);
     while let Some(ev) = s.next().await {
@@ -140,5 +150,13 @@ mod tests {
         assert!(o.hint().contains("likely in src/"));
         assert!(parse("no json").is_none());
         assert_eq!(parse("{\"intent\": \"zzz\"}").unwrap().intent, "other");
+    }
+
+    #[test]
+    fn rounds_are_capped_and_default_to_none() {
+        assert_eq!(parse("{\"rounds\": 12}").unwrap().rounds, 12);
+        assert_eq!(parse("{\"rounds\": 900}").unwrap().rounds, 60);
+        assert_eq!(parse("{\"rounds\": \"lots\"}").unwrap().rounds, 0);
+        assert_eq!(parse("{\"intent\": \"change\"}").unwrap().rounds, 0);
     }
 }
