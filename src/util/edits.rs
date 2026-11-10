@@ -1,6 +1,7 @@
 //! Pure edit planning: given file text and requested replacements, produce the new text or a precise error.
 //! Matching is exact first. If that fails, a second pass ignores trailing whitespace and typographic quotes/dashes
-//! (models often normalise those) and applies only when it matches exactly one place. CRLF line endings are kept.
+//! (models often normalise those) and applies only when it matches exactly one place. A third pass also ignores
+//! indentation, and shifts new_string by the same amount so the result sits where the file's code sits. CRLF line endings are kept.
 use crate::util::re::{lit, Re};
 use std::sync::OnceLock;
 use unicode_normalization::UnicodeNormalization;
@@ -59,7 +60,7 @@ fn find_all(text: &str, needle: &str) -> Vec<usize> {
     out
 }
 
-fn fuzzy_span(text: &str, old: &str) -> Vec<(usize, usize)> {
+fn fuzzy_span(text: &str, old: &str, norm: fn(&str) -> String) -> Vec<(usize, usize)> {
     let lines: Vec<&str> = text.split('\n').collect();
     let want: Vec<String> = old.trim_matches('\n').split('\n').map(norm).collect();
     if !want.iter().any(|w| !w.is_empty()) {
@@ -84,6 +85,18 @@ fn fuzzy_span(text: &str, old: &str) -> Vec<(usize, usize)> {
         }
     }
     spans
+}
+
+fn indent(line: &str) -> &str {
+    &line[..line.len() - line.trim_start().len()]
+}
+
+/// new_string moved to the file's indentation. The model wrote old_string 4 spaces deep and the file has it 8 deep (or
+/// with a tab): every line of new_string that starts with the model's indent gets the file's instead.
+fn reindent(new: &str, old: &str, found: &str) -> String {
+    let first = |t: &str| t.split('\n').find(|l| !l.trim().is_empty()).map(indent).unwrap_or("").to_string();
+    let (theirs, ours) = (first(old), first(found));
+    new.split('\n').map(|l| if l.trim().is_empty() { l.to_string() } else { format!("{ours}{}", l.strip_prefix(theirs.as_str()).unwrap_or(l.trim_start())) }).collect::<Vec<_>>().join("\n")
 }
 
 fn hint(text: &str, old: &str) -> String {
@@ -133,11 +146,18 @@ pub fn plan_edits(content: &str, edits: &[(String, String)], replace_all: bool) 
             }
         }
         if hits.is_empty() {
-            hits = fuzzy_span(&text, &old);
+            hits = fuzzy_span(&text, &old, norm);
+            if hits.is_empty() {
+                // right text, wrong depth: models lose indentation more than anything else. One place only, never a guess.
+                hits = fuzzy_span(&text, &old, |l| norm(l).trim_start().to_string());
+                if hits.len() == 1 {
+                    new = reindent(&new, &old, &text[hits[0].0..hits[0].1]);
+                }
+            }
             if hits.len() > 1 {
                 let w: Vec<String> = hits.iter().take(5).map(|(s, _)| line_of(&text, *s).to_string()).collect();
                 return Err(format!(
-                    "{label}text matches {} places ignoring whitespace/quote differences (lines {}). Add surrounding lines to make it unique.",
+                    "{label}text matches {} places ignoring indentation, whitespace and quote differences (lines {}). Add surrounding lines to make it unique.",
                     hits.len(),
                     w.join(", ")
                 ));
@@ -205,6 +225,18 @@ mod tests {
         assert_eq!(plan_edits("a\r\nb\r\n", &p("b", "c"), false).unwrap().0, "a\r\nc\r\n");
         assert_eq!(plan_edits("x = 1\ny = 2\n", &p("1|x = 1\n2|y = 2", "x = 3\ny = 4"), false).unwrap().0, "x = 3\ny = 4\n");
         assert_eq!(plan_edits("say “hi”  \n", &p("say \"hi\"", "ok"), false).unwrap().0, "ok\n");
+    }
+
+    #[test]
+    fn wrong_indentation_still_lands_and_the_new_text_follows_the_file() {
+        let file = "fn a() {\n        if x {\n            run();\n        }\n}\n";
+        // written 4 deep instead of 8, with a new nested line
+        let (out, _) = plan_edits(file, &p("    if x {\n        run();\n    }", "    if x {\n        run();\n        log();\n    }"), false).unwrap();
+        assert_eq!(out, "fn a() {\n        if x {\n            run();\n            log();\n        }\n}\n");
+        // tabs in the file, spaces from the model
+        assert_eq!(plan_edits("\tx = 1\n", &p("    x = 1", "    x = 2"), false).unwrap().0, "\tx = 2\n");
+        // the same line at two depths is ambiguous, so nothing is changed
+        assert!(plan_edits("  a()\n    a()\n", &p("      a()", "b()"), false).unwrap_err().contains("2 places"));
     }
 
     #[test]
