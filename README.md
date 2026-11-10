@@ -869,3 +869,8 @@ Said plainly, so you know what you are getting:
 
 The one head-to-head here is [melon vs Claude Code](#melon-vs-claude-code-on-11-tasks): 11 tasks, one run each, different models,
 10/11 apiece. It shows both are in the same range, not that either is better. The design tables compare *choices*, not scores.
+
+## License
+
+melon is source-available, not open source. You can run it for any purpose, including commercial use, and you can redistribute
+unmodified official binaries. You cannot copy, modify, redistribute, or reuse the source code. See [LICENSE](LICENSE) for the full terms.
