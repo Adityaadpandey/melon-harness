@@ -319,7 +319,7 @@ impl Tool for ShellTool {
                 jobs().lock().unwrap().insert(job_id, job);
                 return ToolResult::ok_with(
                     format!(
-                        "{} background job {job_id}: {command}\nOutput so far and onward: {} (read it with `tail`). Stop it with `kill -- -{pid}`. You will be told when it finishes; keep working on other things meanwhile.",
+                        "{} background job {job_id}: {command}\nOutput so far and onward: {} (read it with `tail`). Stop it with `kill -- -{pid}`. You will be told when it finishes: do not start it again and do not wait on it with sleep; keep working on other things meanwhile.",
                         if background { "Started".to_string() } else { format!("Still running after {AUTO_BACKGROUND_AFTER}s, moved to") },
                         log.display()
                     ),

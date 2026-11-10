@@ -543,6 +543,8 @@ fn context_overflow_is_recognised_across_providers() {
         ("the request exceeds the available context size, try increasing it", true), // llama.cpp
         ("Your request exceeded model token limit: 262144 (requested: 270000)", true), // Kimi
         ("Range of input length should be [1, 129024]", true),                        // DashScope / Qwen
+        ("The input token count (1196265) exceeds the maximum number of tokens allowed (1048575).", true), // Gemini
+        ("prompt too long; exceeded max context length by 4000 tokens", true),       // Ollama
         ("ThrottlingException: Too many tokens, please wait before trying again.", false), // a rate limit
     ];
     for (msg, expect) in cases {
