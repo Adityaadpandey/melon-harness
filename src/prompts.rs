@@ -34,7 +34,19 @@ pub fn model_notes(model: &str) -> Vec<String> {
     notes
 }
 
+/// The prompt, with the user's own files laid over it. `SYSTEM.md` replaces melon's prompt and `APPEND_SYSTEM.md` is
+/// added after it; both are looked up in `~/.melon/` and then the repo's `.melon/` (the repo's SYSTEM.md wins, both
+/// appends apply). Handy for trying a different prompt on one model without rebuilding:
+/// `echo "Answer in Hindi." > .melon/APPEND_SYSTEM.md`.
 pub fn get_system_prompt(config: &Config, user_memory: Option<&str>, tools: &[Arc<dyn Tool>], skills: &[Skill]) -> String {
+    let dirs = [dirs::home_dir().unwrap_or_default().join(".melon"), config.cwd.join(".melon")];
+    let file = |name: &str| dirs.iter().filter_map(|d| std::fs::read_to_string(d.join(name)).ok()).map(|t| t.trim().to_string()).filter(|t| !t.is_empty()).collect::<Vec<_>>();
+    let mut parts = vec![file("SYSTEM.md").pop().unwrap_or_else(|| built_prompt(config, user_memory, tools, skills))];
+    parts.extend(file("APPEND_SYSTEM.md"));
+    parts.join("\n\n")
+}
+
+fn built_prompt(config: &Config, user_memory: Option<&str>, tools: &[Arc<dyn Tool>], skills: &[Skill]) -> String {
     if config.pi_mode {
         return pi_prompt(config, tools, skills);
     }
@@ -377,6 +389,18 @@ fn pi_prompt(config: &Config, tools: &[Arc<dyn Tool>], skills: &[Skill]) -> Stri
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn the_users_prompt_files_replace_and_extend_ours() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::create_dir_all(dir.path().join(".melon")).unwrap();
+        let cfg = Config { cwd: dir.path().to_path_buf(), ..Default::default() };
+        std::fs::write(dir.path().join(".melon/APPEND_SYSTEM.md"), "Answer in Hindi.").unwrap();
+        let p = get_system_prompt(&cfg, None, &[], &[]);
+        assert!(p.contains("melon") && p.ends_with("Answer in Hindi."));
+        std::fs::write(dir.path().join(".melon/SYSTEM.md"), "You are a pirate.").unwrap();
+        assert_eq!(get_system_prompt(&cfg, None, &[], &[]), "You are a pirate.\n\nAnswer in Hindi.");
+    }
+
     #[test]
     fn notes_by_family() {
         assert!(model_notes("claude-opus-5").is_empty());
