@@ -327,7 +327,14 @@ impl Tool for ShellTool {
                 );
             }
             killpg(pid);
-            return ToolResult::error(format!("Command timed out after {timeout}s"));
+            // what it printed before the kill is usually the clue (a prompt waiting for input, the test that hung)
+            let so_far = {
+                let b = bufs.lock().unwrap();
+                format!("{}{}", String::from_utf8_lossy(&b.0), String::from_utf8_lossy(&b.1))
+            };
+            let so_far = so_far.trim_end();
+            let so_far: String = so_far.chars().skip(so_far.chars().count().saturating_sub(4000)).collect();
+            return ToolResult::error(format!("{}Command timed out after {timeout}s", if so_far.is_empty() { String::new() } else { format!("{so_far}\n\n") }));
         }
         guard.0 = None;
         let (so, se) = {
