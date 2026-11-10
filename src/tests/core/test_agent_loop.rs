@@ -86,6 +86,18 @@ fn long_history(a: &Agent, pairs: usize) {
 // ------------------------------------------------------------------------------------------------ the loop
 
 #[tokio::test]
+async fn an_empty_reply_is_asked_again_and_plan_mode_is_announced_before_any_call() {
+    let tmp = tempfile::tempdir().unwrap();
+    let mut agent = scripted(cfg(tmp.path(), json!({"approval": "plan"})), vec![vec![crate::tests::fakes::text("").pop().unwrap()], text("the plan")]).await;
+    let evs = run(&mut agent, "add a login page").await;
+    let reqs = requests(&agent);
+    assert_eq!(reqs.len(), 2);
+    assert!(reqs[0].iter().any(|m| m["content"].as_str().unwrap_or("").contains("Plan mode is on")));
+    assert!(last_content(&reqs[1]).contains("no text and no tool call"));
+    assert_eq!(text_completes(&evs), vec!["the plan"]);
+}
+
+#[tokio::test]
 async fn tool_call_arguments_are_valid_json_in_history() {
     let tmp = tempfile::tempdir().unwrap();
     std::fs::write(tmp.path().join("a.txt"), "hi").unwrap();

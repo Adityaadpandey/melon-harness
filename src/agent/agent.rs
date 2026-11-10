@@ -140,6 +140,8 @@ pub struct Agent {
     sweep_pushed: usize,
     cut_continues: usize,
     text_calls: usize,
+    empty_replies: usize,
+    plan_told: bool,
     todo_idle: usize,
     quiet_rounds: usize,
     edited: bool,
@@ -263,6 +265,8 @@ impl Agent {
             sweep_pushed: 0,
             cut_continues: 0,
             text_calls: 0,
+            empty_replies: 0,
+            plan_told: false,
             todo_idle: 0,
             quiet_rounds: 0,
             edited: false,
@@ -523,6 +527,8 @@ impl Agent {
         self.sweep_pushed = 0;
         self.cut_continues = 0; // replies cut off at the output limit that were asked to carry on
         self.text_calls = 0; // replies that wrote a tool call as text instead of making it
+        self.empty_replies = 0;
+        self.plan_told = false;
         self.todo_idle = 0; // tool rounds since the todo list was last touched
         self.add_user(&message_for_model);
         self.unsent.clear();
@@ -1126,9 +1132,15 @@ impl Agent {
                     self.remind("Your last reply wrote a tool call as text. Text is not run, so nothing happened. Make the call through the tool-calling interface.");
                     continue;
                 }
+                if response_text.trim().is_empty() && !cut && self.empty_replies < 2 {
+                    // thinking with nothing after it: common on open models, and the user would see a blank answer
+                    self.empty_replies += 1;
+                    self.remind("Your last reply had no text and no tool call, so the user saw nothing. If work is left, make the next tool call now. If you are done, write the answer as plain text.");
+                    continue;
+                }
                 if cut && self.cut_continues < 2 {
                     self.cut_continues += 1;
-                    self.add_user("Your last reply was cut off by the output token limit. Continue exactly where it stopped, without repeating what you already wrote.");
+                    self.add_user("Your last reply was cut off by the output token limit. Continue exactly where it stopped, without repeating what you already wrote or apologising; if you were inside a code block or table, reopen it first. Keep what remains short, or do it in smaller pieces through tool calls.");
                     continue;
                 }
                 let left = if self.broad { self.unfinished_todos() } else { vec![] };
@@ -1340,6 +1352,11 @@ impl Agent {
         if !changed.is_empty() {
             let names = changed.iter().take(8).map(|p| format!("`{}`", crate::util::paths::rel_display(Path::new(p.split(" (deleted)").next().unwrap_or(p)), &cwd))).collect::<Vec<_>>().join(", ");
             self.remind(&format!("Changed on disk since you last read or wrote them: {names} (by the user, a formatter or a command you ran). That is usually deliberate: take it as the current state rather than reverting it, and re-read before editing."));
+        }
+        if !self.plan_told && self.session.approval_manager.policy() == crate::config::ApprovalPolicy::Plan {
+            // told up front, once per request: a model that learns it only from a refused edit tends to retry the edit
+            self.plan_told = true;
+            self.remind("Plan mode is on. You must not change anything: no edits, no new files, no commands that modify state (installs, commits, migrations). Reading, searching and read-only commands are fine. Work in this order: 1) read the code this touches and how the repo already does the nearest thing; 2) ask the user only what the code cannot answer; 3) end your turn with the plan itself: the files to change in order and what changes in each, what could break, and how to verify. Keep it short enough to scan and concrete enough to carry out. The user leaves plan mode with /plan when they approve; do not start the work before that.");
         }
         let open = self.unfinished_todos();
         if !open.is_empty() && self.todo_idle >= 10 {
