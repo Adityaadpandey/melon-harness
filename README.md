@@ -675,6 +675,7 @@ flowchart LR
   stream_usage         = false                     # the server rejects stream_options
   tool_result_name     = true                      # tool messages must carry the tool's name
   assistant_after_tool = true                      # the chat template refuses a user message right after a tool result
+  cache_control        = true                      # Anthropic cache marks (on by itself for anthropic/* on OpenRouter)
   extra_body           = { thinking_token_budget = 4096, chat_template_kwargs = { enable_thinking = true } }
   ```
 

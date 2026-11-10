@@ -165,6 +165,24 @@ pub fn compat_messages(mut messages: Vec<Value>, compat: &crate::config::Compat)
     messages
 }
 
+/// Anthropic-style cache marks on an OpenAI-shaped history: one on the system prompt (it never changes) and one on the
+/// newest user or tool message (so the next turn reads everything up to here from cache). The marked message's text
+/// has to become a one-part list, because a plain string has nowhere to carry the mark.
+pub fn cache_marks(mut messages: Vec<Value>) -> Vec<Value> {
+    let mark = |m: &mut Value| {
+        if let Some(text) = m["content"].as_str().filter(|t| !t.is_empty()).map(String::from) {
+            m["content"] = json!([{"type": "text", "text": text, "cache_control": {"type": "ephemeral"}}]);
+        }
+    };
+    if let Some(m) = messages.iter_mut().find(|m| m["role"] == "system") {
+        mark(m);
+    }
+    if let Some(m) = messages.iter_mut().rev().find(|m| m["role"] == "user" || m["role"] == "tool") {
+        mark(m);
+    }
+    messages
+}
+
 fn http_client(read_timeout: u64) -> reqwest::Client {
     reqwest::Client::builder()
         .connect_timeout(Duration::from_secs(15))
@@ -267,7 +285,11 @@ impl Adapter for OpenAIChatAdapter {
 
     fn stream(&self, req: StreamReq) -> EventStream<'_> {
         Box::pin(async_stream::try_stream! {
-            let mut body = json!({"model": req.model, "messages": compat_messages(wire_messages(&req.messages, &req.model), &self.compat), "stream": true});
+            let mut messages = compat_messages(wire_messages(&req.messages, &req.model), &self.compat);
+            if self.compat.cache_control.unwrap_or(self.base_url.contains("openrouter.ai") && req.model.starts_with("anthropic/")) {
+                messages = cache_marks(messages);
+            }
+            let mut body = json!({"model": req.model, "messages": messages, "stream": true});
             let b = body.as_object_mut().unwrap();
             if self.compat.stream_usage != Some(false) { b.insert("stream_options".into(), json!({"include_usage": true})); }
             if let Some(t) = req.temperature { b.insert("temperature".into(), json!(t)); }

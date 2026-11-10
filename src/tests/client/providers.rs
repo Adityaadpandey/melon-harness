@@ -163,6 +163,10 @@ fn a_strict_server_gets_tool_names_and_an_assistant_line_before_a_user_note() {
     assert_eq!(out[1]["name"], "grep");
     assert_eq!(out[2]["role"], "assistant");
     assert_eq!(out[3]["role"], "user");
+    // cache marks: the system prompt and the newest user or tool message, nothing in between
+    let marked = crate::client::adapters::cache_marks(vec![json!({"role": "system", "content": "rules"}), json!({"role": "user", "content": "one"}), json!({"role": "assistant", "content": "ok"}), json!({"role": "user", "content": "two"})]);
+    let has = |m: &Value| m["content"][0]["cache_control"]["type"] == "ephemeral";
+    assert!(has(&marked[0]) && !has(&marked[1]) && has(&marked[3]) && marked[3]["content"][0]["text"] == "two");
 }
 
 #[tokio::test]

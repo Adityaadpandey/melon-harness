@@ -230,6 +230,7 @@ pub struct ProviderConfig {
 /// stream_usage = false                            # the server rejects stream_options
 /// tool_result_name = true                         # tool messages must carry the tool's name
 /// assistant_after_tool = true                     # the chat template refuses user right after tool
+/// cache_control = true                            # a proxy in front of Claude that wants Anthropic cache marks
 /// extra_body = { thinking_token_budget = 4096 }   # merged into every request, last, so it wins
 /// ```
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
@@ -239,6 +240,10 @@ pub struct Compat {
     pub stream_usage: Option<bool>,
     pub tool_result_name: bool,
     pub assistant_after_tool: bool,
+    /// Mark the system prompt and the newest message as cacheable, Anthropic style. On by itself for `anthropic/*`
+    /// models on OpenRouter, where a long session is otherwise billed in full every turn; set it for a proxy that
+    /// fronts Claude the same way, or to false to turn it off.
+    pub cache_control: Option<bool>,
     pub extra_body: serde_json::Map<String, serde_json::Value>,
 }
 
