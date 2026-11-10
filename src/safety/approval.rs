@@ -315,7 +315,7 @@ impl ApprovalManager {
     }
 
     pub fn waited(&self) -> f64 {
-        *self.waited.lock().unwrap()
+        *self.waited.lock().unwrap() + crate::tools::builtin::ask_user::answer_secs()
     }
 
     /// The repo's own check, e.g. `pnpm check-types`, optionally followed by `2>&1` and a safe pipe like `| tail -20`.

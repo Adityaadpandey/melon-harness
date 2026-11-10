@@ -6,6 +6,14 @@ use std::any::Any;
 
 const OTHER: &str = "Something else (type it)";
 
+/// Seconds the user has spent answering questions. The task clock leaves them out, like approval prompts: someone who
+/// steps away for an hour mid-question must not come back to "the time budget is spent".
+static ANSWER_SECS: std::sync::Mutex<f64> = std::sync::Mutex::new(0.0);
+
+pub fn answer_secs() -> f64 {
+    *ANSWER_SECS.lock().unwrap()
+}
+
 pub struct AskUserTool {
     config: ConfigHandle,
 }
@@ -64,6 +72,7 @@ Good: header 'Old configs', question 'What should happen to config files written
         }
         let questions = inv.params["questions"].as_array().cloned().unwrap_or_default();
         let mut answers = vec![];
+        let started = std::time::Instant::now();
         for (n, q) in questions.iter().enumerate() {
             let step = if questions.len() > 1 { format!(" ({}/{})", n + 1, questions.len()) } else { String::new() };
             // first line is the headline, the lines after it are shown dimmed underneath as context
@@ -81,6 +90,7 @@ Good: header 'Old configs', question 'What should happen to config files written
             asker.say(format!("  ? {} → {answer}", q["question"].as_str().unwrap_or("")));
             answers.push(format!("{} -> {answer}", q["question"].as_str().unwrap_or("")));
         }
+        *ANSWER_SECS.lock().unwrap() += started.elapsed().as_secs_f64();
         ToolResult::ok(format!("The user answered:\n{}", answers.join("\n")))
     }
 }
