@@ -213,7 +213,7 @@ List specific completed actions, including file paths, symbols, behavior changes
 Describe the current working-tree state, relevant files, existing user changes, current branch if known, and whether changes are committed. Never guess repository state.
 
 ## FILES AND CODE
-Each file read or changed that still matters: its path, why it matters, and what changed. Copy the code the next session needs verbatim (a changed function, a signature, the exact lines of a fix) rather than describing it; a short snippet beats a paragraph.
+At most 15 files, the most recently touched first: each one's path, why it matters, and what changed. Leave out files that were only skimmed and ruled out. Copy the code the next session needs verbatim (a changed function, a signature, the exact lines of a fix) rather than describing it; a short snippet beats a paragraph.
 
 ## IN-PROGRESS WORK
 Describe any partial edits, unfinished investigation, commands currently running, or unresolved failures. If none, write "None."
@@ -233,7 +233,9 @@ Each error or reviewer finding hit so far, what caused it, and how it was fixed 
 ## KEY CONTEXT
 Preserve constraints, user choices, relevant discoveries, test commands and results, failed approaches, safety/permission boundaries, and assumptions that remain uncertain.
 
-Be specific and concise enough to scan, but detailed enough that the next session can continue with no hidden dependency on the previous conversation. Never mark unverified work as successful."#
+Be specific and concise enough to scan, but detailed enough that the next session can continue with no hidden dependency on the previous conversation. Never mark unverified work as successful.
+
+If the conversation opens with an earlier summary, rewrite it rather than adding to it: fold finished work into one line each under COMPLETED ACTIONS, and drop code and errors that no longer matter, so the brief does not grow every time. Do not copy repository instruction files (AGENTS.md, CLAUDE.md), playbook text or the tool list: they are loaded again on their own."#
         .into()
 }
 
