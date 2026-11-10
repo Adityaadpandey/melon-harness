@@ -361,7 +361,11 @@ impl ToolRegistry {
             // the client could not parse the model's arguments as JSON
             let raw = params["raw_arguments"].as_str().unwrap_or("");
             return fail(ToolResult::error_with(
-                format!("Tool arguments were not valid JSON. Re-send the call with a well-formed JSON object. Received: {}", crate::util::text::head_chars(raw, 200)),
+                format!(
+                    "Tool arguments were not valid JSON ({}). Re-send the call with a well-formed JSON object. Received:\n{}",
+                    serde_json::from_str::<Value>(raw).err().map(|e| e.to_string()).unwrap_or_else(|| "not an object".into()),
+                    crate::util::text::head_chars(raw, 2000)
+                ),
                 json!({"tool_name": name}),
             ))
             .await;
@@ -370,7 +374,7 @@ impl ToolRegistry {
             Ok(p) => p,
             Err(errors) => {
                 return fail(ToolResult::error_with(
-                    format!("Invalid parameters: {}. Received: {}", errors.join("; "), crate::util::text::head_chars(&params.to_string(), 300)),
+                    format!("Invalid parameters: {}. Received: {}", errors.join("; "), crate::util::text::head_chars(&params.to_string(), 2000)),
                     json!({"tool_name": name, "validation_errors": errors}),
                 ))
                 .await;
