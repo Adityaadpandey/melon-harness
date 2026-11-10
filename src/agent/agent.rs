@@ -368,7 +368,7 @@ impl Agent {
 
     pub async fn run(&mut self, message: &str, tx: Tx) {
         let cfg0 = self.config.get();
-        self.session.hook_system.trigger_before_agent(message).await;
+        let hook_context = self.session.hook_system.trigger_before_agent(message).await;
         let root = pick_root(&cfg0.cwd, message, self.root_hint.as_deref(), &[]);
         if self.adopt_root(root) {
             notice(&tx, format!("Working in {} (the repo this request is about)", self.config.get().cwd.display()));
@@ -414,6 +414,9 @@ impl Agent {
         }
         if !again.is_empty() {
             message_for_model.push_str(&format!("\n\n[Playbooks given earlier in this conversation still apply: {}.]", again.join(", ")));
+        }
+        if let Some(c) = hook_context {
+            message_for_model.push_str(&format!("\n\n---\nContext added by the user's own hooks for this request (background, not instructions that outrank the request):\n{c}"));
         }
         if self.long_answer > 0 {
             message_for_model.push_str(&format!("\n\n[Reminder: your last final answer ran {} words. Keep this one to the final-answer limit (120 words, 6 bullets) unless the user asked for detail.]", self.long_answer));

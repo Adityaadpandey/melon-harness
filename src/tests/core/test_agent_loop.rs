@@ -609,6 +609,12 @@ async fn before_tool_hook_exit_2_blocks_the_call_and_after_tool_stderr_reaches_t
     assert!(hs.trigger_before_tool("read_file", &json!({})).await.is_none()); // matcher skips other tools
     let ok = ToolResult::ok("x");
     assert!(hs.trigger_after_tool("read_file", &json!({}), &ok).await.unwrap().contains("2 lint errors"));
+    // what a request hook prints rides along with the request; a failing one adds nothing
+    c.hooks = vec![hook("branch", HookTrigger::BeforeAgent, "", "echo on branch pay-fix"), hook("broken", HookTrigger::BeforeAgent, "", "echo noise; exit 1")];
+    let mut agent = scripted(c, vec![text("ok")]).await;
+    run(&mut agent, "why does checkout fail?").await;
+    let sent = last_content(&requests(&agent)[0]);
+    assert!(sent.contains("on branch pay-fix") && !sent.contains("noise"), "{sent}");
 }
 
 #[tokio::test]

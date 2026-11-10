@@ -20,6 +20,12 @@ impl HookSystem {
 
     /// Run one hook and return (exit_code, stderr). A hook that cannot run or times out counts as exit 1: it never blocks.
     async fn run_hook(&self, hook: &HookConfig, env: &HashMap<String, String>) -> (i32, String) {
+        let (code, err, _) = self.run_hook_full(hook, env).await;
+        (code, err)
+    }
+
+    /// The same, with what the hook printed: (exit_code, stderr, stdout).
+    async fn run_hook_full(&self, hook: &HookConfig, env: &HashMap<String, String>) -> (i32, String, String) {
         let timeout = Duration::from_secs_f64(hook.timeout_sec);
         let run = async {
             if let Some(c) = &hook.command {
@@ -33,21 +39,22 @@ impl HookSystem {
             std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o755)).ok()?;
             self.run_command(&path.to_string_lossy(), timeout, env).await
         };
-        run.await.unwrap_or((1, String::new()))
+        run.await.unwrap_or((1, String::new(), String::new()))
     }
 
-    async fn run_command(&self, command: &str, timeout: Duration, env: &HashMap<String, String>) -> Option<(i32, String)> {
+    async fn run_command(&self, command: &str, timeout: Duration, env: &HashMap<String, String>) -> Option<(i32, String, String)> {
         let mut cmd = Command::new("/bin/sh");
         cmd.arg("-c").arg(command).current_dir(&self.cwd).envs(env).stdout(Stdio::piped()).stderr(Stdio::piped()).stdin(Stdio::null()).kill_on_drop(true);
         let mut child = crate::util::detach::detach(&mut cmd).spawn().ok()?;
         let pid = child.id();
-        let mut err = child.stderr.take()?;
+        let (mut err, mut out) = (child.stderr.take()?, child.stdout.take()?);
         let wait = async {
-            let mut buf = Vec::new();
+            let (mut ebuf, mut obuf) = (Vec::new(), Vec::new());
             use tokio::io::AsyncReadExt;
-            let _ = err.read_to_end(&mut buf).await;
+            // both at once: a hook that fills one pipe while we wait on the other would hang
+            let _ = tokio::join!(err.read_to_end(&mut ebuf), out.read_to_end(&mut obuf));
             let st = child.wait().await.ok()?;
-            Some((st.code().unwrap_or(1), String::from_utf8_lossy(&buf).trim().to_string()))
+            Some((st.code().unwrap_or(1), String::from_utf8_lossy(&ebuf).trim().to_string(), String::from_utf8_lossy(&obuf).trim().to_string()))
         };
         match tokio::time::timeout(timeout, wait).await {
             Ok(r) => r,
@@ -55,7 +62,7 @@ impl HookSystem {
                 if let Some(p) = pid {
                     unsafe { libc::killpg(p as i32, libc::SIGKILL) };
                 }
-                Some((1, String::new()))
+                Some((1, String::new(), String::new()))
             }
         }
     }
@@ -86,11 +93,19 @@ impl HookSystem {
         env
     }
 
-    pub async fn trigger_before_agent(&self, user_message: &str) {
+    /// Runs when the user sends a request. Whatever a hook prints (exit 0) is handed to the model next to the request,
+    /// like Claude Code's UserPromptSubmit: `git branch --show-current`, today's on-call notes, a ticket looked up
+    /// from the branch name.
+    pub async fn trigger_before_agent(&self, user_message: &str) -> Option<String> {
         let env = self.build_env(HookTrigger::BeforeAgent, None, Some(user_message));
+        let mut context = vec![];
         for h in self.hooks.iter().filter(|h| h.trigger == HookTrigger::BeforeAgent) {
-            self.run_hook(h, &env).await;
+            let (code, _, out) = self.run_hook_full(h, &env).await;
+            if code == 0 && !out.is_empty() {
+                context.push(format!("[hook '{}']:\n{}", h.name, crate::util::text::head_chars(&out, 4000)));
+            }
         }
+        (!context.is_empty()).then(|| context.join("\n\n"))
     }
 
     pub async fn trigger_after_agent(&self, user_message: &str, agent_response: &str) {

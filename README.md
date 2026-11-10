@@ -786,6 +786,10 @@ Commands: `/help /clear /compact /context /cost /model /effort /approval /permis
 - **MCP:** stdio and streamable HTTP servers; their tools appear beside the built-ins. Gated by project trust.
 - **Hooks:** `before_agent`, `after_agent`, `before_tool`, `after_tool`, `on_error`, `pre_compact`, `post_compact`, `session_start`,
   `stop` (exit 2 sends stderr back and keeps the agent working), `subagent_stop`. Gated by project trust.
+  Whatever a `before_agent` hook prints is handed to the model with your request (the current branch, a ticket looked up from
+  it, today's deploy notes).
+- **Your own system prompt:** `.melon/APPEND_SYSTEM.md` (or `~/.melon/APPEND_SYSTEM.md`) is added to melon's prompt; `SYSTEM.md`
+  in the same places replaces it. Useful for trying different wording on one model without rebuilding.
 - **Custom slash commands:** markdown files in `.claude/commands` and `.melon/commands` (repo and home); folders become
   `name:sub`, descriptions come from front matter and show in tab completion. Prompt templates support `$1`, `$@`, `${1:-default}`.
 - **Project tools:** each `.melon/tools/*.toml` becomes a tool that runs a shell command. Arguments arrive as JSON on stdin and as
