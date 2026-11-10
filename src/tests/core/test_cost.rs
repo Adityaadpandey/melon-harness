@@ -25,8 +25,9 @@ fn system_prompt_stays_lean() {
     // Python measured with tiktoken (< 1600). Here only the bytes/4 estimate exists, which reads ~20% higher on English
     // prose and "-" style punctuation, so the ceiling was 2000. It is 2200 since the scope and honesty rules for open models and the "how to brief a
     // sub-agent" lines went in (about 170 tokens that pay for themselves in fewer wasted turns); still far below the ~3000
-    // this guard was written against.
-    assert!(estimate_tokens(&prompt) < 2200, "{} tokens", estimate_tokens(&prompt));
+    // this guard was written against. 2500 since the six execution rules (build instead of proposing, decide routine things
+    // alone, tested slices, real verification, a final report) went in for every model, about 270 tokens.
+    assert!(estimate_tokens(&prompt) < 2500, "{} tokens", estimate_tokens(&prompt));
 }
 
 #[test]

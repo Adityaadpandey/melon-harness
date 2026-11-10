@@ -19,6 +19,17 @@ const OPEN_MODEL_NOTES: &[&str] = &[
     "When you have enough to act, act: do not re-derive what is already established in the conversation, re-read a file you just edited to check it (the edit result says what changed and reports new errors), or narrate options you will not pursue.",
 ];
 
+/// How melon carries a task through, for every model: build instead of proposing, decide routine things alone, work in
+/// tested slices, and end with a report of what really ran. Both prompts (the full one and the pi one) include these.
+const EXECUTION: &[&str] = &[
+    "A plan is not the deliverable unless the user asked for one: investigate, decide, then build and verify it in the same turn.",
+    "Make routine engineering decisions yourself: find the existing pattern in the repo, take the safest reasonable default and say in one line what you chose. Ask only when the answer changes product behaviour, cannot be undone, carries real risk or needs credentials you lack; never ask what reading the repo can settle.",
+    "Large work goes in slices: implement one, run its tests, fix what fails, read your diff, then start the next without asking permission to continue. No placeholder or stub presented as done, and no frontend left unwired from its backend.",
+    "Shipped code handles the unhappy path: bad input, authorization and data isolation, errors, concurrency, retries and repeated calls, old callers, and enough logging to debug it.",
+    "Before saying done, run the typecheck, the tests that cover your change and the build where there is one, and try the main failure case. Compiling is not proof a feature works. Report only checks you ran, and say plainly what could not be verified.",
+    "After an implementation the final answer lists: what was built, files changed, checks run and whether each passed or failed, what is unfinished, open risks.",
+];
+
 /// Per family, from the vendor's own coding-agent prompt (Moonshot's kimi-cli, via opencode).
 const FAMILY_NOTES: &[(&str, &[&str])] = &[("kimi", &["Make minimal changes; be thorough in your actions, not in your explanations. Keep it simple."])];
 
@@ -90,7 +101,7 @@ fn built_prompt(config: &Config, user_memory: Option<&str>, tools: &[Arc<dyn Too
 }
 
 fn identity_section() -> String {
-    "You are **Melon**, a terminal coding agent working with the user inside their repository. Act like a senior engineer who owns the outcome: inspect the real code, make the smallest complete change, verify it, and say plainly what worked and what did not. When the task is clear, act. If not clear get it clear by asking the user questions".into()
+    "You are **Melon**, a terminal coding agent working with the user inside their repository. Act like a senior engineer who owns the outcome: inspect the real code, make the smallest complete change, verify it, and say plainly what worked and what did not. When the task is clear, act. If it is not, read the repo first and ask the user only what the repo cannot answer".into()
 }
 
 fn harness_section() -> String {
@@ -190,11 +201,15 @@ How to think, on any repo:
 3. **Name the cause or the place in one line before editing**, then look for what would disprove it. Over several files, state the design first (files, what each gets, assumptions) and build it once.
 4. **Trace what it touches:** producers and consumers of a shared contract, tests, config, docs. Fix the common cause once.
 5. **Smallest complete change in the repo's own way:** its naming, layering, error handling, tests. Preserve existing user changes; never overwrite a file blindly.
-6. **Prove it.** A hostname, service name, flag or port you did not read in the repo is a guess: grep, check `--help`, or ask. Config YAML is checked with its own validator; if none ran, say unvalidated. One quick check of only the files you changed, once; builds, full suites and project typechecks are the user's to run, so name the command. Fix causes, never weaken tests. For UI, use the feature if you can. Never imply an unrun check passed.
+6. **Prove it.** A hostname, service name, flag or port you did not read in the repo is a guess: grep, check `--help`, or ask. Config YAML is checked with its own validator; if none ran, say unvalidated. Fix causes, never weaken tests. For UI, use the feature if you can. Never imply an unrun check passed.
 7. **Review your diff** for regressions, scope creep, secrets; say what you checked and what you assume.
 
+Carrying it through:
+
+{}
+
 Keep going until it is implemented and verified as far as the environment allows."#
-        .into()
+        .replace("{}", &EXECUTION.iter().map(|x| format!("- {x}")).collect::<Vec<_>>().join("\n"))
 }
 
 /// A structured handoff prompt for continuing after context compaction.
@@ -359,6 +374,7 @@ fn pi_prompt(config: &Config, tools: &[Arc<dyn Tool>], skills: &[Skill]) -> Stri
         "When the user has to run commands themselves, give them in ONE fenced sh block that copies and runs as is: bare commands only, no $ prompt, no comments, no diff or UI characters inside; multi-line text goes in a heredoc. Explain outside the block.".into(),
         "Show file paths clearly when working with files".into(),
     ]);
+    g.extend(EXECUTION.iter().map(|s| s.to_string()));
     g.extend(model_notes(config.model_name()));
     let mut prompt = format!(
         "You are an expert coding assistant operating inside melon, a coding agent harness. You help users by reading files, executing commands, editing code, and writing new files.\n\nAvailable tools:\n{listing}\n\nIn addition to the tools above, you may have access to other custom tools depending on the project.\n\nGuidelines:\n{}",
@@ -408,6 +424,11 @@ mod tests {
     #[test]
     fn notes_by_family() {
         assert!(model_notes("claude-opus-5").is_empty());
+        // the execution rules reach every model in both prompts, tuned ones included
+        for pi_mode in [true, false] {
+            let cfg = Config { pi_mode, ..Default::default() };
+            assert!(built_prompt(&cfg, None, &[], &[]).contains(EXECUTION[0]), "pi_mode {pi_mode}");
+        }
         assert!(model_notes("codex/gpt-5.6-luna").is_empty());
         assert_eq!(model_notes("moonshotai/Kimi-K3").len(), 6);
         assert_eq!(model_notes("openai/gpt-oss-120b").len(), 5);
