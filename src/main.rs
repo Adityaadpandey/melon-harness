@@ -97,6 +97,17 @@ fn main() {
         std::process::exit(rt.block_on(agent::learn_import::main(argv)));
     }
     if raw.get(1).map(String::as_str) == Some("graph") {
+        // `melon graph callers parse_invoice` asks the graph tool directly, so you can see what the model would see
+        const ASK: &[&str] = &["symbol", "find", "callers", "callees", "impact", "importers", "imports", "blast", "tests", "neighbors", "path", "community", "stats"];
+        if raw.get(2).map_or(false, |a| ASK.contains(&a.as_str())) {
+            use tools::Tool;
+            let cwd = std::env::current_dir().unwrap_or_default();
+            let inv = tools::ToolInvocation { params: serde_json::json!({"action": raw[2], "name": raw.get(3), "to": raw.get(4)}), cwd, epoch: 0, call_id: String::new(), progress: None };
+            let rt = tokio::runtime::Builder::new_current_thread().build().expect("runtime");
+            let r = rt.block_on(tools::builtin::graph::GraphTool::new(config::ConfigHandle::new(config::Config::default())).execute(&inv));
+            println!("{}", r.error.unwrap_or(r.output));
+            std::process::exit(0);
+        }
         std::process::exit(util::graphcfg::main(raw.into_iter().skip(2).collect()));
     }
     if raw.get(1).map(String::as_str) == Some("insights") {
