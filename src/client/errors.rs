@@ -14,6 +14,8 @@ pub struct ProviderError {
     pub drop_thinking: bool,
     /// The whole provider/plan is out of quota: only another provider can help.
     pub quota: bool,
+    /// Seconds the server asked us to wait (its Retry-After header), when it sent one.
+    pub retry_after: Option<f64>,
 }
 
 impl std::fmt::Display for ProviderError {

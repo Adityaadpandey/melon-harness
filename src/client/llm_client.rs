@@ -386,7 +386,10 @@ impl LLMClient {
                 }
                 if e.retry && attempt < this.max_retries && !emitted {
                     yield Ok(StreamEvent::Notice(format!("{model} didn't answer ({}), trying again ({}/{})", crate::util::text::head_chars(&e.message, 80), attempt + 1, this.max_retries)));
-                    tokio::time::sleep(Duration::from_secs_f64(backoff(attempt, e.status))).await;
+                    // the server's own number beats our guess, but a wait over a minute is a quota wall: give up and fall back instead
+                    let wait = e.retry_after.filter(|s| *s > 0.0).unwrap_or_else(|| backoff(attempt, e.status));
+                    if wait > 60.0 { if e.fallback { this.registry.mark_down(&model, wait); } yield Err((e, emitted)); return; }
+                    tokio::time::sleep(Duration::from_secs_f64(wait)).await;
                     attempt += 1;
                     continue;
                 }

@@ -110,13 +110,18 @@ fn sse_data(resp: reqwest::Response) -> BoxStream<'static, Result<String, Provid
 
 async fn fail(resp: reqwest::Response) -> ProviderError {
     let status = resp.status().as_u16();
+    let header = |k: &str| resp.headers().get(k).and_then(|v| v.to_str().ok()).and_then(|v| v.trim().parse::<f64>().ok());
+    // "retry-after-ms: 1500" or "retry-after: 2" (the date form is rare and falls back to our own backoff)
+    let retry_after = header("retry-after-ms").map(|ms| ms / 1000.0).or_else(|| header("retry-after"));
     let body = resp.text().await.unwrap_or_default();
     // keep the server's own message (usually {"error": {"message": ...}}) readable
     let msg = serde_json::from_str::<Value>(&body)
         .ok()
         .and_then(|v| v["error"]["message"].as_str().or_else(|| v["message"].as_str()).map(String::from))
         .unwrap_or(body);
-    classify(Some(status), &format!("Error code: {status} - {msg}"))
+    let mut e = classify(Some(status), &format!("Error code: {status} - {msg}"));
+    e.retry_after = retry_after;
+    e
 }
 
 // ---------------------------------------------------------------- OpenAI chat
@@ -183,9 +188,11 @@ impl Adapter for OpenAIChatAdapter {
             let mut usage: Option<TokenUsage> = None;
             let mut calls: BTreeMap<i64, (String, String, String)> = BTreeMap::new();
             let mut reasoning = String::new();
+            let (mut done, mut wrote) = (false, false);
             let mut data = sse_data(resp);
             while let Some(payload) = data.next().await {
                 let payload = payload?;
+                if payload == "[DONE]" { done = true; }
                 if payload == "[DONE]" || payload.is_empty() { continue; }
                 let Ok(chunk) = serde_json::from_str::<Value>(&payload) else { continue };
                 if let Some(err) = chunk.get("error").filter(|e| !e.is_null()) {
@@ -204,6 +211,7 @@ impl Adapter for OpenAIChatAdapter {
                 // DeepSeek, Kimi, GLM and Qwen stream their thinking beside the answer, under one of these names
                 if let Some(t) = REASONING_FIELDS.iter().find_map(|f| delta[*f].as_str().filter(|s| !s.is_empty())) { reasoning.push_str(t); }
                 if let Some(c) = delta["content"].as_str().filter(|s| !s.is_empty()) {
+                    wrote = true;
                     yield StreamEvent::TextDelta(c.to_string());
                 }
                 for d in delta["tool_calls"].as_array().into_iter().flatten() {
@@ -223,6 +231,14 @@ impl Adapter for OpenAIChatAdapter {
                         yield StreamEvent::ToolCallDelta { call_id: call.0.clone(), arguments_delta: a.to_string() };
                     }
                 }
+            }
+            if finish.is_none() && !done {
+                // neither a finish_reason nor [DONE]: the server died mid-reply (a local llama.cpp or vLLM crash looks like
+                // this). With nothing received the call is simply retried; with half a reply it counts as cut off, so
+                // the half-written tool calls are not run and the model is asked to carry on.
+                // ponytail: a server that never sends either marker pays two wasted "continue" turns; add a per-provider opt-out if one shows up
+                if !wrote && calls.is_empty() { Err(classify(None, "stream ended unexpectedly, before any reply"))?; }
+                finish = Some("length".into());
             }
             for (idx, c) in calls {
                 let id = if c.0.is_empty() { format!("call_{idx}") } else { c.0 };

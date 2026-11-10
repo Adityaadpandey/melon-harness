@@ -47,6 +47,11 @@ fn anthropic_conversion_merges_tool_results_and_patches_orphans() {
 /// Serve one canned event stream on localhost and return the base URL to point an adapter at.
 /// Each chunk is wrapped as `data: <json>` and the stream ends with `[DONE]`.
 async fn serve(chunks: Vec<Value>) -> String {
+    serve_with(chunks, true).await
+}
+
+/// `done = false` leaves the `[DONE]` line off, which is what a server that crashed mid-reply looks like.
+async fn serve_with(chunks: Vec<Value>, done: bool) -> String {
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
     let url = format!("http://{}", listener.local_addr().unwrap());
     tokio::spawn(async move {
@@ -75,7 +80,9 @@ async fn serve(chunks: Vec<Value>) -> String {
         for c in chunks {
             body.push_str(&format!("data: {c}\n\n"));
         }
-        body.push_str("data: [DONE]\n\n");
+        if done {
+            body.push_str("data: [DONE]\n\n");
+        }
         let head = format!("HTTP/1.1 200 OK\r\nContent-Type: text/event-stream\r\nContent-Length: {}\r\nConnection: close\r\n\r\n", body.len());
         let _ = sock.write_all(head.as_bytes()).await;
         let _ = sock.write_all(body.as_bytes()).await;
@@ -130,6 +137,20 @@ fn completed_calls(evs: &[StreamEvent]) -> Vec<(String, String, Value)> {
 }
 
 // ---------------------------------------------------------------- openai stream parsing
+
+#[tokio::test]
+async fn a_stream_that_dies_mid_reply_counts_as_cut_off_and_an_empty_one_is_an_error() {
+    let run = |chunks: Vec<Value>| async move {
+        let url = serve_with(chunks, false).await;
+        let ad = OpenAIChatAdapter::new("k", &url, Default::default());
+        let req = StreamReq { model: "m".into(), messages: vec![json!({"role": "user", "content": "hi"})], ..Default::default() };
+        ad.stream(req).collect::<Vec<_>>().await
+    };
+    let half = run(vec![chunk(Some("half a rep"), None, None, None)]).await;
+    assert!(matches!(half.last(), Some(Ok(StreamEvent::MessageComplete { finish_reason: Some(f), .. })) if f == "length"));
+    let nothing = run(vec![]).await;
+    assert!(matches!(nothing.last(), Some(Err(e)) if e.retry));
+}
 
 #[tokio::test]
 async fn openai_stream_accumulates_arguments_across_chunks() {
