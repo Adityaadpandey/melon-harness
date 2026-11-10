@@ -131,6 +131,52 @@ async fn malformed_arguments_are_rejected_not_executed() {
     assert!(!tmp.path().join("x").exists());
 }
 
+/// Stands in for one tool of a connected MCP server.
+struct Remote(String, &'static str);
+
+#[async_trait]
+impl Tool for Remote {
+    fn name(&self) -> &str {
+        &self.0
+    }
+    fn description(&self) -> String {
+        self.1.into()
+    }
+    fn kind(&self) -> ToolKind {
+        ToolKind::Mcp
+    }
+    fn schema(&self) -> Value {
+        schema_of(json!({}), &[])
+    }
+    fn as_any(&self) -> &dyn std::any::Any {
+        self
+    }
+    async fn execute(&self, _inv: &ToolInvocation) -> ToolResult {
+        ToolResult::ok("ran")
+    }
+}
+
+#[tokio::test]
+async fn many_mcp_tools_are_listed_by_name_and_loaded_when_searched_for() {
+    let tmp = tempfile::tempdir().unwrap();
+    let c = cfg(tmp.path(), json!({"mcp_defer_above": 3}));
+    let reg = create_default_registry(ConfigHandle::new(c.clone()));
+    let names = |reg: &crate::tools::registry::ToolRegistry| reg.get_schemas().iter().map(|s| s["name"].as_str().unwrap().to_string()).collect::<Vec<_>>();
+    for i in 0..3 {
+        reg.register_mcp_tool(Arc::new(Remote(format!("gh__list_{i}"), "List things")));
+    }
+    assert!(names(&reg).contains(&"gh__list_0".to_string()) && !names(&reg).contains(&"tool_search".to_string())); // few tools: all offered
+    reg.register_mcp_tool(Arc::new(Remote("gh__create_issue".into(), "Open a new issue in a GitHub repository")));
+    let offered = names(&reg);
+    assert!(offered.contains(&"tool_search".to_string()) && !offered.contains(&"gh__create_issue".to_string()));
+    assert!(reg.get_schemas().iter().find(|s| s["name"] == "tool_search").unwrap()["description"].as_str().unwrap().contains("gh__create_issue"));
+    let hooks = HookSystem::new(&c);
+    let found = reg.invoke("tool_search", json!({"query": "open github issue"}), tmp.path(), &hooks, None, "t1").await;
+    assert!(found.success && found.output.contains("gh__create_issue"), "{}", found.output);
+    assert_eq!(names(&reg).last().unwrap(), "gh__create_issue"); // appended, so the earlier part of the request stays cached
+    assert!(!reg.invoke("tool_search", json!({"query": "zzz"}), tmp.path(), &hooks, None, "t2").await.success);
+}
+
 /// Takes 200ms and answers with its tag: five of them in one turn only finish in time if they overlap.
 struct SleepTool;
 

@@ -792,7 +792,9 @@ Commands: `/help /clear /compact /context /cost /model /effort /approval /permis
 
 - **Automation:** `--json "..."` prints agent events as JSON lines for CI and scripts; `--rpc` reads JSON commands (`prompt`,
   `steer`, `abort`, `get_state`) on stdin and streams events on stdout, for editors. `--report <file>` writes run metrics.
-- **MCP:** stdio and streamable HTTP servers; their tools appear beside the built-ins. Gated by project trust.
+- **MCP:** stdio and streamable HTTP servers; their tools appear beside the built-ins, in every mode. Gated by project trust.
+  With more than 15 MCP tools connected (`mcp_defer_above`), only their names are sent and the model loads the ones it needs
+  with `tool_search`, so three big servers do not add 80 schemas to every request.
 - **Hooks:** `before_agent`, `after_agent`, `before_tool`, `after_tool`, `on_error`, `pre_compact`, `post_compact`, `session_start`,
   `stop` (exit 2 sends stderr back and keeps the agent working), `subagent_stop`. Gated by project trust.
   Whatever a `before_agent` hook prints is handed to the model with your request (the current branch, a ticket looked up from

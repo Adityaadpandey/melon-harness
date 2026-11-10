@@ -29,6 +29,8 @@ type Stamp = Option<(u128, u64)>;
 pub struct ToolRegistry {
     tools: Mutex<Vec<Arc<dyn Tool>>>,
     mcp_tools: Mutex<Vec<Arc<dyn Tool>>>,
+    /// MCP tools whose schema the model has asked for, oldest first (see `get_schemas`).
+    loaded: Mutex<Vec<String>>,
     pub config: ConfigHandle,
     pub tracer: Mutex<Option<Arc<Tracer>>>,
     pub epoch: AtomicU64,
@@ -56,6 +58,7 @@ impl ToolRegistry {
         ToolRegistry {
             tools: Mutex::new(vec![]),
             mcp_tools: Mutex::new(vec![]),
+            loaded: Mutex::new(vec![]),
             config,
             tracer: Mutex::new(None),
             epoch: AtomicU64::new(0),
@@ -106,19 +109,69 @@ impl ToolRegistry {
     /// Tools in registration order, narrowed by `allowed_tools` when set.
     pub fn get_tools(&self) -> Vec<Arc<dyn Tool>> {
         let mut all: Vec<Arc<dyn Tool>> = self.tools.lock().unwrap().iter().chain(self.mcp_tools.lock().unwrap().iter()).cloned().collect();
-        if let Some(allowed) = self.config.get().allowed_tools.as_ref().filter(|a| !a.is_empty()) {
-            all.retain(|t| allowed.iter().any(|a| a == t.name()));
+        let cfg = self.config.get();
+        if let Some(allowed) = cfg.allowed_tools.as_ref().filter(|a| !a.is_empty()) {
+            all.retain(|t| allowed.iter().any(|a| a == t.name()) || (cfg.allowed_tools_implied && t.kind() == ToolKind::Mcp));
         }
         all
     }
 
+    /// MCP tools not offered yet. Three servers can bring 80 tools, and sending every schema on every request costs
+    /// tokens and makes weaker models pick worse; past `mcp_defer_above` only their names are listed until asked for.
+    fn deferred(&self) -> Vec<Arc<dyn Tool>> {
+        let mcp: Vec<Arc<dyn Tool>> = self.get_tools().into_iter().filter(|t| t.kind() == ToolKind::Mcp).collect();
+        if mcp.len() <= self.config.get().mcp_defer_above {
+            return vec![];
+        }
+        let loaded = self.loaded.lock().unwrap();
+        mcp.into_iter().filter(|t| !loaded.iter().any(|l| l == t.name())).collect()
+    }
+
+    /// What the model is offered. Normally every tool. With many MCP tools: the built-ins, then `tool_search`, then
+    /// the MCP tools loaded so far in the order they were loaded, so a newly loaded one is appended and the part of
+    /// the request before it stays in the provider's cache.
     pub fn get_schemas(&self) -> Vec<Value> {
-        self.get_tools().iter().map(|t| t.to_openai_schema()).collect()
+        let tools = self.get_tools();
+        let held = self.deferred();
+        if held.is_empty() {
+            return tools.iter().map(|t| t.to_openai_schema()).collect();
+        }
+        let mut out: Vec<Value> = tools.iter().filter(|t| t.kind() != ToolKind::Mcp).map(|t| t.to_openai_schema()).collect();
+        let names = crate::util::text::head_chars(&held.iter().map(|t| t.name().to_string()).collect::<Vec<_>>().join(", "), 3000);
+        out.push(json!({"name": "tool_search", "description": format!("Load tools that are connected but not offered yet (their schemas are kept out of the request until needed). Pass words describing what you need (\"create github issue\") or exact names separated by commas; up to 5 matches are loaded and can be called from your next turn. Not loaded yet: {names}"),
+                        "parameters": {"type": "object", "properties": {"query": {"type": "string", "description": "Words to match against tool names and descriptions, or exact tool names separated by commas"}}, "required": ["query"]}}));
+        let loaded = self.loaded.lock().unwrap().clone();
+        out.extend(loaded.iter().filter_map(|n| tools.iter().find(|t| t.name() == n)).map(|t| t.to_openai_schema()));
+        out
+    }
+
+    /// The `tool_search` call: the best matches among the held-back tools become callable.
+    fn search_tools(&self, query: &str) -> ToolResult {
+        let held = self.deferred();
+        let low = query.to_lowercase();
+        let exact: Vec<&str> = low.split(',').map(str::trim).collect();
+        let words: Vec<&str> = low.split(|c: char| !c.is_alphanumeric()).filter(|w| w.len() > 1).collect();
+        let mut scored: Vec<(usize, &Arc<dyn Tool>)> = held
+            .iter()
+            .map(|t| {
+                let (name, hay) = (t.name().to_lowercase(), format!("{} {}", t.name(), t.description()).to_lowercase());
+                (if exact.contains(&name.as_str()) { 1000 } else { words.iter().filter(|w| hay.contains(*w)).count() }, t)
+            })
+            .filter(|(score, _)| *score > 0)
+            .collect();
+        scored.sort_by(|a, b| b.0.cmp(&a.0));
+        scored.truncate(5);
+        if scored.is_empty() {
+            return ToolResult::error(format!("No tool matched \"{query}\". Not loaded yet: {}", held.iter().map(|t| t.name().to_string()).collect::<Vec<_>>().join(", ")));
+        }
+        self.loaded.lock().unwrap().extend(scored.iter().map(|(_, t)| t.name().to_string()));
+        ToolResult::ok(format!("Loaded (callable from your next turn):\n{}", scored.iter().map(|(_, t)| format!("- {}: {}", t.name(), crate::util::text::head_chars(&t.description(), 200))).collect::<Vec<_>>().join("\n")))
     }
 
     /// The model's call with a near-miss tool name or argument fixed (tools/repair.rs), before anything acts on it.
     pub fn repair(&self, call: &crate::client::response::ToolCall) -> crate::client::response::ToolCall {
-        let offered: HashSet<String> = self.get_tools().iter().map(|t| t.name().to_string()).collect();
+        let mut offered: HashSet<String> = self.get_tools().iter().map(|t| t.name().to_string()).collect();
+        offered.insert("tool_search".into());
         let name = repair::fix_tool_name(&call.name, &offered);
         let mut args = call.arguments.clone();
         if let Some(tool) = self.get(&name) {
@@ -346,6 +399,9 @@ impl ToolRegistry {
 
     async fn invoke_inner(&self, name: &str, params: &Value, cwd: &Path, hooks: &HookSystem, approval: Option<&ApprovalManager>, call_id: &str) -> ToolResult {
         let cfg = self.config.get();
+        if name == "tool_search" && self.get(name).is_none() {
+            return self.search_tools(params["query"].as_str().unwrap_or(""));
+        }
         let Some(tool) = self.get(name) else {
             let mut names: Vec<String> = self.get_tools().iter().map(|t| t.name().to_string()).collect();
             names.sort();
@@ -353,6 +409,9 @@ impl ToolRegistry {
             hooks.trigger_after_tool(name, params, &r).await;
             return r;
         };
+        if tool.kind() == ToolKind::Mcp && !self.loaded.lock().unwrap().iter().any(|l| l == name) {
+            self.loaded.lock().unwrap().push(name.to_string()); // called by name without searching first: fine, and it stays offered
+        }
         let fail = |r: ToolResult| async move {
             hooks.trigger_after_tool(name, params, &r).await;
             r

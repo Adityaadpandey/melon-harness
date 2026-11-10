@@ -281,6 +281,8 @@ pub struct Config {
     pub reasoning_effort: Option<String>,
     pub model_pinned: bool,
     pub max_parallel_agents: usize,
+    /// With more MCP tools than this connected, their schemas are held back and loaded on demand through `tool_search`.
+    pub mcp_defer_above: usize,
     pub enable_parallel_tasks: bool,
     pub auto_challenge: bool,
     pub auto_learn: bool,
@@ -320,6 +322,10 @@ pub struct Config {
     pub idle_compact_at_tokens: usize,
     pub keep_recent_tokens: usize,
     pub allowed_tools: Option<Vec<String>>,
+    /// The list above was filled in by pi mode, not written by the user. MCP tools still pass then: someone who
+    /// configured a server wants its tools, and pi mode's short list only trims melon's own.
+    #[serde(skip)]
+    pub allowed_tools_implied: bool,
     pub developer_instructions: Option<String>,
     pub user_instructions: Option<String>,
     pub debug: bool,
@@ -367,6 +373,7 @@ impl Default for Config {
             reasoning_effort: None,
             model_pinned: false,
             max_parallel_agents: 4,
+            mcp_defer_above: 15,
             enable_parallel_tasks: true,
             auto_challenge: false,
             auto_learn: false,
@@ -405,6 +412,7 @@ impl Default for Config {
             idle_compact_at_tokens: 150_000,
             keep_recent_tokens: 40_000,
             allowed_tools: None,
+            allowed_tools_implied: false,
             developer_instructions: None,
             user_instructions: None,
             debug: false,
@@ -474,6 +482,7 @@ impl Config {
                 tools.extend(self.explorer_tool());
             }
             self.allowed_tools = Some(tools);
+            self.allowed_tools_implied = true;
         }
         if !set.contains("check_references") {
             self.check_references = false;
