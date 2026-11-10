@@ -139,7 +139,7 @@ async fn no_with_feedback_reaches_the_model_and_nothing_is_written() {
     let a = run_agent(tmp.path(), cb(|_| Decision { approved: false, always: false, feedback: Some("Use a class instead.".into()) }), vec![write("a.py", "1"), text("ok")]).await;
     assert!(!tmp.path().join("a.py").exists());
     let msg = a.requests[1].iter().find(|m| m["role"] == "tool").unwrap()["content"].as_str().unwrap().to_string();
-    assert!(msg.contains("rejected") && msg.contains("Use a class instead."), "{msg}");
+    assert!(msg.contains("refused") && msg.contains("Use a class instead.") && msg.contains("Do not send this call again"), "{msg}");
 }
 
 #[tokio::test]

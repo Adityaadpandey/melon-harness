@@ -430,12 +430,14 @@ impl ToolRegistry {
                     ApprovalDecision::NeedsConfirmation => {
                         let answer = approval.request_confirmation(confirmation.clone()).await;
                         if !answer.approved {
-                            let mut msg = "User rejected the operation.".to_string();
-                            if let Some(fb) = &answer.feedback {
-                                msg.push(' ');
-                                msg.push_str(fb);
-                                learn_from_rejection(&cfg.cwd, name, &params, fb);
-                            }
+                            // a bare "rejected" gets retried with a small variation, or walked past: say what the refusal means
+                            let msg = match &answer.feedback {
+                                Some(fb) => {
+                                    learn_from_rejection(&cfg.cwd, name, &params, fb);
+                                    format!("The user refused this action, so it did not run, and said: {fb}\nDo what they said instead. Do not send this call again, and do not get the same effect another way.")
+                                }
+                                None => "The user refused this action, so it did not run. Do not send it again or get the same effect another way (a shell command in place of an edit, say). Stop here: tell the user in one line what you wanted to do and why, and wait for them to say how to go on.".to_string(),
+                            };
                             return fail(ToolResult::error_with(msg, json!({"tool_name": name, "rejected": true, "no_approver": !approval.has_callback()}))).await;
                         }
                         if answer.always {

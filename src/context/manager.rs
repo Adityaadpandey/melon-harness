@@ -353,7 +353,7 @@ impl ContextManager {
                 for tc in &m.tool_calls {
                     let id = tc["id"].as_str().unwrap_or("").to_string();
                     if !answered.contains(&id) {
-                        let mut stub = MessageItem::new("tool", "[interrupted before this tool ran]");
+                        let mut stub = MessageItem::new("tool", "[The user interrupted before this tool ran, so nothing was done. Do not assume it happened; wait for what they ask next.]");
                         stub.tool_call_id = Some(id);
                         stub.token_count = 8;
                         out.push(stub);
