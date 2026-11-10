@@ -155,7 +155,8 @@ fn rel_to(cwd: &Path, p: &Path) -> String {
 
 fn alias_target(cwd: &Path, base: &Path, t: &str) -> String {
     // "src/*" -> "src/*" relative to the repo; a pattern without * stays a plain path
-    let head = rel_to(cwd, &base.join(t.split('*').next().unwrap_or("")));
+    // normalized, or a tsconfig in apps/web with "./src/*" gives "apps/web/./src/*", which matches no real file
+    let head = rel_to(cwd, &normalize(&base.join(t.split('*').next().unwrap_or(""))));
     if t.contains('*') && !head.is_empty() { format!("{head}/*").trim_start_matches('/').to_string() } else if t.contains('*') { "*".into() } else { head }
 }
 

@@ -33,6 +33,20 @@ fn alias_and_relative_imports() {
     assert!(imported_by(&g, "src/app/helper.ts", "src/app/page.tsx"));
 }
 
+/// The form `create-next-app` writes, in a monorepo app folder. It used to resolve to "apps/web/./src/*" and match nothing.
+#[test]
+fn dot_slash_alias_in_an_app_folder() {
+    let d = tempfile::tempdir().unwrap();
+    let g = repo(d.path(), &[
+        ("apps/web/tsconfig.json", r#"{"compilerOptions": {"paths": {"@/*": ["./src/*"], "@shared": ["../../packages/shared/index.ts"]}}}"#),
+        ("apps/web/src/lib/pay.ts", "export {}"),
+        ("packages/shared/index.ts", "export {}"),
+        ("apps/web/src/app/page.tsx", "import { pay } from \"@/lib/pay\"\nimport s from \"@shared\""),
+    ]);
+    assert!(imported_by(&g, "apps/web/src/lib/pay.ts", "apps/web/src/app/page.tsx"));
+    assert!(imported_by(&g, "packages/shared/index.ts", "apps/web/src/app/page.tsx"));
+}
+
 #[test]
 fn paths_inherited_through_extends() {
     let d = tempfile::tempdir().unwrap();
