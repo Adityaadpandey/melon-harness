@@ -162,7 +162,7 @@ impl Tool for ReadFileTool {
         if self.config.get().pi_mode {
             return format!("Read the contents of a text file. Output is truncated to {PI_MAX_LINES} lines or {}KB (whichever is hit first). Use offset/limit for large files. When you need the full file, continue with offset until complete.", PI_MAX_BYTES / 1024);
         }
-        "Read the contents of a text file. Returns the file content with line numbers. Files up to 400 lines come whole, so just call it with the path. For longer files pass `symbol` (see `outline`) or a wide offset/limit; many small slices cost more than one read. Cannot read binary files (images, executables, etc.). Read a file before you edit it. Do not re-read a file you just edited: the edit would have failed if it had not applied.".into()
+        "Read the contents of a text file. Returns the file content with line numbers. Files up to 400 lines come whole, so just call it with the path. For longer files pass `symbol` (see `outline`) or a wide offset/limit; many small slices cost more than one read. Cannot read binary files (images, executables, etc.). Reading a path that may not exist is fine: a missing file comes back as an error, so there is no need to list the folder first. Read a file before you edit it. Do not re-read a file you just edited: the edit would have failed if it had not applied.".into()
     }
     fn kind(&self) -> ToolKind {
         ToolKind::Read

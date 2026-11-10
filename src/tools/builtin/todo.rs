@@ -55,7 +55,7 @@ impl Tool for TodosTool {
         "todos"
     }
     fn description(&self) -> String {
-        "Live checklist for long work: 5+ steps, a sweep over many files, or several requests. Skip it when a few tool calls finish the job. Prefer `set` with the whole list, and send each update in the same turn as your next real call (an edit, a test run), never in a turn of its own: every turn re-sends the whole conversation. Only mark a step done when it really passed: if tests fail or the work is partial, keep it open.".into()
+        "Live checklist for long work: 5+ steps, a sweep over many files, or several requests. Skip it when a few tool calls finish the job. Prefer `set` with the whole list, and send each update in the same turn as your next real call (an edit, a test run), never in a turn of its own: every turn re-sends the whole conversation. Tick a step as soon as it is finished rather than several at the end, and keep working on one step at a time. Only mark a step done when it really passed: if tests fail or the work is partial, keep it open.".into()
     }
     fn kind(&self) -> ToolKind {
         ToolKind::Memory
