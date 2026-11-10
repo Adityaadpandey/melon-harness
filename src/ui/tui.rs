@@ -306,7 +306,7 @@ struct State {
     first_block: bool,
     out_chars: usize,
     phase: String,
-    todos: Vec<(String, bool)>,
+    todos: Vec<(String, bool, bool)>,
     agents: HashMap<String, AgentRow>,
     agent_order: Vec<String>,
     agent_log: Vec<DoneAgent>,
@@ -446,8 +446,10 @@ impl Tui {
         if !s.todos.is_empty() {
             let done = s.todos.iter().filter(|t| t.1).count();
             rows.push(format!("{}{}", bold_paint("   ✦ tasks ", LAVENDER), paint(&format!("{done}/{}", s.todos.len()), MUTED)));
-            for (c, d) in s.todos.iter().take(8) {
-                rows.push(format!("     {} {}", if *d { "◼" } else { "◻" }, paint(&clip_chars(c, 90), if *d { MUTED } else { FG })));
+            for (c, d, now) in s.todos.iter().take(8) {
+                // ◼ done, ▸ the step being worked on (bold), ◻ still to do
+                let text = clip_chars(c, 90);
+                rows.push(format!("     {} {}", if *d { "◼" } else if *now { "▸" } else { "◻" }, if *now { bold_paint(&text, FG) } else { paint(&text, if *d { MUTED } else { FG }) }));
             }
         }
         rows
@@ -606,7 +608,7 @@ impl Tui {
         self.print_above(&format!("\n {} {}", bold_paint("✗", CORAL), paint(message, CORAL)));
     }
 
-    pub fn set_todos(&self, todos: Vec<(String, bool)>) {
+    pub fn set_todos(&self, todos: Vec<(String, bool, bool)>) {
         self.st.lock().unwrap().todos = todos;
     }
 

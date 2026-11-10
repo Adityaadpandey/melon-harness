@@ -20,8 +20,9 @@ pub struct TodosTool {
 
 impl TodosTool {
     /// (content, done) in creation order, for the live checklist in the UI.
-    pub fn snapshot(&self) -> Vec<(String, bool)> {
-        self.todos.lock().unwrap().iter().map(|t| (t.content.clone(), t.done)).collect()
+    /// (text, done, being worked on right now) per step, for the checklist under the prompt.
+    pub fn snapshot(&self) -> Vec<(String, bool, bool)> {
+        self.todos.lock().unwrap().iter().map(|t| (t.content.clone(), t.done, t.active)).collect()
     }
 
     /// The list as plain text, so it can be put back into the conversation after old results are cleared.

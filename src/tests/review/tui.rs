@@ -213,7 +213,7 @@ async fn live_state_todos_agents_and_phase() {
     let dir = tempfile::tempdir().unwrap();
     let r = Rig::new(dir.path());
     let t = &r.tui;
-    t.set_todos(vec![("write tests".into(), true), ("fix bug".into(), false)]);
+    t.set_todos(vec![("write tests".into(), true, false), ("fix bug".into(), false, true), ("ship".into(), false, false)]);
     t.agent_progress("c1", &json!({"kind": "start", "agent": "investigator", "goal": "map it"}));
     t.agent_progress("c1", &json!({"kind": "tool", "agent": "investigator", "name": "grep", "args": {"pattern": "needle"}}));
     t.agent_progress("c1", &json!({"kind": "tool", "agent": "investigator", "name": "read_file", "args": {"path": "a.py"}}));
@@ -224,7 +224,7 @@ async fn live_state_todos_agents_and_phase() {
     let text = strip_ansi(&t.status_lines().join("\n"));
     assert!(text.contains("Scout  map it") && text.contains("Search(needle)") && !text.contains("2 tools") && text.contains("3 tools"), "{text}");
     assert!(text.contains("Debugger  why") && text.contains("starting…"), "{text}");
-    assert!(text.contains("◼ write tests") && text.contains("◻ fix bug") && text.contains("Thinking…"), "{text}");
+    assert!(text.contains("◼ write tests") && text.contains("▸ fix bug") && text.contains("◻ ship") && text.contains("Thinking…"), "{text}");
     t.agent_progress("c1", &json!({"kind": "done", "agent": "investigator", "ok": true, "tokens": 18400}));
     let side = t.snapshot_side();
     assert!(side.running.len() == 1 && side.running[0].0 == "debugger"); // c1 left the running list, c2 is still there
