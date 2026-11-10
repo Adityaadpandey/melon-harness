@@ -13,7 +13,7 @@ use std::path::Path;
 use std::sync::{Arc, Mutex, OnceLock};
 use tree_sitter::{Language, Node, Parser};
 
-const EXTS: &[&str] = &["ts", "tsx", "js", "jsx", "mjs", "cjs", "py", "rs", "go"];
+const EXTS: &[&str] = &["ts", "tsx", "js", "jsx", "mjs", "cjs", "py", "rs", "go", "java", "cs", "php", "rb"];
 const MAX_FILES: usize = 60_000;
 const MAX_BYTES: u64 = 1_000_000;
 
@@ -125,6 +125,10 @@ fn language(ext: &str) -> Option<Language> {
         "py" => tree_sitter_python::LANGUAGE.into(),
         "rs" => tree_sitter_rust::LANGUAGE.into(),
         "go" => tree_sitter_go::LANGUAGE.into(),
+        "java" => tree_sitter_java::LANGUAGE.into(),
+        "cs" => tree_sitter_c_sharp::LANGUAGE.into(),
+        "php" => tree_sitter_php::LANGUAGE_PHP.into(),
+        "rb" => tree_sitter_ruby::LANGUAGE.into(),
         _ => return None,
     })
 }
@@ -137,8 +141,12 @@ fn text<'a>(n: Node, src: &'a str) -> &'a str {
 fn def_of(n: Node, src: &str) -> Option<(String, &'static str)> {
     let kind = match n.kind() {
         "function_declaration" | "generator_function_declaration" | "function_definition" | "function_item" => "function",
-        "method_definition" | "method_declaration" => "method",
-        "class_declaration" | "abstract_class_declaration" | "class_definition" => "class",
+        "method_definition" | "method_declaration" | "constructor_declaration" | "singleton_method" => "method",
+        "method" => "function", // ruby's def; becomes a method below when it sits in a class
+        "class_declaration" | "abstract_class_declaration" | "class_definition" | "record_declaration" | "class" => "class",
+        "struct_declaration" => "struct",
+        "trait_declaration" => "trait",
+        "module" => "mod",
         "interface_declaration" => "interface",
         "type_alias_declaration" | "type_spec" => "type",
         "enum_declaration" | "enum_item" => "enum",
@@ -167,7 +175,10 @@ fn def_of(n: Node, src: &str) -> Option<(String, &'static str)> {
 /// `Foo::new(x)` -> ("new", "Foo"), `run(x)` -> ("run", None).
 fn callee(n: Node, src: &str) -> Option<(String, Option<String>)> {
     let (field, on) = match n.kind() {
-        "identifier" | "property_identifier" | "field_identifier" | "type_identifier" => return Some((text(n, src).to_string(), None)),
+        "identifier" | "property_identifier" | "field_identifier" | "type_identifier" | "name" | "constant" => return Some((text(n, src).to_string(), None)),
+        // PHP \App\Billing\charge() and C# List<int>: the last plain name
+        "qualified_name" | "generic_name" | "generic_type" => return Some((text(n, src).split(['<', '(']).next().unwrap_or("").rsplit(['\\', '.']).next().unwrap_or("").trim().to_string(), None)),
+        "member_access_expression" => ("name", "expression"),
         "member_expression" => ("property", "object"),
         "attribute" => ("attribute", "object"),
         "field_expression" => ("field", "value"),
@@ -214,12 +225,29 @@ fn walk(n: Node, src: &str, cur: Option<usize>, parent: &Option<String>, out: &m
         }
     }
     let target = match n.kind() {
-        "call_expression" | "call" => n.child_by_field_name("function"),
+        "call_expression" | "call" | "invocation_expression" | "function_call_expression" => n.child_by_field_name("function"),
         "new_expression" => n.child_by_field_name("constructor"),
+        "object_creation_expression" => n.child_by_field_name("type").or_else(|| n.named_child(0)),
         _ => None,
     };
     let line = n.start_position().row + 1;
-    if let Some((name, qual)) = target.and_then(|t| callee(t, src)) {
+    // Java, PHP and Ruby put the name on the call itself: obj.run(), $obj->run(), Foo::run()
+    let named = || {
+        let field = match n.kind() {
+            "method_invocation" | "member_call_expression" | "scoped_call_expression" => "name",
+            "call" => "method",
+            _ => return None,
+        };
+        let name = text(n.child_by_field_name(field)?, src).to_string();
+        let owner = ["object", "receiver", "scope"].iter().find_map(|f| n.child_by_field_name(f));
+        let qual = owner.map(|o| match o.kind() {
+            _ if n.kind() == "scoped_call_expression" => text(o, src).to_string(),
+            "identifier" | "constant" | "self" | "this" | "variable_name" => format!(".{}", text(o, src).trim_start_matches('$')),
+            _ => ".".to_string(),
+        });
+        Some((name, qual))
+    };
+    if let Some((name, qual)) = target.and_then(|t| callee(t, src)).or_else(named) {
         // Config::new() is also a use of Config
         if let Some(ty) = qual.as_ref().filter(|q| q.starts_with(char::is_uppercase) && q.as_str() != "Self") {
             out.calls.push(Call { from: cur, name: ty.clone(), line, qual: None });
@@ -253,6 +281,7 @@ pub fn extract(path: &str, src: &str) -> Option<FileSyms> {
     let tree = p.parse(src, None)?;
     let mut out = FileSyms::default();
     walk(tree.root_node(), src, None, &None, &mut out, 0, !matches!(ext.as_str(), "rs" | "go"));
+    out.calls.retain(|c| !c.name.is_empty());
     Some(out)
 }
 
@@ -337,7 +366,8 @@ impl SymGraph {
             return fits(m, def, def_file);
         }
         match call.qual.as_deref() {
-            None => def.parent.is_none() && (from_file == def_file || !local(false)),
+            // a bare name in the same file may also be a sibling method (Java, C#, PHP, Ruby call those without `this`)
+            None => from_file == def_file || (def.parent.is_none() && !local(false)),
             Some("Self" | ".self" | ".this") => def.parent.is_some() && (from_file == def_file || !local(true)),
             Some(q) if q.starts_with('.') => {
                 let pkg = q.len() > 1 && home(&q[1..]);
@@ -677,6 +707,35 @@ mod tests {
         assert_eq!(names(&go), ["method:Do", "function:helper"]);
         assert_eq!(go.defs[0].parent.as_deref(), Some("R"));
         assert!(go.calls.iter().any(|c| c.name == "helper") && go.calls.iter().any(|c| c.name == "Println"));
+    }
+
+    #[test]
+    fn java_csharp_php_ruby() {
+        let calls = |s: &FileSyms| s.calls.iter().map(|c| format!("{}{}", c.qual.as_deref().map_or(String::new(), |q| format!("{q}>")), c.name)).collect::<Vec<_>>();
+        let java = extract("A.java", "class Shop {\n  Shop() {}\n  void pay(Cart c) { c.total(); Tax.rate(); helper(); new Receipt(); }\n  void helper() {}\n}").unwrap();
+        assert_eq!(names(&java), ["class:Shop", "method:Shop", "method:pay", "method:helper"]);
+        let got = calls(&java);
+        for want in [".c>total", ".Tax>rate", "helper", "Receipt", "Cart"] {
+            assert!(got.contains(&want.to_string()), "java {want} in {got:?}");
+        }
+        let cs = extract("A.cs", "class Shop {\n  void Pay() { cart.Total(); Helper(); var r = new Receipt(); }\n  void Helper() {}\n}").unwrap();
+        assert_eq!(names(&cs), ["class:Shop", "method:Pay", "method:Helper"]);
+        let got = calls(&cs);
+        for want in [".cart>Total", "Helper", "Receipt"] {
+            assert!(got.contains(&want.to_string()), "c# {want} in {got:?}");
+        }
+        let php = extract("a.php", "<?php\nclass Shop {\n  function pay($c) { $c->total(); Tax::rate(); helper(); new Receipt(); }\n}\nfunction helper() {}\n").unwrap();
+        assert_eq!(names(&php), ["class:Shop", "method:pay", "function:helper"]);
+        let got = calls(&php);
+        for want in [".c>total", "Tax>rate", "helper", "Receipt"] {
+            assert!(got.contains(&want.to_string()), "php {want} in {got:?}");
+        }
+        let rb = extract("a.rb", "class Shop\n  def pay(c)\n    c.total()\n    Tax.rate()\n    helper()\n  end\n  def helper\n  end\nend\n").unwrap();
+        assert_eq!(names(&rb), ["class:Shop", "method:pay", "method:helper"]);
+        let got = calls(&rb);
+        for want in [".c>total", ".Tax>rate", "helper"] {
+            assert!(got.contains(&want.to_string()), "ruby {want} in {got:?}");
+        }
     }
 
     fn repo(files: &[(&str, &str)]) -> tempfile::TempDir {

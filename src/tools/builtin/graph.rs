@@ -135,7 +135,7 @@ impl Tool for GraphTool {
         "graph"
     }
     fn description(&self) -> String {
-        "Understand how the code connects. everything is computed live from the working tree (TS/JS, Python, Rust, Go): find a symbol, callers/callees of a function, impact (files that call a symbol), symbol (read one function or class by name instead of the whole file), importers/imports/blast/tests for files. path/community/neighbors/stats need a graphify snapshot (graphify-out/graph.json). Calls are matched by name: verify with read_file. One call replaces several grep/read rounds.".into()
+        "Understand how the code connects. everything is computed live from the working tree (TS/JS, Python, Rust, Go, Java, C#, PHP, Ruby): find a symbol, callers/callees of a function, impact (files that call a symbol), symbol (read one function or class by name instead of the whole file), importers/imports/blast/tests for files. path/community/neighbors/stats need a graphify snapshot (graphify-out/graph.json). Calls are matched by name: verify with read_file. One call replaces several grep/read rounds.".into()
     }
     fn kind(&self) -> ToolKind {
         ToolKind::Read

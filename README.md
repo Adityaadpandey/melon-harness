@@ -443,7 +443,7 @@ In the order to reach for them, cheapest first:
 4. **`git`**: read-only `blame`, `log`, and `find_change` (`git log -S`) to answer "when did this break".
 5. **`graph`**: structure questions (callers, callees, path, community) from a graphify graph. Call direction is read from source
    because graph edge order is unreliable, and results say how stale the graph is. An import graph (tsconfig `paths`, relative and
-   Python imports) is read straight from the tree, so it never goes stale. So is the symbol graph (TS/JS, Python, Rust, Go):
+   Python imports) is read straight from the tree, so it never goes stale. So is the symbol graph (TS/JS, Python, Rust, Go, Java, C#, PHP, Ruby):
    `find`, `symbol`, `callers`, `callees` and `impact` need no snapshot. A use is a call, a type mention, a rendered JSX
    component or a function passed by name; in Rust and Go a call goes to the definition it names (`symgraph::load`,
    `Config::new`, a `use` line). Check what the model would see with `melon graph callers parse_invoice`.
