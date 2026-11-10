@@ -71,7 +71,14 @@ impl Tool for SubagentTool {
         !self.readonly
     }
     fn schema(&self) -> Value {
-        schema_of(json!({"goal": {"type": "string", "description": "The specific task or goal for the subagent to accomplish"}}), &["goal"])
+        schema_of(
+            json!({
+                "goal": {"type": "string", "description": "The specific task or goal for the subagent to accomplish. It has seen none of your conversation: include what it needs"},
+                "background": {"type": "boolean", "default": false, "description": "Start it and return at once, so you can keep working. Its report is delivered to you when it finishes; do not wait, poll or start the same job twice"},
+                "resume": {"type": ["string", "null"], "description": "Agent id from an earlier result: continue that agent with `goal` as a follow-up. It still has everything it read, so this is cheaper than a fresh agent"},
+            }),
+            &["goal"],
+        )
     }
 
     async fn execute(&self, inv: &ToolInvocation) -> ToolResult {
@@ -79,41 +86,141 @@ impl Tool for SubagentTool {
         if goal.is_empty() {
             return ToolResult::error("No goal specified for sub-agent");
         }
-        let parent = self.config.get();
-        let mut cfg = (*parent).clone();
-        cfg.max_turns = self.definition.max_turns;
-        cfg.model_role = self.definition.role.clone();
-        cfg.auto_review = false;
-        cfg.subagents = vec![]; // no recursive delegation
-        cfg.enable_parallel_tasks = false;
-        cfg.mcp_servers = Default::default(); // starting every MCP server per sub-agent costs seconds and the task is local
-        cfg.auto_verify = false; // the parent run verifies the final tree
-        cfg.verify_commands = vec![];
-        if let Some(t) = &self.definition.allowed_tools {
-            cfg.allowed_tools = Some(t.clone());
+        let id = inv.str("resume").filter(|r| !r.is_empty()).map(String::from).unwrap_or_else(|| uuid::Uuid::new_v4().to_string()[..8].to_string());
+        let job = Job { def: self.definition.clone(), parent: self.config.get(), goal, resume: inv.str("resume").map_or(false, |r| !r.is_empty()), id: id.clone(), progress: inv.progress.clone(), call_id: inv.call_id.clone(), cwd: inv.cwd.clone() };
+        if inv.params["background"].as_bool().unwrap_or(false) {
+            let (owner, name) = (self.config.key(), self.definition.name.clone());
+            board().lock().unwrap().running.push((owner, id.clone()));
+            tokio::spawn(async move {
+                let result = run_job(job).await;
+                let mut b = board().lock().unwrap();
+                b.running.retain(|(_, i)| *i != id);
+                b.done.push((owner, id, name, result.to_model_output()));
+            });
+            return ToolResult::ok(format!("Started sub-agent '{}' in the background. Its report is delivered to you when it finishes: carry on with other work, do not wait or poll, and do not start the same job again.", self.definition.name));
         }
-        let prompt = format!(
-            "You are a specialized sub-agent with a specific task to complete.\n\n{}\n\nYOUR TASK:\n{goal}\n\nIMPORTANT:\n- Focus only on completing the specified task\n- Do not engage in unrelated actions\n- Once you have completed the task or have the answer, provide your final response\n- Be concise and direct in your output\n",
-            self.definition.goal_prompt
-        );
-        let (mut tool_calls, mut final_response, mut error, mut terminate, mut tokens): (Vec<String>, Option<String>, Option<String>, &str, i64) = (vec![], None, None, "goal", 0);
-        let name = self.definition.name.clone();
-        let report = |info: Value| {
-            if let Some(p) = &inv.progress {
-                let mut v = json!({"agent": name});
-                if let (Some(a), Some(b)) = (v.as_object_mut(), info.as_object()) {
-                    a.extend(b.clone());
-                }
-                p(&inv.call_id, v);
-            }
-        };
+        run_job(job).await
+    }
+}
 
-        let permit = slots(parent.max_parallel_agents).acquire_owned().await.ok();
-        report(json!({"kind": "start", "goal": goal}));
-        let started = async {
-            let mut agent = Agent::new(cfg, None).await;
-            let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel::<AgentEvent>();
-            {
+/// Everything one sub-agent run needs, owned, so it can also run as a background task.
+struct Job {
+    def: SubagentDefinition,
+    parent: Arc<Config>,
+    goal: String,
+    resume: bool,
+    id: String,
+    progress: Option<ProgressFn>,
+    call_id: String,
+    cwd: std::path::PathBuf,
+}
+
+/// Background sub-agents: which are still running and which reports wait to be handed to their parent. Each entry
+/// carries the parent's config key, so two agents in one process never read each other's reports.
+#[derive(Default)]
+pub struct Board {
+    running: Vec<(usize, String)>,
+    done: Vec<(usize, String, String, String)>, // owner, agent id, agent name, report
+}
+
+fn board() -> &'static Mutex<Board> {
+    static B: std::sync::OnceLock<Mutex<Board>> = std::sync::OnceLock::new();
+    B.get_or_init(Default::default)
+}
+
+/// Reports of this parent's background sub-agents that finished since the last call: (agent id, name, report).
+pub fn finished(owner: usize) -> Vec<(String, String, String)> {
+    let mut b = board().lock().unwrap();
+    let (mine, rest): (Vec<_>, Vec<_>) = std::mem::take(&mut b.done).into_iter().partition(|d| d.0 == owner);
+    b.done = rest;
+    mine.into_iter().map(|(_, id, name, report)| (id, name, report)).collect()
+}
+
+/// How many of this parent's background sub-agents are still working or have a report waiting.
+pub fn pending(owner: usize) -> usize {
+    let b = board().lock().unwrap();
+    b.running.iter().filter(|r| r.0 == owner).count() + b.done.iter().filter(|d| d.0 == owner).count()
+}
+
+/// Returns once one of this parent's background sub-agents has a report ready, or none is left running.
+pub async fn wait_for_report(owner: usize) {
+    loop {
+        {
+            let b = board().lock().unwrap();
+            if b.done.iter().any(|d| d.0 == owner) || !b.running.iter().any(|r| r.0 == owner) {
+                return;
+            }
+        }
+        tokio::time::sleep(Duration::from_millis(200)).await;
+    }
+}
+
+#[cfg(test)]
+pub fn deliver(owner: usize, id: &str, name: &str, report: &str) {
+    board().lock().unwrap().done.push((owner, id.into(), name.into(), report.into()));
+}
+
+/// Finished sub-agents kept so they can be continued with `resume`. Only the last few: each holds a whole conversation.
+const KEPT: usize = 6;
+
+fn kept() -> &'static Mutex<Vec<(String, Agent)>> {
+    static K: std::sync::OnceLock<Mutex<Vec<(String, Agent)>>> = std::sync::OnceLock::new();
+    K.get_or_init(Default::default)
+}
+
+async fn run_job(job: Job) -> ToolResult {
+    let Job { def, parent, goal, resume, id, progress, call_id, cwd } = job;
+    let mut cfg = (*parent).clone();
+    cfg.max_turns = def.max_turns;
+    cfg.model_role = def.role.clone();
+    cfg.auto_review = false;
+    cfg.subagents = vec![]; // no recursive delegation
+    cfg.enable_parallel_tasks = false;
+    cfg.mcp_servers = Default::default(); // starting every MCP server per sub-agent costs seconds and the task is local
+    cfg.auto_verify = false; // the parent run verifies the final tree
+    cfg.verify_commands = vec![];
+    if let Some(t) = &def.allowed_tools {
+        cfg.allowed_tools = Some(t.clone());
+    }
+    let earlier = if resume {
+        let mut k = kept().lock().unwrap();
+        let Some(i) = k.iter().position(|(kid, _)| *kid == id) else {
+            return ToolResult::error(format!("No sub-agent '{id}' to resume: only the last {KEPT} finished ones are kept. Start a fresh one and give it what it needs."));
+        };
+        Some(k.remove(i).1)
+    } else {
+        None
+    };
+    // a resumed agent already has its role and everything it read: the follow-up goes in as it is
+    let prompt = if resume {
+        goal.clone()
+    } else {
+        format!(
+            "You are a specialized sub-agent with a specific task to complete.\n\n{}\n\nYOUR TASK:\n{goal}\n\nIMPORTANT:\n- Focus only on completing the specified task\n- Do not engage in unrelated actions\n- Once you have completed the task or have the answer, provide your final response\n- Be concise and direct in your output\n",
+            def.goal_prompt
+        )
+    };
+    let (mut tool_calls, mut final_response, mut error, mut terminate, mut tokens): (Vec<String>, Option<String>, Option<String>, &str, i64) = (vec![], None, None, "goal", 0);
+    let name = def.name.clone();
+    let report = |info: Value| {
+        if let Some(p) = &progress {
+            let mut v = json!({"agent": name});
+            if let (Some(a), Some(b)) = (v.as_object_mut(), info.as_object()) {
+                a.extend(b.clone());
+            }
+            p(&call_id, v);
+        }
+    };
+
+    let permit = slots(parent.max_parallel_agents).acquire_owned().await.ok();
+    report(json!({"kind": "start", "goal": goal}));
+    let started = async {
+        let mut agent = match earlier {
+            Some(a) => a,
+            None => Agent::new(cfg, None).await,
+        };
+        let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel::<AgentEvent>();
+        {
             let run = agent.run(&prompt, tx);
             tokio::pin!(run);
             let handle = |ev: AgentEvent, tool_calls: &mut Vec<String>, final_response: &mut Option<String>, error: &mut Option<String>, terminate: &mut &str, tokens: &mut i64| -> bool {
@@ -153,42 +260,58 @@ impl Tool for SubagentTool {
                     }
                 }
             }
-            }
-            agent.close().await;
-        };
-        // a timeout cuts a hung model call or tool too; checking the clock between events could not
-        if tokio::time::timeout(Duration::from_secs_f64(self.definition.timeout_seconds), started).await.is_err() {
+        }
+        agent
+    };
+    // a timeout cuts a hung model call or tool too; checking the clock between events could not
+    let mut resumable = false;
+    match tokio::time::timeout(Duration::from_secs_f64(def.timeout_seconds), started).await {
+        Err(_) => {
             terminate = "timeout";
-            final_response = final_response.or_else(|| Some(format!("Sub-agent timed out after {:.0}s", self.definition.timeout_seconds)));
+            final_response = final_response.or_else(|| Some(format!("Sub-agent timed out after {:.0}s", def.timeout_seconds)));
         }
-        drop(permit);
+        Ok(mut agent) if error.is_some() => agent.close().await,
+        Ok(agent) => {
+            // kept for a follow-up; the oldest one makes room and is shut down
+            resumable = true;
+            let dropped = {
+                let mut k = kept().lock().unwrap();
+                k.push((id.clone(), agent));
+                (k.len() > KEPT).then(|| k.remove(0).1)
+            };
+            if let Some(mut old) = dropped {
+                old.close().await;
+            }
+        }
+    }
+    drop(permit);
 
-        report(json!({"kind": "done", "ok": error.is_none(), "tokens": tokens}));
-        crate::hooks::HookSystem::new(&parent).fire(HookTrigger::SubagentStop, &[("agent", self.definition.name.clone()), ("ok", (error.is_none()).to_string())]).await;
-        if let (Some(fr), None) = (&final_response, &error) {
-            // off the loop: listing a big repo for same-name files takes ~2.5s on tunyt
-            let (cwd, text, forbidden) = (inv.cwd.clone(), fr.clone(), parent.forbidden_paths.clone());
-            let notes = tokio::task::spawn_blocking(move || crate::util::search::check_paths(&cwd, &text, &forbidden)).await.unwrap_or_default();
-            if !notes.is_empty() {
-                final_response = Some(format!("{notes}\n\n{fr}")); // first, so a caller that cuts the report keeps them
-            }
+    report(json!({"kind": "done", "ok": error.is_none(), "tokens": tokens}));
+    crate::hooks::HookSystem::new(&parent).fire(HookTrigger::SubagentStop, &[("agent", def.name.clone()), ("ok", (error.is_none()).to_string())]).await;
+    if let (Some(fr), None) = (&final_response, &error) {
+        // off the loop: listing a big repo for same-name files takes ~2.5s on tunyt
+        let (cwd, text, forbidden) = (cwd.clone(), fr.clone(), parent.forbidden_paths.clone());
+        let notes = tokio::task::spawn_blocking(move || crate::util::search::check_paths(&cwd, &text, &forbidden)).await.unwrap_or_default();
+        if !notes.is_empty() {
+            final_response = Some(format!("{notes}\n\n{fr}")); // first, so a caller that cuts the report keeps them
         }
-        if let Some(fr) = &final_response {
-            if fr.chars().count() > MAX_REPORT_CHARS {
-                final_response = Some(format!("{}\n... [report cut; ask for a narrower answer]", fr.chars().take(MAX_REPORT_CHARS).collect::<String>()));
-            }
+    }
+    if let Some(fr) = &final_response {
+        if fr.chars().count() > MAX_REPORT_CHARS {
+            final_response = Some(format!("{}\n... [report cut; ask for a narrower answer]", fr.chars().take(MAX_REPORT_CHARS).collect::<String>()));
         }
-        let result = format!(
-            "Sub-agent '{}' completed. \nTermination: {terminate}\nTools called: {}\n\nResult:\n{}\n",
-            self.definition.name,
-            if tool_calls.is_empty() { "None".to_string() } else { tool_calls.join(", ") },
-            final_response.as_deref().filter(|s| !s.is_empty()).unwrap_or("No response")
-        );
-        match error {
-            // the reason goes first: UIs show only the top lines of a result
-            Some(e) => ToolResult::error(format!("Sub-agent '{}' FAILED: {e}\n{result}", self.definition.name)),
-            None => ToolResult::ok(result),
-        }
+    }
+    let result = format!(
+        "Sub-agent '{}' completed. \nTermination: {terminate}\nTools called: {}\n\nResult:\n{}\n{}",
+        def.name,
+        if tool_calls.is_empty() { "None".to_string() } else { tool_calls.join(", ") },
+        final_response.as_deref().filter(|s| !s.is_empty()).unwrap_or("No response"),
+        if resumable { format!("\nAgent id: {id} (to ask this agent a follow-up, call the tool again with resume=\"{id}\": it still has everything it read)\n") } else { String::new() }
+    );
+    match error {
+        // the reason goes first: UIs show only the top lines of a result
+        Some(e) => ToolResult::error(format!("Sub-agent '{}' FAILED: {e}\n{result}", def.name)),
+        None => ToolResult::ok(result),
     }
 }
 

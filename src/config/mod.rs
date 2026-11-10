@@ -580,6 +580,10 @@ impl ConfigHandle {
     pub fn get(&self) -> Arc<Config> {
         self.0.read().unwrap().clone()
     }
+    /// The same for every clone of this handle: tells one running agent's things apart from another's.
+    pub fn key(&self) -> usize {
+        Arc::as_ptr(&self.0) as *const () as usize
+    }
     pub fn update(&self, f: impl FnOnce(&mut Config)) {
         let mut guard = self.0.write().unwrap();
         let mut c = (**guard).clone();

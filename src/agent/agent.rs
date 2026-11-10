@@ -1032,6 +1032,10 @@ impl Agent {
                 notice(&tx, format!("Background sub-agent {name} finished"));
                 self.add_user(&format!("[background sub-agent '{name}' ({id}) finished; check its report like any evidence before relying on it:]\n{report}"));
             }
+            for (id, name, report) in crate::tools::subagents::finished(self.config.key()) {
+                notice(&tx, format!("Background sub-agent {name} finished"));
+                self.add_user(&format!("[background sub-agent '{name}' ({id}) finished; check its report like any evidence before relying on it:]\n{report}"));
+            }
             self.remind_each_turn();
             self.session.increment_turn();
             let mut response_text = String::new();
@@ -1188,6 +1192,13 @@ impl Agent {
                     self.sweep_pushed += 1;
                     self.nudged("stopped_early");
                     self.add_user(&format!("{} step(s) on your list are still open: {}. Finish them (fix, or mark done with a one-line reason it is fine) before you answer.", left.len(), left.iter().take(6).cloned().collect::<Vec<_>>().join("; ")));
+                    continue;
+                }
+                let waiting = crate::tools::subagents::pending(self.config.key());
+                if waiting > 0 {
+                    // the model has nothing more to do itself, but work it started is still out: its reports are part of the answer
+                    notice(&tx, format!("Waiting for {waiting} background sub-agent(s)"));
+                    crate::tools::subagents::wait_for_report(self.config.key()).await;
                     continue;
                 }
                 let waiting = crate::tools::subagents::pending(self.config.key());

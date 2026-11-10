@@ -98,6 +98,30 @@ async fn an_empty_reply_is_asked_again_and_plan_mode_is_announced_before_any_cal
 }
 
 #[tokio::test]
+async fn a_background_agents_report_reaches_its_own_parent_before_the_turn_ends() {
+    let tmp = tempfile::tempdir().unwrap();
+    let mut agent = scripted(cfg(tmp.path(), json!({})), vec![text("the port is 8080")]).await;
+    let mut other = scripted(cfg(tmp.path(), json!({})), vec![text("nothing for me")]).await;
+    crate::tools::subagents::deliver(agent.config.key(), "ab12", "investigator", "PORT is read in server.rs:14");
+    run(&mut other, "hello").await;
+    assert_eq!(requests(&other).len(), 1); // someone else's report is not theirs to read
+    let evs = run(&mut agent, "which port?").await;
+    // it was ready before the first model call, so it rides along with that request
+    assert!(requests(&agent)[0].iter().any(|m| m["content"].as_str().unwrap_or("").contains("server.rs:14")));
+    assert_eq!(text_completes(&evs), vec!["the port is 8080"]);
+    assert_eq!(crate::tools::subagents::pending(agent.config.key()), 0);
+}
+
+#[tokio::test]
+async fn resuming_an_agent_that_is_gone_says_so() {
+    let tmp = tempfile::tempdir().unwrap();
+    let c = cfg(tmp.path(), json!({"pi_mode": false}));
+    let reg = create_default_registry(ConfigHandle::new(c.clone()));
+    let r = reg.invoke("subagent_general", json!({"goal": "and the tests?", "resume": "nope1234"}), tmp.path(), &HookSystem::new(&c), None, "s1").await;
+    assert!(!r.success && r.error.unwrap_or_default().contains("No sub-agent 'nope1234' to resume"));
+}
+
+#[tokio::test]
 async fn tool_call_arguments_are_valid_json_in_history() {
     let tmp = tempfile::tempdir().unwrap();
     std::fs::write(tmp.path().join("a.txt"), "hi").unwrap();
