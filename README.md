@@ -663,6 +663,21 @@ flowchart LR
   protocol    = "anthropic"      # default "openai"
   ```
 
+  A server that is only *mostly* OpenAI-compatible (llama.cpp, vLLM, SGLang, a company proxy) is tuned the same way, no code:
+
+  ```toml
+  [providers.box.compat]
+  max_tokens_field     = "max_completion_tokens"   # or "none" to send no cap
+  stream_usage         = false                     # the server rejects stream_options
+  tool_result_name     = true                      # tool messages must carry the tool's name
+  assistant_after_tool = true                      # the chat template refuses a user message right after a tool result
+  extra_body           = { thinking_token_budget = 4096, chat_template_kwargs = { enable_thinking = true } }
+  ```
+
+  `extra_body` is merged into every request last, so it also overrides melon's own thinking switch for that server. A
+  thinking budget matters on local models: thinking and the answer share `max_tokens`, and without a cap the thinking can
+  use all of it and leave no tool call.
+
   A project's own `.melon/config.toml` can only set `[providers]` once you trust it, because it could otherwise send your keys
   to its own server.
 

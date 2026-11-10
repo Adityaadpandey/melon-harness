@@ -70,6 +70,36 @@ pub fn wire_messages(messages: &[Value], model: &str) -> Vec<Value> {
         .collect()
 }
 
+/// Reshape the history for a server with a strict chat template. With `tool_result_name`, each tool message gets the
+/// name of the call it answers. With `assistant_after_tool`, a short assistant line goes between a tool result and a
+/// user message that follows it directly (a steering note, a reminder), because such templates refuse tool -> user.
+pub fn compat_messages(mut messages: Vec<Value>, compat: &crate::config::Compat) -> Vec<Value> {
+    if compat.tool_result_name {
+        let mut names: std::collections::HashMap<String, String> = Default::default();
+        for m in messages.iter_mut() {
+            for c in m["tool_calls"].as_array().into_iter().flatten() {
+                names.insert(c["id"].as_str().unwrap_or("").into(), c["function"]["name"].as_str().unwrap_or("").into());
+            }
+            if m["role"] == "tool" && m.get("name").is_none() {
+                if let Some(n) = names.get(m["tool_call_id"].as_str().unwrap_or("")) {
+                    m["name"] = json!(n);
+                }
+            }
+        }
+    }
+    if compat.assistant_after_tool {
+        let mut out: Vec<Value> = Vec::with_capacity(messages.len());
+        for m in messages {
+            if m["role"] == "user" && out.last().map_or(false, |p| p["role"] == "tool") {
+                out.push(json!({"role": "assistant", "content": "I have processed the tool results."}));
+            }
+            out.push(m);
+        }
+        return out;
+    }
+    messages
+}
+
 fn http_client(read_timeout: u64) -> reqwest::Client {
     reqwest::Client::builder()
         .connect_timeout(Duration::from_secs(15))
@@ -131,11 +161,17 @@ pub struct OpenAIChatAdapter {
     api_key: String,
     base_url: String,
     headers: BTreeMap<String, String>,
+    compat: crate::config::Compat,
 }
 
 impl OpenAIChatAdapter {
     pub fn new(api_key: &str, base_url: &str, headers: BTreeMap<String, String>) -> OpenAIChatAdapter {
-        OpenAIChatAdapter { client: http_client(120), api_key: api_key.into(), base_url: base_url.trim_end_matches('/').into(), headers }
+        OpenAIChatAdapter { client: http_client(120), api_key: api_key.into(), base_url: base_url.trim_end_matches('/').into(), headers, compat: Default::default() }
+    }
+
+    pub fn with_compat(mut self, compat: crate::config::Compat) -> OpenAIChatAdapter {
+        self.compat = compat;
+        self
     }
 }
 
@@ -166,15 +202,16 @@ impl Adapter for OpenAIChatAdapter {
 
     fn stream(&self, req: StreamReq) -> EventStream<'_> {
         Box::pin(async_stream::try_stream! {
-            let mut body = json!({
-                "model": req.model, "messages": wire_messages(&req.messages, &req.model),
-                "stream": true, "stream_options": {"include_usage": true},
-            });
+            let mut body = json!({"model": req.model, "messages": compat_messages(wire_messages(&req.messages, &req.model), &self.compat), "stream": true});
             let b = body.as_object_mut().unwrap();
+            if self.compat.stream_usage != Some(false) { b.insert("stream_options".into(), json!({"include_usage": true})); }
             if let Some(t) = req.temperature { b.insert("temperature".into(), json!(t)); }
-            if let Some(m) = req.max_tokens.filter(|m| *m > 0) { b.insert("max_tokens".into(), json!(m)); }
+            let cap_field = self.compat.max_tokens_field.as_deref().unwrap_or("max_tokens");
+            if let Some(m) = req.max_tokens.filter(|m| *m > 0 && cap_field != "none") { b.insert(cap_field.into(), json!(m)); }
             if let Some(p) = req.top_p { b.insert("top_p".into(), json!(p)); }
             if let Some(Value::Object(extra)) = &req.extra_body { for (k, v) in extra { b.insert(k.clone(), v.clone()); } }
+            // the user's own fields go last: they know their server better than our family tables do
+            for (k, v) in &self.compat.extra_body { b.insert(k.clone(), v.clone()); }
             if let Some(tools) = req.tools.as_ref().filter(|t| !t.is_empty()) {
                 b.insert("tools".into(), json!(tool_defs(tools)));
                 b.insert("tool_choice".into(), json!("auto"));

@@ -138,6 +138,22 @@ fn completed_calls(evs: &[StreamEvent]) -> Vec<(String, String, Value)> {
 
 // ---------------------------------------------------------------- openai stream parsing
 
+#[test]
+fn a_strict_server_gets_tool_names_and_an_assistant_line_before_a_user_note() {
+    let history = vec![
+        json!({"role": "assistant", "tool_calls": [{"id": "c1", "function": {"name": "grep", "arguments": "{}"}}]}),
+        json!({"role": "tool", "tool_call_id": "c1", "content": "hit"}),
+        json!({"role": "user", "content": "also check b.rs"}),
+    ];
+    let plain = crate::client::adapters::compat_messages(history.clone(), &Default::default());
+    assert_eq!(plain, history);
+    let strict = crate::config::Compat { tool_result_name: true, assistant_after_tool: true, ..Default::default() };
+    let out = crate::client::adapters::compat_messages(history, &strict);
+    assert_eq!(out[1]["name"], "grep");
+    assert_eq!(out[2]["role"], "assistant");
+    assert_eq!(out[3]["role"], "user");
+}
+
 #[tokio::test]
 async fn a_stream_that_dies_mid_reply_counts_as_cut_off_and_an_empty_one_is_an_error() {
     let run = |chunks: Vec<Value>| async move {

@@ -13,6 +13,7 @@ pub struct Provider {
     pub api_key_env: Option<String>,
     pub protocol: String,
     pub headers: BTreeMap<String, String>,
+    pub compat: crate::config::Compat,
 }
 
 impl Provider {
@@ -53,6 +54,7 @@ pub fn preset(name: &str) -> Option<Provider> {
         api_key_env: p.2.map(String::from),
         protocol: p.3.into(),
         headers: BTreeMap::new(),
+        compat: Default::default(),
     })
 }
 
@@ -71,6 +73,7 @@ pub fn all_providers(config: &Config) -> BTreeMap<String, Provider> {
                 api_key_env: env,
                 protocol: c.protocol.clone().or_else(|| base.as_ref().map(|b| b.protocol.clone())).unwrap_or_else(|| "openai".into()),
                 headers: c.headers.clone(),
+                compat: c.compat.clone(),
             },
         );
     }

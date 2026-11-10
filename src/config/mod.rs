@@ -218,6 +218,28 @@ pub struct ProviderConfig {
     pub api_key_env_set: bool,
     pub protocol: Option<String>,
     pub headers: BTreeMap<String, String>,
+    pub compat: Compat,
+}
+
+/// Where an OpenAI-compatible server differs from OpenAI itself. Every field is optional, so a strict local server
+/// (llama.cpp, vLLM, SGLang, a company proxy) is a few config lines instead of a code change:
+///
+/// ```toml
+/// [providers.box.compat]
+/// max_tokens_field = "max_completion_tokens"      # or "none" to send no cap
+/// stream_usage = false                            # the server rejects stream_options
+/// tool_result_name = true                         # tool messages must carry the tool's name
+/// assistant_after_tool = true                     # the chat template refuses user right after tool
+/// extra_body = { thinking_token_budget = 4096 }   # merged into every request, last, so it wins
+/// ```
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+#[serde(default)]
+pub struct Compat {
+    pub max_tokens_field: Option<String>,
+    pub stream_usage: Option<bool>,
+    pub tool_result_name: bool,
+    pub assistant_after_tool: bool,
+    pub extra_body: serde_json::Map<String, serde_json::Value>,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]

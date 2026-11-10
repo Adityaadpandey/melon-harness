@@ -162,7 +162,7 @@ impl LLMClient {
                 if p.protocol == "anthropic" {
                     Arc::new(AnthropicAdapter::new(&key, &p.base_url, p.headers.clone()))
                 } else {
-                    Arc::new(OpenAIChatAdapter::new(&key, &p.base_url, p.headers.clone()))
+                    Arc::new(OpenAIChatAdapter::new(&key, &p.base_url, p.headers.clone()).with_compat(p.compat.clone()))
                 }
             })
             .clone()
