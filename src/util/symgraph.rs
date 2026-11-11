@@ -659,7 +659,8 @@ pub fn task_map(cwd: &Path, request: &str) -> Option<String> {
 
 /// One line for a grep whose pattern is the name of something defined here, e.g. `parse_invoice` or `\bparse_invoice\(`:
 /// "[graph: function parse_invoice is defined at billing/invoice.py:1-2, used in 2 places; ...]". None for any other pattern,
-/// for a name defined in many places, and in repos too small to be offered the graph tool.
+/// for a name defined in more than four places, and in repos too small to be offered the graph tool. A name with two to
+/// four definitions gets a line that tells them apart instead.
 pub fn grep_hint(cwd: &Path, pattern: &str) -> Option<String> {
     let name = pattern.trim_start_matches("\\b").trim_end_matches("\\(").trim_end_matches('(').trim_end_matches("\\b");
     if name.len() < 4 || !name.chars().all(|c| c.is_alphanumeric() || c == '_') {
@@ -667,12 +668,17 @@ pub fn grep_hint(cwd: &Path, pattern: &str) -> Option<String> {
     }
     let g = load(cwd);
     let defs: Vec<&(String, usize)> = g.by_name.get(name)?.iter().filter(|(f, i)| !matches!(g.files[f].defs[*i].kind, "impl" | "mod")).collect();
-    if g.files.len() < 15 || defs.len() != 1 {
+    if g.files.len() < 15 || defs.is_empty() || defs.len() > 4 {
         return None;
     }
-    let (f, i) = defs[0];
-    let d = &g.files[f].defs[*i];
-    Some(format!("[graph: {} {name} is defined at {f}:{}-{}, used in {} place(s). `graph callers {name}` lists them without the noise, `graph symbol {name}` reads just its body.]", d.kind, d.line, d.end, g.callers(f, name).len()))
+    if let [(f, i)] = defs[..] {
+        let d = &g.files[f].defs[*i];
+        return Some(format!("[graph: {} {name} is defined at {f}:{}-{}, used in {} place(s). `graph callers {name}` lists them without the noise, `graph symbol {name}` reads just its body.]", d.kind, d.line, d.end, g.callers(f, name).len()));
+    }
+    // Two unrelated things share the name (billing/charge.py and games/charge.py both define `charge`): grep mixes
+    // them together, the graph keeps each one's users apart.
+    let each: Vec<String> = defs.iter().map(|(f, i)| format!("{f}:{} ({} use(s))", g.files[f].defs[*i].line, g.callers(f, name).len())).collect();
+    Some(format!("[graph: {} different definitions are named {name}: {}. These matches mix them; `graph callers {name}` lists the users of each one separately.]", defs.len(), each.join(", ")))
 }
 
 pub fn listed(cwd: &Path) -> Vec<String> {
@@ -931,9 +937,15 @@ mod tests {
         let mut files: Vec<(String, String)> = (0..15).map(|i| (format!("m{i}.py"), format!("def filler_{i}():\n    pass\n"))).collect();
         files.push(("lib.py".into(), "def parse_invoice(x):\n    return x\n".into()));
         files.push(("app.py".into(), "from lib import parse_invoice\nparse_invoice(1)\n".into()));
+        files.push(("billing/charge.py".into(), "def charge(a):\n    return a\n".into()));
+        files.push(("games/charge.py".into(), "def charge(b):\n    return b\n".into()));
+        files.push(("pay.py".into(), "from billing.charge import charge\ncharge(1)\n".into()));
         let d = repo(&files.iter().map(|(a, b)| (a.as_str(), b.as_str())).collect::<Vec<_>>());
         let h = grep_hint(d.path(), "\\bparse_invoice\\(").unwrap();
         assert!(h.contains("function parse_invoice is defined at lib.py:1-2, used in 1 place(s)"), "{h}");
+        // same name, two unrelated functions: the hint says so and counts each one's users apart
+        let h = grep_hint(d.path(), "charge").unwrap();
+        assert!(h.contains("2 different definitions are named charge: billing/charge.py:1 (1 use(s)), games/charge.py:1 (0 use(s))"), "{h}");
         assert!(grep_hint(d.path(), "parse.*invoice").is_none() && grep_hint(d.path(), "nothing_here").is_none());
     }
 
