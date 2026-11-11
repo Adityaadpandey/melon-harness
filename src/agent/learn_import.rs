@@ -152,7 +152,7 @@ pub fn episodes(lines: &[&str], repo: &Path) -> (Vec<Task>, BTreeMap<String, usi
                     }
                     if EDIT_TOOLS.contains(&name) {
                         let path = args["file_path"].as_str().or(args["notebook_path"].as_str()).unwrap_or("");
-                        let Ok(rel) = resolve(Path::new(path)).strip_prefix(resolve(repo)).map(|r| r.to_string_lossy().to_string()) else { continue }; // a scratch file or another repo
+                        let Ok(rel) = resolve(Path::new(path)).strip_prefix(resolve(repo)).map(|r| r.to_string_lossy().replace('\\', "/")) else { continue }; // a scratch file or another repo
                         let t = tasks.last_mut().unwrap();
                         if !t.files.contains(&rel) {
                             t.files.push(rel);
