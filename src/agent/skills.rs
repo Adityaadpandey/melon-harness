@@ -42,7 +42,7 @@ impl Skill {
 /// ~/.claude/skills) rank below, so melon's compact always-on ponytail beats the plugin's longer one; pi's folder ranks
 /// above, and ~/.melon/skills (the user's own pick for melon) ranks above all.
 fn user_dirs() -> (Vec<PathBuf>, Vec<PathBuf>) {
-    let home = dirs::home_dir().unwrap_or_default();
+    let home = crate::util::platform::home_dir().unwrap_or_default();
     let mut below = vec![];
     if let Some(v) = std::fs::read_to_string(home.join(".claude/plugins/installed_plugins.json")).ok().and_then(|t| serde_json::from_str::<Value>(&t).ok()) {
         if let Some(plugins) = v["plugins"].as_object() {

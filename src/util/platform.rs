@@ -83,6 +83,12 @@ pub fn restrict(path: &Path, mode: u32) {
     }
 }
 
+/// The home folder. `$HOME` wins when set (Git Bash and the test suite both set it), because on Windows
+/// `dirs::home_dir()` ignores it and always asks the OS.
+pub fn home_dir() -> Option<PathBuf> {
+    std::env::var_os("HOME").filter(|h| !h.is_empty()).map(PathBuf::from).or_else(dirs::home_dir)
+}
+
 /// A symlink to a file; same best-effort story as `symlink_dir`.
 pub fn symlink_file(real: &Path, link: &Path) -> std::io::Result<()> {
     #[cfg(unix)]

@@ -16,9 +16,9 @@ pub const INLINE_LIMIT: usize = 90_000;
 /// `~/Library/Application Support/melon` on macOS, `~/.config/melon` elsewhere (platformdirs' `user_config_dir`).
 pub fn get_config_dir() -> PathBuf {
     if cfg!(target_os = "macos") {
-        dirs::home_dir().unwrap_or_default().join("Library/Application Support/melon")
+        crate::util::platform::home_dir().unwrap_or_default().join("Library/Application Support/melon")
     } else {
-        dirs::config_dir().unwrap_or_else(|| dirs::home_dir().unwrap_or_default().join(".config")).join("melon")
+        dirs::config_dir().unwrap_or_else(|| crate::util::platform::home_dir().unwrap_or_default().join(".config")).join("melon")
     }
 }
 
@@ -27,9 +27,9 @@ pub fn get_data_dir() -> PathBuf {
         return PathBuf::from(d);
     }
     if cfg!(target_os = "macos") {
-        dirs::home_dir().unwrap_or_default().join("Library/Application Support/melon")
+        crate::util::platform::home_dir().unwrap_or_default().join("Library/Application Support/melon")
     } else {
-        dirs::data_dir().unwrap_or_else(|| dirs::home_dir().unwrap_or_default().join(".local/share")).join("melon")
+        dirs::data_dir().unwrap_or_else(|| crate::util::platform::home_dir().unwrap_or_default().join(".local/share")).join("melon")
     }
 }
 
@@ -231,7 +231,7 @@ pub fn instructions_for(cwd: &Path, home: Option<&Path>) -> Option<String> {
         }
     }
     let repo_dirs: Vec<PathBuf> = dirs.iter().rev().cloned().collect();
-    let home = home.map(Path::to_path_buf).unwrap_or_else(|| dirs::home_dir().unwrap_or_default());
+    let home = home.map(Path::to_path_buf).unwrap_or_else(|| crate::util::platform::home_dir().unwrap_or_default());
     dirs.push(home.join(".claude"));
     for d in &dirs {
         for name in INSTRUCTION_FILES {

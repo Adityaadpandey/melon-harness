@@ -52,7 +52,7 @@ pub fn model_notes(model: &str) -> Vec<String> {
 /// appends apply). Handy for trying a different prompt on one model without rebuilding:
 /// `echo "Answer in Hindi." > .melon/APPEND_SYSTEM.md`.
 pub fn get_system_prompt(config: &Config, user_memory: Option<&str>, tools: &[Arc<dyn Tool>], skills: &[Skill]) -> String {
-    let dirs = [dirs::home_dir().unwrap_or_default().join(".melon"), config.cwd.join(".melon")];
+    let dirs = [crate::util::platform::home_dir().unwrap_or_default().join(".melon"), config.cwd.join(".melon")];
     let file = |name: &str| dirs.iter().filter_map(|d| std::fs::read_to_string(d.join(name)).ok()).map(|t| t.trim().to_string()).filter(|t| !t.is_empty()).collect::<Vec<_>>();
     let mut parts = vec![file("SYSTEM.md").pop().unwrap_or_else(|| built_prompt(config, user_memory, tools, skills))];
     parts.extend(file("APPEND_SYSTEM.md"));
@@ -317,7 +317,7 @@ fn within(render: impl Fn(usize) -> String, budget: usize) -> String {
 
 /// Skills grouped by folder, so a long plugin path is written once instead of once per skill.
 pub(crate) fn skill_rows(skills: &[&Skill], cap: usize) -> String {
-    let home = dirs::home_dir().unwrap_or_default().to_string_lossy().to_string();
+    let home = crate::util::platform::home_dir().unwrap_or_default().to_string_lossy().to_string();
     let mut groups: Vec<(String, Vec<String>)> = vec![];
     for k in skills {
         let Some(path) = &k.path else { continue };

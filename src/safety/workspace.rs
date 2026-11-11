@@ -12,7 +12,7 @@ const SENSITIVE_ROOTS: &[&str] = &["/etc", "/private/etc", "/root", "/var/root",
 fn sensitive_roots() -> Vec<PathBuf> {
     let mut v: Vec<PathBuf> = SENSITIVE_ROOTS.iter().map(|r| real(Path::new(r))).collect();
     if cfg!(windows) {
-        if let Some(users) = dirs::home_dir().and_then(|h| h.parent().map(Path::to_path_buf)) {
+        if let Some(users) = crate::util::platform::home_dir().and_then(|h| h.parent().map(Path::to_path_buf)) {
             v.push(real(&users));
         }
         if let Some(win) = std::env::var_os("SystemRoot") {
@@ -65,7 +65,7 @@ impl Workspace {
         Workspace {
             root: real(root),
             extra: extra.iter().map(|e| real(Path::new(e))).collect(),
-            home: real(&dirs::home_dir().unwrap_or_default()),
+            home: real(&crate::util::platform::home_dir().unwrap_or_default()),
             sensitive: sensitive_roots(),
         }
     }

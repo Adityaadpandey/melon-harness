@@ -9,7 +9,7 @@ const CLIENT_ID: &str = "app_EMoamEEZ73f0CkXaXp7hrann";
 const REFRESH_URL: &str = "https://auth.openai.com/oauth/token";
 
 pub fn auth_path() -> PathBuf {
-    std::env::var("CODEX_HOME").map(PathBuf::from).unwrap_or_else(|_| dirs::home_dir().unwrap_or_default().join(".codex")).join("auth.json")
+    std::env::var("CODEX_HOME").map(PathBuf::from).unwrap_or_else(|_| crate::util::platform::home_dir().unwrap_or_default().join(".codex")).join("auth.json")
 }
 
 /// exp claim of a JWT, or 0 if it can't be read (treated as expired).

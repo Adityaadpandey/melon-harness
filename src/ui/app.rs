@@ -88,7 +88,7 @@ fn copy_to_clipboard(text: &str) -> bool {
 }
 
 fn home_short(p: &Path) -> String {
-    let home = dirs::home_dir().unwrap_or_default().to_string_lossy().to_string();
+    let home = crate::util::platform::home_dir().unwrap_or_default().to_string_lossy().to_string();
     p.to_string_lossy().replacen(&home, "~", 1)
 }
 

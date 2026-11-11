@@ -395,7 +395,7 @@ fn claude_tool(name: &str) -> String {
 }
 
 fn agent_dirs(cwd: &Path) -> Vec<std::path::PathBuf> {
-    let home = dirs::home_dir().unwrap_or_default();
+    let home = crate::util::platform::home_dir().unwrap_or_default();
     vec![home.join(".claude/agents"), home.join(".melon/agents"), cwd.join(".claude/agents"), cwd.join(".melon/agents")]
 }
 

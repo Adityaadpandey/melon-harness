@@ -62,7 +62,7 @@ async fn a_broken_edit_says_so_in_its_result() {
 
 /// Any TypeScript on this machine to borrow (tests never install one).
 fn typescript_install() -> Option<PathBuf> {
-    let home = dirs::home_dir()?;
+    let home = crate::util::platform::home_dir()?;
     let roots = [home.join("Devlopment/tunyt"), PathBuf::from(env!("CARGO_MANIFEST_DIR")).parent()?.join("pi")];
     roots.into_iter().map(|r| r.join("node_modules/typescript")).find(|t| t.join("lib/tsserver.js").is_file())
 }

@@ -439,7 +439,7 @@ struct Args {
 
 pub async fn main(argv: Vec<String>) -> i32 {
     let args = Args::parse_from(argv);
-    let home = dirs::home_dir().unwrap_or_default();
+    let home = crate::util::platform::home_dir().unwrap_or_default();
     let repo = resolve(&crate::util::paths::expanduser(&args.repo.to_string_lossy()));
     let projects = args.projects.clone().unwrap_or_else(|| home.join(".claude/projects"));
     let history = args.history.clone().unwrap_or_else(|| home.join(".claude/history.jsonl"));

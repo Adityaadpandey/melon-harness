@@ -168,7 +168,7 @@ fn read(path: &Path) -> Value {
 /// Where rules come from, loosest first. Claude Code's per-project settings are honoured so the two agents agree;
 /// its global settings are not (they were written for a different tool's habits).
 pub fn files(cwd: &Path) -> Vec<PathBuf> {
-    let home = dirs::home_dir().unwrap_or_default();
+    let home = crate::util::platform::home_dir().unwrap_or_default();
     vec![
         home.join(".melon/permissions.json"),
         cwd.join(".claude/settings.json"),

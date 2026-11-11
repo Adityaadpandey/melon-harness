@@ -22,7 +22,7 @@ fn inline(text: &str, base: &Path, root: &Path, depth: usize, done: &mut HashSet
     let re = import_re();
     let mut out = String::new();
     let mut at = 0;
-    let home = resolve(&dirs::home_dir().unwrap_or_default());
+    let home = resolve(&crate::util::platform::home_dir().unwrap_or_default());
     while let Some(c) = re.captures(&text[at..]) {
         let (s, e) = re.find(&text[at..]).unwrap();
         out.push_str(&text[at..at + s]);
