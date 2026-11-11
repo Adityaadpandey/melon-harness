@@ -225,7 +225,7 @@ async fn run(args: Args) -> i32 {
     }
     if args.json_mode {
         let Some(p) = &args.prompt else { fail("--json needs a prompt") };
-        return if cli.run_json(p).await { 0 } else { 1 };
+        return if cli.run_json(p, args.report.as_deref()).await { 0 } else { 1 };
     }
     if let Some(p) = &args.prompt {
         let result = cli.run_single(p, args.report.as_deref()).await;

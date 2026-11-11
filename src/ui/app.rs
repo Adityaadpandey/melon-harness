@@ -364,7 +364,7 @@ impl Cli {
     }
 
     /// One event per stdout line, for CI and scripts. No TUI, so pair it with --approval auto.
-    pub async fn run_json(&mut self, message: &str) -> bool {
+    pub async fn run_json(&mut self, message: &str, report_path: Option<&Path>) -> bool {
         self.new_agent(None).await;
         let mut ok = true;
         let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel::<AgentEvent>();
@@ -392,6 +392,9 @@ impl Cli {
                 handle(ev, &mut ok, &mut report);
             }
             self.last_report = report;
+        }
+        if let Some(p) = report_path {
+            self.write_report(p, None);
         }
         self.agent().close().await;
         ok && !matches!(self.last_report.as_ref().and_then(|r| r["status"].as_str()), Some("failed" | "verification_failed"))

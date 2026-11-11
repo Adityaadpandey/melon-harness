@@ -15,7 +15,7 @@ async fn json_mode_prints_one_valid_event_per_line() {
     cfg.approval = ApprovalPolicy::Auto;
     let mut cli = Cli::new(cfg);
     sink::install(); // catch what would go to stdout
-    let ok = cli.run_json("go").await;
+    let ok = cli.run_json("go", None).await;
     let printed = sink::uninstall();
     assert!(ok);
     let events: Vec<Value> = printed.lines().map(|l| serde_json::from_str(l).unwrap_or_else(|e| panic!("not json: {l:?} ({e})"))).collect();
