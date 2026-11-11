@@ -7,7 +7,7 @@ use crate::agent::orchestrator::{parse_graph, waves, Node, Orchestrator, WORKER_
 use serde_json::json;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
-use std::time::{Duration, Instant};
+use std::time::Duration;
 
 pub(super) type Edit = Box<dyn Fn(&str) -> String + Send + Sync>;
 
@@ -34,13 +34,21 @@ pub(super) fn repo() -> tempfile::TempDir {
 /// The hook is removed again when this is dropped.
 pub(super) struct FakeWorker;
 
+static WORKING: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+/// The most workers that were mid-task at the same moment since the last `install`.
+pub(super) static MOST_WORKING: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+
 impl FakeWorker {
     pub(super) fn install(script: Vec<(&'static str, Vec<(&'static str, Edit)>)>, delay: Duration, status: &'static str) -> FakeWorker {
         let script = Arc::new(script);
+        MOST_WORKING.store(0, std::sync::atomic::Ordering::SeqCst);
         *WORKER_HOOK.lock().unwrap() = Some(Arc::new(move |cwd: PathBuf, prompt: String| {
             let script = script.clone();
             Box::pin(async move {
+                use std::sync::atomic::Ordering::SeqCst;
+                MOST_WORKING.fetch_max(WORKING.fetch_add(1, SeqCst) + 1, SeqCst);
                 tokio::time::sleep(delay).await;
+                WORKING.fetch_sub(1, SeqCst);
                 for (marker, edits) in script.iter() {
                     if prompt.contains(marker) {
                         for (path, f) in edits {
@@ -92,11 +100,11 @@ async fn independent_workers_run_concurrently_and_merge() {
     let dir = repo();
     let p = dir.path();
     let script = (0..3).map(|i| (["T0", "T1", "T2"][i], vec![(["m0.py", "m1.py", "m2.py"][i], edit(|_| "x = 1\n".into()))])).collect();
-    let _w = FakeWorker::install(script, Duration::from_millis(1000), "verified");
+    let _w = FakeWorker::install(script, Duration::from_millis(400), "verified");
     let nodes = (0..3).map(|i| node(&format!("n{i}"), &format!("T{i}"), &[])).collect();
-    let t = Instant::now();
     let res = Orchestrator::new(config(p), 4, None).run("req", nodes, true).await.unwrap();
-    assert!(t.elapsed() < Duration::from_millis(2900), "serial would be >= 3s plus git overhead: {:?}", t.elapsed());
+    let peak = MOST_WORKING.load(std::sync::atomic::Ordering::SeqCst);
+    assert!(peak >= 2, "workers ran one after another (at most {peak} at once)");
     assert!(res["status"] == "ok" && res["applied"] == "fast-forwarded", "{res}");
     assert!((0..3).all(|i| p.join(format!("m{i}.py")).exists()));
     // cleanup: no leftover worktrees or worker branches
