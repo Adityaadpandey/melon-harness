@@ -58,6 +58,8 @@ fn user_dirs() -> (Vec<PathBuf>, Vec<PathBuf>) {
 }
 
 pub fn parse_skill(text: &str, path: Option<&Path>) -> Option<Skill> {
+    // a Windows checkout may turn the files into CRLF, which would hide the `---` fences
+    let text = &text.replace("\r\n", "\n");
     let rest = text.strip_prefix("---\n")?;
     let (head, body) = rest.split_once("\n---\n")?;
     let lines: Vec<&str> = head.lines().collect();
