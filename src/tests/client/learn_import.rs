@@ -30,7 +30,7 @@ fn rewards_files_and_hooks() {
     let repo = std::fs::canonicalize(dir.path()).unwrap().join("shop");
     std::fs::create_dir_all(&repo).unwrap();
     let projects = dir.path().join("projects");
-    let key = repo.to_string_lossy().replace('/', "-");
+    let key = crate::agent::learn_import::project_key(&repo);
     let folder = projects.join(&key);
     std::fs::create_dir_all(&folder).unwrap();
     std::fs::create_dir_all(projects.join(format!("{key}x"))).unwrap(); // "shopx" is another repo, not a subfolder

@@ -19,6 +19,8 @@ fn nested_instructions_show_once_outermost_first() {
     assert_eq!(for_path(root, &web.join("src").join("b.ts"), &mut seen), ""); // already shown
 }
 
+// on Windows the temp dir sits inside the home folder, which imports may legitimately reach
+#[cfg(unix)]
 #[test]
 fn import_outside_the_repo_is_left_alone() {
     let dir = tempfile::tempdir().unwrap();

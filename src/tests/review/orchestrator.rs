@@ -23,6 +23,7 @@ pub(super) fn repo() -> tempfile::TempDir {
     git(p, &["init", "-q"]);
     git(p, &["config", "user.email", "t@t"]);
     git(p, &["config", "user.name", "t"]);
+    git(p, &["config", "core.autocrlf", "false"]); // Windows would turn \n into \r\n and the scripted edits would match nothing
     std::fs::write(p.join("shared.py"), "def a():\n    return 0\n\n\n\n\n\ndef b():\n    return 0\n").unwrap();
     git(p, &["add", "-A"]);
     git(p, &["commit", "-qm", "init"]);

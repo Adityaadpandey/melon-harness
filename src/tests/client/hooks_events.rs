@@ -29,7 +29,7 @@ async fn stop_hook_exit_0_lets_it_finish() {
 async fn session_start_hook_runs_with_its_info() {
     let dir = tempfile::tempdir().unwrap();
     let out = dir.path().join("seen");
-    let hs = system(dir.path(), HookTrigger::SessionStart, &format!("echo \"$AI_AGENT_SESSION_ID\" > {}", out.display()));
+    let hs = system(dir.path(), HookTrigger::SessionStart, &format!("echo \"$AI_AGENT_SESSION_ID\" > '{}'", crate::util::platform::bash_path(&out)));
     hs.fire(HookTrigger::SessionStart, &[("session_id", "abc".to_string())]).await;
     assert_eq!(std::fs::read_to_string(out).unwrap().trim(), "abc");
 }

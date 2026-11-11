@@ -79,7 +79,7 @@ impl Rule {
 
     fn path_matches(&self, target: &str, cwd: &Path) -> bool {
         let t = resolve(Path::new(target));
-        let rel = t.strip_prefix(resolve(cwd)).map(|r| r.to_string_lossy().to_string()).unwrap_or_else(|_| target.to_string());
+        let rel = t.strip_prefix(resolve(cwd)).map(|r| r.to_string_lossy().replace('\\', "/")).unwrap_or_else(|_| target.to_string());
         glob_re(self.spec.as_deref().unwrap_or("*")).is_match(&rel)
     }
 

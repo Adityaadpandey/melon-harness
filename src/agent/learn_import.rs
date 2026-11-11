@@ -64,9 +64,15 @@ fn new_task(request: &str) -> Task {
     Task { request: paste().replace_all(request, " ").trim().to_string(), ..Default::default() }
 }
 
+/// The folder name Claude Code files a repo under: every separator and drive colon becomes `-`.
+/// Example: `C:\\work\\shop` -> `C--work-shop`, `/a/shop` -> `-a-shop`.
+pub fn project_key(repo: &Path) -> String {
+    repo.to_string_lossy().trim_start_matches(r"\\?\").replace(['/', '\\', ':'], "-")
+}
+
 /// Claude Code folders for the repo and its subfolders: /a/tunyt -> -a-tunyt, -a-tunyt-apps-web.
 pub fn project_dirs(repo: &Path, projects: &Path) -> Vec<PathBuf> {
-    let key = repo.to_string_lossy().replace('/', "-");
+    let key = project_key(repo);
     let mut v: Vec<PathBuf> = std::fs::read_dir(projects).map(|rd| rd.flatten().map(|e| e.path()).filter(|d| d.is_dir() && d.file_name().map_or(false, |n| { let n = n.to_string_lossy(); n == key || n.starts_with(&format!("{key}-")) })).collect()).unwrap_or_default();
     v.sort();
     v
@@ -146,7 +152,7 @@ pub fn episodes(lines: &[&str], repo: &Path) -> (Vec<Task>, BTreeMap<String, usi
                     }
                     if EDIT_TOOLS.contains(&name) {
                         let path = args["file_path"].as_str().or(args["notebook_path"].as_str()).unwrap_or("");
-                        let Ok(rel) = resolve(Path::new(path)).strip_prefix(repo).map(|r| r.to_string_lossy().to_string()) else { continue }; // a scratch file or another repo
+                        let Ok(rel) = resolve(Path::new(path)).strip_prefix(resolve(repo)).map(|r| r.to_string_lossy().to_string()) else { continue }; // a scratch file or another repo
                         let t = tasks.last_mut().unwrap();
                         if !t.files.contains(&rel) {
                             t.files.push(rel);
@@ -192,7 +198,7 @@ pub fn history_tasks(repo: &Path, history: &Path, skip: &[String]) -> Vec<Task> 
         if skip.iter().any(|s| s == sid) || t.trim().is_empty() || NOT_TYPED.iter().any(|p| t.trim_start().starts_with(p)) {
             continue;
         }
-        if project == repo_s || project.starts_with(&format!("{repo_s}/")) {
+        if project == repo_s || project.starts_with(&format!("{repo_s}/")) || project.starts_with(&format!("{repo_s}\\")) {
             sessions.entry(sid.to_string()).or_default().push((r["timestamp"].as_i64().unwrap_or(0), t.to_string()));
         }
     }

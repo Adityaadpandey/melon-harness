@@ -101,11 +101,11 @@ fn py_tests(cwd: &Path, f: &str) -> Vec<String> {
     if name.starts_with("test_") || stem.ends_with("_test") {
         return vec![f.to_string()];
     }
-    let mut found: Vec<String> = vec![p.parent().unwrap_or(Path::new("")).join(format!("test_{name}")).to_string_lossy().to_string()];
+    let mut found: Vec<String> = vec![p.parent().unwrap_or(Path::new("")).join(format!("test_{name}")).to_string_lossy().replace('\\', "/")];
     if cwd.join("tests").is_dir() {
         for e in walkdir::WalkDir::new(cwd.join("tests")).into_iter().flatten() {
             if e.file_name().to_string_lossy() == format!("test_{name}") {
-                found.push(e.path().strip_prefix(cwd).unwrap_or(e.path()).to_string_lossy().to_string());
+                found.push(e.path().strip_prefix(cwd).unwrap_or(e.path()).to_string_lossy().replace('\\', "/"));
             }
         }
     }

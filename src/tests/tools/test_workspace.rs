@@ -82,6 +82,8 @@ fn paths_inside_are_fine_outside_and_symlink_escapes_are_not() {
     assert!(inside(&Workspace::new(&e.ws, &[secret_dir.to_string_lossy().to_string()]), "link/file.txt"));
 }
 
+// uses Unix paths like /etc/hosts, which mean nothing on Windows
+#[cfg(unix)]
 #[test]
 fn shell_commands_cannot_name_private_paths_outside() {
     let e = fake_home();
@@ -106,6 +108,8 @@ fn ordinary_commands_are_not_flagged() {
     }
 }
 
+// uses Unix paths like /etc/hosts, which mean nothing on Windows
+#[cfg(unix)]
 #[test]
 fn tool_paths_are_confined_through_the_guard() {
     let e = fake_home();
@@ -199,8 +203,9 @@ fn a_shell_may_not_cd_out_of_the_workspace() {
 #[test]
 fn cd_inside_the_workspace_or_to_temp_is_fine() {
     let e = fake_home();
-    for cmd in ["cd src && ls", "cd /tmp/scratch && ls", "cd ./src; pwd"] {
-        assert_eq!(Workspace::new(&e.ws, &[]).shell_violation(cmd, None), None, "{cmd}");
+    let scratch = crate::util::platform::bash_path(&std::env::temp_dir().join("scratch"));
+    for cmd in ["cd src && ls".to_string(), format!("cd {scratch} && ls"), "cd ./src; pwd".to_string()] {
+        assert_eq!(Workspace::new(&e.ws, &[]).shell_violation(&cmd, None), None, "{cmd}");
     }
 }
 
@@ -262,6 +267,8 @@ fn a_tilde_inside_prose_is_not_the_home_folder() {
     assert!(w.shell_violation("ls ~", None).is_some());
 }
 
+// uses Unix paths like /etc/hosts, which mean nothing on Windows
+#[cfg(unix)]
 #[test]
 fn a_commit_message_is_prose_not_a_path() {
     let e = fake_home();

@@ -169,6 +169,7 @@ async fn backup_and_undo_restore_edits_and_remove_created_files() {
     git(p, &["init", "-q"]);
     git(p, &["config", "user.email", "t@t"]);
     git(p, &["config", "user.name", "t"]);
+    git(p, &["config", "core.autocrlf", "false"]);
     fs::write(p.join("a.txt"), "one\n").unwrap();
     git(p, &["add", "-A"]);
     git(p, &["commit", "-qm", "init"]);

@@ -104,7 +104,7 @@ pub fn atomic_write(path: &Path, text: &str) -> std::io::Result<()> {
 pub fn rel_display(path: &Path, base: &Path) -> String {
     for (a, b) in [(path.to_path_buf(), base.to_path_buf()), (resolve(path), resolve(base))] {
         if let Ok(r) = a.strip_prefix(&b) {
-            return r.to_string_lossy().to_string();
+            return r.to_string_lossy().replace('\\', "/"); // forward slashes so the same text works in Git Bash
         }
     }
     path.to_string_lossy().to_string()
