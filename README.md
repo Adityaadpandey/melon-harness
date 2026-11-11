@@ -6,6 +6,7 @@
   <img alt="rust" src="https://img.shields.io/badge/rust-single%20binary-c3a6ff?style=flat-square">
   <img alt="tests" src="https://img.shields.io/badge/tests-500%2B%20offline-8ff0c4?style=flat-square">
   <img alt="models" src="https://img.shields.io/badge/models-Claude%20%C2%B7%20GPT%20%C2%B7%20Codex%20%C2%B7%20DeepSeek%20%C2%B7%20local-ff8fc7?style=flat-square">
+  <img alt="platforms" src="https://img.shields.io/badge/platforms-macOS%20%C2%B7%20Linux%20%C2%B7%20Windows-9fd3ff?style=flat-square">
   <img alt="sandbox" src="https://img.shields.io/badge/sandbox-macOS-ffd28f?style=flat-square">
 </p>
 
@@ -13,9 +14,11 @@
   <a href="#try-it-in-two-minutes">Try it</a> ·
   <a href="#what-makes-it-different">Why melon</a> ·
   <a href="#melon-vs-claude-code-on-11-tasks">Benchmark</a> ·
+  <a href="#adversarial-round-a-webhook-service">Adversarial round</a> ·
   <a href="#design-decisions">Design decisions</a> ·
   <a href="#reviews-and-fixing-what-they-find">Reviews</a> ·
   <a href="#safety">Safety</a> ·
+  <a href="#windows-notes">Windows</a> ·
   <a href="#not-there-yet">Not there yet</a>
 </p>
 
@@ -45,13 +48,26 @@ Mac and Linux, no Rust needed:
 curl -fsSL https://raw.githubusercontent.com/Adityaadpandey/melon-harness/main/install.sh | sh
 ```
 
-Or grab the tarball for your machine from the [releases page](https://github.com/Adityaadpandey/melon-harness/releases). Building from source:
+Windows 10/11 (PowerShell), no Rust needed:
+
+```powershell
+irm https://raw.githubusercontent.com/Adityaadpandey/melon-harness/main/install.ps1 | iex
+```
+
+It installs `melon.exe` into `%LOCALAPPDATA%\melon\bin` and adds that folder to your user PATH (open a new terminal after).
+Or grab the tarball / zip for your machine from the [releases page](https://github.com/Adityaadpandey/melon-harness/releases).
+Building from source (any system):
 
 ```bash
 git clone https://github.com/Adityaadpandey/melon-harness && cd melon-harness
 cargo build --release                                       # binary: target/release/melon
-ln -sf "$PWD/target/release/melon" ~/.local/bin/melon       # put it on your PATH
+ln -sf "$PWD/target/release/melon" ~/.local/bin/melon       # put it on your PATH (Windows: target\release\melon.exe)
 ```
+
+**On Windows, install [Git for Windows](https://git-scm.com/download/win) first.** melon needs git anyway, and it ships the
+`bash` that melon runs shell commands in, because models write bash. melon looks for that bash next to your git (not the WSL
+stub in `System32`, which runs in a Linux VM and can't see your Windows paths). Without it melon falls back to PowerShell, and
+commands a model wrote for bash will often fail. See [Windows notes](#windows-notes).
 
 Give it a key. Either a `.env` with `API_KEY=...` (in the folder you run it from, or in melon's data folder so it works from
 anywhere) or, if you already use the Codex CLI, nothing at all: `-m codex/<model>` reuses that login. To use OpenAI, Anthropic,
@@ -130,29 +146,68 @@ Before and after, each taken from the commit that fixed it (measured on the Pyth
 | Broad `grep` on the same repo | 5.1s | 1.1s |
 | Model calls that only updated a todo list | 31 of 113 in the benchmark | rides along with the next real call |
 
+## Adversarial round: a webhook service
+
+A second, harder test than the 11 tasks: build an inbound payment-webhook service (signature check, idempotency, an outbox,
+queue workers, retries, admin replay), then attack it. Same 15 scenarios for both agents: 100 identical webhooks at once, two
+events for one payment, a worker killed mid-job, Redis down, Postgres down, retries running out, replay, bad signatures,
+malformed and oversized bodies, unauthorised and cross-tenant admin access, out-of-order events, a crash between commit and ack.
+
+| | melon | Claude Code |
+|---|---|---|
+| Scenarios with an automated test | 15 / 15 | 14 / 15 (one kept as a known failure, `test.fail()`) |
+| Database | real PostgreSQL (a schema-only copy) | in-memory repository |
+| Queue | real Redis client, outages simulated by pointing it at dead ports | enqueue made to throw |
+| Worker crash | a real child process killed with SIGKILL | lease expiry simulated |
+| HTTP | the real Fastify app via `inject` | service layer only |
+| Concurrency | 25 repeated races on one payment | `Promise.all` of 100 in memory |
+| Bugs found | 12, each reproduced or checked directly | 3, each reproduced (one left open) |
+| Left open | tenant trust, shared secrets, public metrics | out-of-order events |
+
+What each found:
+
+- **melon (infrastructure):** unquoted camelCase SQL so no webhook ever persisted; a lost update that left a captured payment
+  `FAILED`; retries scheduled about 5.5 hours late on an IST machine; Redis down making enqueue hang so the outbox stopped draining;
+  an event stuck in `RECEIVED` after a database outage; two dispatchers enqueuing the same event; a crash after the effect marking an
+  event `IGNORED`; BullMQ rejecting job ids that contain `:`. Fixes went in one commit each (21 commits).
+- **Claude Code (service logic):** an `undefined` exception that crashed the failure path, admin retries corrupting the attempt
+  numbering, and, the one melon did not find, **a refund applying before its capture** when events arrive out of order.
+
+Read it honestly:
+
+- The two runs were not under the same conditions. Claude Code tested the service layer only, so this compares depth of testing as
+  much as quality of engineering. Neither side is ready for production: melon's own report lists merchant-controlled tenant ids, one
+  shared Razorpay secret, one shared admin token and unauthenticated `/metrics`.
+- melon changed one assertion (a signed JSON array now expects `invalid_payload`, not `invalid_signature`) and said so. It also
+  flagged that one commit message overstates what it verified.
+- No winner is declared. The follow-up is a controlled round: Claude Code re-run against real Postgres, Redis, worker processes and
+  SIGKILL, and melon given a security and architecture audit of its own result. Results go here when they are in.
+
 ## Contents
 
 1. [Try it in two minutes](#try-it-in-two-minutes)
 2. [What makes it different](#what-makes-it-different)
 3. [Benchmark and numbers](#melon-vs-claude-code-on-11-tasks)
-4. [The idea in one picture](#the-idea-in-one-picture)
-5. [Architecture](#architecture)
-6. [Life of a request](#life-of-a-request)
-7. [Design decisions](#design-decisions) (the part worth reading)
-8. [Context: how melon stays cheap](#context-how-melon-stays-cheap)
-9. [Finding code without reading everything](#finding-code-without-reading-everything)
-10. [Correctness: verify, review, ground](#correctness-verify-review-ground)
-11. [Reviews, and fixing what they find](#reviews-and-fixing-what-they-find)
-12. [Safety](#safety)
-13. [Models and routing](#models-and-routing)
-14. [Memory and learning](#memory-and-learning)
-15. [Parallel agents](#parallel-agents)
-16. [Skills, subagents, profiles](#skills-subagents-profiles)
-17. [Interactive UI](#interactive-ui)
-18. [Extending: MCP, hooks, commands, project tools](#extending-mcp-hooks-commands-project-tools)
-19. [Configuration](#configuration)
-20. [Tests](#tests)
-21. [Not there yet](#not-there-yet)
+4. [Adversarial round: a webhook service](#adversarial-round-a-webhook-service)
+5. [The idea in one picture](#the-idea-in-one-picture)
+6. [Architecture](#architecture)
+7. [Life of a request](#life-of-a-request)
+8. [Design decisions](#design-decisions) (the part worth reading)
+9. [Context: how melon stays cheap](#context-how-melon-stays-cheap)
+10. [Finding code without reading everything](#finding-code-without-reading-everything)
+11. [Correctness: verify, review, ground](#correctness-verify-review-ground)
+12. [Reviews, and fixing what they find](#reviews-and-fixing-what-they-find)
+13. [Safety](#safety)
+14. [Models and routing](#models-and-routing)
+15. [Memory and learning](#memory-and-learning)
+16. [Parallel agents](#parallel-agents)
+17. [Skills, subagents, profiles](#skills-subagents-profiles)
+18. [Interactive UI](#interactive-ui)
+19. [Extending: MCP, hooks, commands, project tools](#extending-mcp-hooks-commands-project-tools)
+20. [Configuration](#configuration)
+21. [Tests](#tests)
+22. [Windows notes](#windows-notes)
+23. [Not there yet](#not-there-yet)
 
 ## The idea in one picture
 
@@ -591,7 +646,7 @@ flowchart LR
    resolved first, so `..` and symlinks that point out are refused. Add roots on purpose with `--add-dir`.
 2. **Shell commands** are scanned for paths in your home, `/etc`, other users' folders, or `..` escapes, and refused before they
    run. History-destroying git commands are blocked.
-3. **OS sandbox** (macOS `sandbox-exec`, on by default). Even a dynamically built command cannot write outside the workspace, temp
+3. **OS sandbox** (macOS `sandbox-exec`, on by default; none on Linux or Windows yet, see [Windows notes](#windows-notes)). Even a dynamically built command cannot write outside the workspace, temp
    dirs and package caches, or read `~/.ssh`, `~/.aws`, `~/.gnupg` and keychains. `sandbox = "off"` disables it.
 
 Plus:
@@ -837,7 +892,7 @@ Later layers win: flags, then the project's `.melon/config.toml`, then the user 
 | What | Where |
 |---|---|
 | Keys | environment variables, or melon's own `.env` (`/connect <provider>` saves one). `API_KEY` and `BASE_URL` set the default gateway |
-| User config | `~/Library/Application Support/melon/config.toml` (Linux: `~/.local/share/melon`) |
+| User config | `~/Library/Application Support/melon/config.toml` (Linux: `~/.local/share/melon`, Windows: `%APPDATA%\melon`) |
 | Project config | `.melon/config.toml` in the repo (sensitive keys need `--trust`) |
 | Data | sessions, traces, transcripts, lessons and review memory in the same user folder; `MELON_DATA_DIR` moves all of it |
 | Project instructions | `AGENTS.md` / `CLAUDE.md` in the repo, read automatically |
@@ -848,7 +903,7 @@ Useful flags: `-m <model>`, `--approval on-request|auto-edit|auto|plan|yolo`, `-
 ## Tests
 
 ```bash
-cargo test            # about 500 tests, no network, no real model, around 20 seconds
+cargo test            # about 550 tests, no network, no real model, around 20 seconds
 ```
 
 Every test uses a scripted model (`src/tests/fakes.rs`) and a throwaway data folder, so nothing touches your real sessions or keys
@@ -858,12 +913,37 @@ orchestrator, modes, JSON and RPC, full-screen helpers).
 
 Traces: one JSONL per session under the user data dir (`traces/`).
 
+## Windows notes
+
+melon builds and runs on Windows 10/11 (x64; on ARM it runs under emulation). Shell commands run in **Git Bash**, so the same
+bash the model writes for Mac and Linux works unchanged. What differs from Mac and Linux:
+
+| | Mac / Linux | Windows |
+|---|---|---|
+| Shell for tool calls, checks, hooks, `!cmd` | `/bin/bash` (plain `sh` if bash is missing) | Git Bash; PowerShell if Git for Windows is not installed |
+| Stopping a command | kills its whole process group | `taskkill /T /F` on its process tree |
+| Data folder | `~/Library/Application Support/melon` or `~/.local/share/melon` | `%APPDATA%\melon` |
+| File permissions on sessions and `.env` | `0600` / `0700` | the profile folder's own permissions |
+| OS sandbox | macOS `sandbox-exec` only | none: confined tools and shell path checks still apply |
+| Workspace guard | blocks `~`, `/etc`, other users' homes | blocks `~`, other users' profiles under `C:\Users`, and `C:\Windows` |
+
+Known gaps on Windows, said plainly:
+
+- The shell path scan looks for Unix-style paths. A command that names a `C:\...` path outside the project is not caught by the
+  scan the way `/etc/passwd` is; the file tools are still confined, but shell commands only have that scan to lean on.
+- Real symlinks need Developer Mode or an administrator, so the helper that links `node_modules` into a review scratch copy may
+  skip the link there.
+- CI builds and tests on Windows, but the Windows test run is reported, not required, until the tests that assume a Unix shell
+  and `/tmp` are ported. Treat Windows as supported, not battle-tested.
+- Run melon from Windows Terminal or any ANSI-capable terminal; the old `cmd.exe` console host draws the full-screen UI poorly.
+  `MELON_PLAIN=1` gives the classic scrolling layout.
+
 ## Not there yet
 
 Said plainly, so you know what you are getting:
 
 - No image input (pasting a screenshot).
-- The OS sandbox is macOS only; on Linux you get the confined tools and shell path checks, not the kernel layer.
+- The OS sandbox is macOS only; on Linux and Windows you get the confined tools and shell path checks, not the kernel layer.
 - `/rewind` restores files to before one of the last 20 file-changing requests, but it does not rewind the conversation to an earlier
   message. No IDE extension. Diagnostics come from `tsserver` for TypeScript and quick checkers elsewhere, not a general language server.
 - Token counts are estimated (bytes / 4) rather than counted exactly. Outlines and signature checks for Python files use an
