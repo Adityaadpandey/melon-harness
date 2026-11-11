@@ -1,4 +1,4 @@
-# Push a tag like v0.1.0 and this builds melon for mac and linux (static on Linux) and attaches the tarballs to the GitHub release.
+# Push a tag like v0.1.0 and this builds melon for mac, linux (static) and windows and attaches the tarballs to the GitHub release.
 name: release
 
 on:
@@ -18,6 +18,7 @@ jobs:
           - { target: x86_64-apple-darwin,       os: macos-15 }
           - { target: x86_64-unknown-linux-musl, os: ubuntu-24.04 }
           - { target: aarch64-unknown-linux-musl, os: ubuntu-24.04-arm }
+          - { target: x86_64-pc-windows-msvc,    os: windows-2025 }
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
@@ -26,11 +27,21 @@ jobs:
         run: sudo apt-get update && sudo apt-get install -y musl-tools
       - run: rustup target add ${{ matrix.target }}
       - run: cargo build --release --target ${{ matrix.target }}
+      - name: package (windows)
+        if: contains(matrix.target, 'windows')
+        shell: pwsh
+        run: |
+          $name = "melon-${{ matrix.target }}"
+          Compress-Archive -Path target/${{ matrix.target }}/release/melon.exe -DestinationPath "$name.zip"
+          (Get-FileHash "$name.zip" -Algorithm SHA256).Hash.ToLower() + "  $name.zip" | Out-File -Encoding ascii "$name.zip.sha256"
       - name: package
+        if: "!contains(matrix.target, 'windows')"
         run: |
           name=melon-${{ matrix.target }}
           tar -czf $name.tar.gz -C target/${{ matrix.target }}/release melon
           shasum -a 256 $name.tar.gz > $name.tar.gz.sha256
       - uses: softprops/action-gh-release@v2
         with:
-          files: melon-${{ matrix.target }}.tar.gz*
+          files: |
+            melon-${{ matrix.target }}.tar.gz*
+            melon-${{ matrix.target }}.zip*

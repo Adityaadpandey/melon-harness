@@ -1,0 +1,21 @@
+# Build and test on all three systems. Windows is the newest target: it must compile, and its test run is
+# reported but does not block yet, because some tests still assume a Unix shell and /tmp.
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  test:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, macos-15, windows-2025]
+    runs-on: ${{ matrix.os }}
+    continue-on-error: ${{ matrix.os == 'windows-2025' }}
+    steps:
+      - uses: actions/checkout@v4
+      - run: cargo build --release
+      - run: cargo test
