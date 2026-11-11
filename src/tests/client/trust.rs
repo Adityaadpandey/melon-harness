@@ -46,7 +46,7 @@ pub(super) fn isolated_home() -> PathBuf {
         std::fs::create_dir_all(h.join(".claude/skills/review")).unwrap();
         std::fs::write(h.join(".claude/skills/review/SKILL.md"), "---\nname: review\ndescription: \"Review a diff\"\n---\nreview body\n").unwrap();
         std::fs::create_dir_all(h.join(".claude/skills/gone")).unwrap();
-        std::os::unix::fs::symlink(h.join("missing.md"), h.join(".claude/skills/gone/SKILL.md")).unwrap();
+        let _ = crate::util::platform::symlink_file(&h.join("missing.md"), &h.join(".claude/skills/gone/SKILL.md"));
         std::fs::create_dir_all(h.join("repo")).unwrap();
         std::fs::write(h.join(".claude/settings.json"), "{}").unwrap();
         unsafe { std::env::set_var("HOME", &h) };

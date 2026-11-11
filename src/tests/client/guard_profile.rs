@@ -137,7 +137,9 @@ fn symlinked_cwd_does_not_make_inside_edits_look_outside() {
     let real = dir.path().join("real");
     std::fs::create_dir_all(&real).unwrap();
     let link = dir.path().join("link");
-    std::os::unix::fs::symlink(&real, &link).unwrap();
+    if crate::util::platform::symlink_dir(&real, &link).is_err() {
+        return; // Windows without the symlink privilege
+    }
     let m = ApprovalManager::new(ApprovalPolicy::Auto, &link, &[]);
     let ctx = ApprovalContext {
         tool_name: "write_file".into(),

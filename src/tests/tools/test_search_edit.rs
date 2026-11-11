@@ -5,7 +5,6 @@ use crate::tools::builtin::{edit_file::EditTool, git::GitTool, glob::GlobTool, g
 use crate::tools::Tool;
 use crate::util::edits::plan_edits;
 use crate::util::outline::outline;
-use crate::util::paths::atomic_write;
 use crate::util::search::check_paths;
 use serde_json::json;
 use std::collections::HashSet;
@@ -235,6 +234,7 @@ fn outline_maps_jsx_sections_inside_a_big_component() {
 #[cfg(unix)]
 #[test]
 fn atomic_write_keeps_mode_crlf_and_leaves_no_temp_files() {
+    use crate::util::paths::atomic_write;
     use std::os::unix::fs::PermissionsExt;
     let d = tempfile::tempdir().unwrap();
     let f = d.path().join("x.sh");

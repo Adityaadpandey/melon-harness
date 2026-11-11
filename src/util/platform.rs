@@ -83,6 +83,18 @@ pub fn restrict(path: &Path, mode: u32) {
     }
 }
 
+/// A symlink to a file; same best-effort story as `symlink_dir`.
+pub fn symlink_file(real: &Path, link: &Path) -> std::io::Result<()> {
+    #[cfg(unix)]
+    {
+        std::os::unix::fs::symlink(real, link)
+    }
+    #[cfg(windows)]
+    {
+        std::os::windows::fs::symlink_file(real, link)
+    }
+}
+
 /// A symlink to a directory. Windows needs a privilege for real symlinks, so there it is best effort.
 pub fn symlink_dir(real: &Path, link: &Path) -> std::io::Result<()> {
     #[cfg(unix)]
