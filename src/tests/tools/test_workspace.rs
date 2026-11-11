@@ -199,7 +199,7 @@ fn a_shell_may_not_cd_out_of_the_workspace() {
 #[test]
 fn cd_inside_the_workspace_or_to_temp_is_fine() {
     let e = fake_home();
-    for cmd in ["cd src && ls", "cd /tmp && ls", "cd ./src; pwd"] {
+    for cmd in ["cd src && ls", "cd /tmp/scratch && ls", "cd ./src; pwd"] {
         assert_eq!(Workspace::new(&e.ws, &[]).shell_violation(cmd, None), None, "{cmd}");
     }
 }

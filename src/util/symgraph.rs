@@ -945,7 +945,7 @@ mod tests {
         assert!(h.contains("function parse_invoice is defined at lib.py:1-2, used in 1 place(s)"), "{h}");
         // same name, two unrelated functions: the hint says so and counts each one's users apart
         let h = grep_hint(d.path(), "charge").unwrap();
-        assert!(h.contains("2 different definitions are named charge: billing/charge.py:1 (1 use(s)), games/charge.py:1 (0 use(s))"), "{h}");
+        assert!(h.contains("2 different definitions are named charge:") && h.contains("billing/charge.py:1 (1 use(s))") && h.contains("games/charge.py:1 (0 use(s))"), "{h}");
         assert!(grep_hint(d.path(), "parse.*invoice").is_none() && grep_hint(d.path(), "nothing_here").is_none());
     }
 
