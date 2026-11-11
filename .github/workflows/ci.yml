@@ -7,6 +7,11 @@ on:
     branches: [main]
   pull_request:
 
+# a newer push to the same branch makes the older run pointless
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   test:
     strategy:
@@ -17,5 +22,5 @@ jobs:
     continue-on-error: ${{ matrix.os == 'windows-2025' }}
     steps:
       - uses: actions/checkout@v4
-      - run: cargo build --release
-      - run: cargo test
+      - uses: Swatinem/rust-cache@v2 # reuse compiled dependencies between runs
+      - run: cargo test # the release build (fat LTO, slow) only happens in release.yml on a tag
