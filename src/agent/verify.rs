@@ -286,7 +286,7 @@ impl CheckResult {
 
 pub async fn run_check(command: &str, cwd: &Path, config: &Config) -> CheckResult {
     let t = Instant::now();
-    let argv = crate::safety::sandbox::wrap(vec!["/bin/bash".into(), "-c".into(), command.into()], config);
+    let argv = crate::safety::sandbox::wrap(crate::util::platform::shell_argv(command), config);
     let mut cmd = Command::new(&argv[0]);
     cmd.args(&argv[1..]).current_dir(cwd).env_clear().envs(build_environment(config)).stdout(Stdio::piped()).stderr(Stdio::piped()).stdin(Stdio::null()).kill_on_drop(true);
     let spawn = crate::util::detach::detach(&mut cmd).spawn();
@@ -301,7 +301,7 @@ pub async fn run_check(command: &str, cwd: &Path, config: &Config) -> CheckResul
         fn drop(&mut self) {
             // the user steered mid-check: a typecheck of the old diff is not worth finishing, and must not linger
             if let Some(p) = self.0 {
-                unsafe { libc::killpg(p as i32, libc::SIGKILL) };
+                crate::util::platform::kill_tree(p);
             }
         }
     }

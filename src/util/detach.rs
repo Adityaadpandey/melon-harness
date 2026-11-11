@@ -1,22 +1,32 @@
 use tokio::process::Command;
 
-/// Starts the child in its own session, so it has no controlling terminal.
+/// Starts the child detached from our terminal, as the leader of its own process group.
 ///
-/// Why: ssh and git ask for passphrases by opening /dev/tty directly, so a null stdin doesn't stop them.
-/// Without a tty they fail straight away instead of drawing "Enter passphrase for key ..." over the TUI.
-/// Same effect as setsid, and the child is still its own process group leader, so killpg(pid) keeps working.
+/// Unix: a new session (setsid). ssh and git ask for passphrases by opening /dev/tty directly, so a null stdin doesn't
+/// stop them; without a controlling tty they fail straight away instead of drawing "Enter passphrase for key ..." over
+/// the TUI. The child still leads its own group, so `platform::kill_tree(pid)` keeps working.
+/// Windows: no console window flashes up per command, and Ctrl+C aimed at melon doesn't hit the child.
 pub fn detach(cmd: &mut Command) -> &mut Command {
-    // SAFETY: setsid is async-signal-safe, which is all pre_exec allows between fork and exec
-    unsafe {
-        cmd.pre_exec(|| {
-            libc::setsid();
-            Ok(())
-        });
+    #[cfg(unix)]
+    {
+        // SAFETY: setsid is async-signal-safe, which is all pre_exec allows between fork and exec
+        unsafe {
+            cmd.pre_exec(|| {
+                libc::setsid();
+                Ok(())
+            });
+        }
+    }
+    #[cfg(windows)]
+    {
+        const CREATE_NEW_PROCESS_GROUP: u32 = 0x0000_0200;
+        const CREATE_NO_WINDOW: u32 = 0x0800_0000;
+        cmd.creation_flags(CREATE_NEW_PROCESS_GROUP | CREATE_NO_WINDOW);
     }
     cmd
 }
 
-#[cfg(test)]
+#[cfg(all(test, unix))]
 mod tests {
     use super::*;
 

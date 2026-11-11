@@ -45,8 +45,9 @@ impl Tool for ScriptTool {
     }
 
     async fn execute(&self, inv: &ToolInvocation) -> ToolResult {
-        let mut cmd = tokio::process::Command::new("sh");
-        cmd.arg("-c").arg(&self.command).current_dir(&inv.cwd).stdin(std::process::Stdio::piped()).stdout(std::process::Stdio::piped()).stderr(std::process::Stdio::piped()).kill_on_drop(true);
+        let argv = crate::util::platform::shell_argv(&self.command);
+        let mut cmd = tokio::process::Command::new(&argv[0]);
+        cmd.args(&argv[1..]).current_dir(&inv.cwd).stdin(std::process::Stdio::piped()).stdout(std::process::Stdio::piped()).stderr(std::process::Stdio::piped()).kill_on_drop(true);
         for (k, v) in inv.params.as_object().into_iter().flatten() {
             let text = v.as_str().map(String::from).unwrap_or_else(|| v.to_string());
             cmd.env(format!("MELON_ARG_{}", k.to_uppercase()), text);

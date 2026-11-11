@@ -736,8 +736,9 @@ impl Cli {
             return;
         }
         let cfg = self.config.get();
-        let mut sh = tokio::process::Command::new("/bin/sh");
-        sh.arg("-c").arg(&cmd).current_dir(&cfg.cwd).env_clear().envs(crate::tools::builtin::shell::build_environment(&cfg)).kill_on_drop(true);
+        let argv = crate::util::platform::shell_argv(&cmd);
+        let mut sh = tokio::process::Command::new(&argv[0]);
+        sh.args(&argv[1..]).current_dir(&cfg.cwd).env_clear().envs(crate::tools::builtin::shell::build_environment(&cfg)).kill_on_drop(true);
         let out = tokio::time::timeout(std::time::Duration::from_secs(120), crate::util::detach::detach(&mut sh).output()).await;
         let (text, code) = match out {
             Ok(Ok(o)) => (format!("{}{}", String::from_utf8_lossy(&o.stdout), String::from_utf8_lossy(&o.stderr)), o.status.code().unwrap_or(-1)),

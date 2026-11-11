@@ -7,7 +7,20 @@ use std::sync::OnceLock;
 
 /// Outside the workspace these are private: other projects, dotfiles, credentials.
 const SENSITIVE_ROOTS: &[&str] = &["/etc", "/private/etc", "/root", "/var/root", "/Users", "/home", "/Volumes", "/mnt", "/media"];
-const TEMP_DIRS: &[&str] = &["/tmp", "/private/tmp", "/var/folders", "/private/var/folders", "/var/tmp", "/private/var/tmp"];
+
+/// Windows: other users' profiles live next to ours (C:\\Users), and C:\\Windows holds the system.
+fn sensitive_roots() -> Vec<PathBuf> {
+    let mut v: Vec<PathBuf> = SENSITIVE_ROOTS.iter().map(|r| real(Path::new(r))).collect();
+    if cfg!(windows) {
+        if let Some(users) = dirs::home_dir().and_then(|h| h.parent().map(Path::to_path_buf)) {
+            v.push(real(&users));
+        }
+        if let Some(win) = std::env::var_os("SystemRoot") {
+            v.push(real(Path::new(&win)));
+        }
+    }
+    v
+}
 
 fn cd_re() -> &'static Re {
     // `cd` and `pushd` with their target, which may be missing (plain `cd` goes home)
@@ -53,7 +66,7 @@ impl Workspace {
             root: real(root),
             extra: extra.iter().map(|e| real(Path::new(e))).collect(),
             home: real(&dirs::home_dir().unwrap_or_default()),
-            sensitive: SENSITIVE_ROOTS.iter().map(|r| real(Path::new(r))).collect(),
+            sensitive: sensitive_roots(),
         }
     }
 
@@ -79,7 +92,7 @@ impl Workspace {
     pub fn shell_violation(&self, command: &str, cwd: Option<&Path>) -> Option<String> {
         let base = real(cwd.unwrap_or(&self.root));
         let command = git_message().replace_all(command, "$1''");
-        let temps: Vec<PathBuf> = TEMP_DIRS.iter().map(|t| real(Path::new(t))).collect();
+        let temps: Vec<PathBuf> = crate::util::platform::temp_dirs().iter().map(|t| real(t)).collect();
         let mut from = 0;
         while let Some(caps) = cd_re().captures(&command[from..]) {
             let whole_end = cd_re().find(&command[from..]).map(|m| m.1).unwrap_or(command.len() - from);

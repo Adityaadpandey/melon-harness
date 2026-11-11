@@ -35,16 +35,16 @@ impl HookSystem {
             let dir = tempfile::tempdir().ok()?;
             let path = dir.path().join("hook.sh");
             std::fs::write(&path, format!("#!/bin/bash\n{script}")).ok()?;
-            use std::os::unix::fs::PermissionsExt;
-            std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o755)).ok()?;
-            self.run_command(&path.to_string_lossy(), timeout, env).await
+            // run it through bash instead of exec'ing it, so it needs no executable bit (Windows has none)
+            self.run_command(&format!("bash \"{}\"", crate::util::platform::bash_path(&path)), timeout, env).await
         };
         run.await.unwrap_or((1, String::new(), String::new()))
     }
 
     async fn run_command(&self, command: &str, timeout: Duration, env: &HashMap<String, String>) -> Option<(i32, String, String)> {
-        let mut cmd = Command::new("/bin/sh");
-        cmd.arg("-c").arg(command).current_dir(&self.cwd).envs(env).stdout(Stdio::piped()).stderr(Stdio::piped()).stdin(Stdio::null()).kill_on_drop(true);
+        let argv = crate::util::platform::shell_argv(command);
+        let mut cmd = Command::new(&argv[0]);
+        cmd.args(&argv[1..]).current_dir(&self.cwd).envs(env).stdout(Stdio::piped()).stderr(Stdio::piped()).stdin(Stdio::null()).kill_on_drop(true);
         let mut child = crate::util::detach::detach(&mut cmd).spawn().ok()?;
         let pid = child.id();
         let (mut err, mut out) = (child.stderr.take()?, child.stdout.take()?);
@@ -60,7 +60,7 @@ impl HookSystem {
             Ok(r) => r,
             Err(_) => {
                 if let Some(p) = pid {
-                    unsafe { libc::killpg(p as i32, libc::SIGKILL) };
+                    crate::util::platform::kill_tree(p);
                 }
                 Some((1, String::new(), String::new()))
             }

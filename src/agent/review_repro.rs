@@ -76,7 +76,7 @@ pub fn link_dependencies(source: &Path, tree: &Path) {
             let _ = std::fs::create_dir_all(p);
         }
         if let Ok(real) = std::fs::canonicalize(&nm) {
-            let _ = std::os::unix::fs::symlink(real, tree.join(rel));
+            let _ = crate::util::platform::symlink_dir(&real, &tree.join(rel));
         }
     }
 }

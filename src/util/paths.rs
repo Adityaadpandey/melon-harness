@@ -6,7 +6,7 @@ pub fn expanduser(p: &str) -> PathBuf {
     if p == "~" {
         return dirs::home_dir().unwrap_or_else(|| PathBuf::from("~"));
     }
-    if let Some(rest) = p.strip_prefix("~/") {
+    if let Some(rest) = p.strip_prefix("~/").or_else(|| p.strip_prefix("~\\")) {
         if let Some(h) = dirs::home_dir() {
             return h.join(rest);
         }

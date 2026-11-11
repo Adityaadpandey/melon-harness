@@ -61,7 +61,6 @@ pub fn load_last_model() -> Option<String> {
 
 /// Keep an API key in melon's own .env (loaded at every start), readable only by you.
 pub fn save_env_key(name: &str, value: &str) -> std::io::Result<PathBuf> {
-    use std::os::unix::fs::PermissionsExt;
     let path = get_data_dir().join(".env");
     if let Some(p) = path.parent() {
         std::fs::create_dir_all(p)?;
@@ -70,7 +69,7 @@ pub fn save_env_key(name: &str, value: &str) -> std::io::Result<PathBuf> {
     let mut lines: Vec<String> = existing.lines().filter(|l| !l.starts_with(&format!("{name}="))).map(String::from).collect();
     lines.push(format!("{name}={value}"));
     std::fs::write(&path, lines.join("\n") + "\n")?;
-    std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o600))?;
+    crate::util::platform::restrict(&path, 0o600);
     unsafe { std::env::set_var(name, value) };
     Ok(path)
 }

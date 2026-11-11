@@ -3,7 +3,6 @@ use crate::client::response::TokenUsage;
 use crate::config::loader::get_data_dir;
 use crate::util::paths::atomic_write;
 use serde_json::{json, Value};
-use std::os::unix::fs::PermissionsExt;
 use std::path::PathBuf;
 
 #[derive(Clone, Debug)]
@@ -54,14 +53,14 @@ impl PersistenceManager {
         let (s, c) = (data.join("sessions"), data.join("checkpoints"));
         for d in [&s, &c] {
             let _ = std::fs::create_dir_all(d);
-            let _ = std::fs::set_permissions(d, std::fs::Permissions::from_mode(0o700));
+            crate::util::platform::restrict(d, 0o700);
         }
         PersistenceManager { sessions_dir: s, checkpoints_dir: c }
     }
 
     fn write(&self, path: &PathBuf, snap: &SessionSnapshot) {
         let _ = atomic_write(path, &serde_json::to_string_pretty(&snap.to_value()).unwrap_or_default());
-        let _ = std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o600));
+        crate::util::platform::restrict(path, 0o600);
     }
 
     pub fn save_session(&self, snap: &SessionSnapshot) {

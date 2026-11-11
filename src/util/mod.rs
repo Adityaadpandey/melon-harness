@@ -3,6 +3,7 @@ pub mod archive;
 pub mod cost;
 pub mod insights;
 pub mod detach;
+pub mod platform;
 pub mod edits;
 pub mod paths;
 pub mod re;

@@ -63,7 +63,7 @@ pub fn finished_jobs() -> Vec<Arc<BackgroundJob>> {
 }
 
 fn killpg(pid: u32) {
-    unsafe { libc::killpg(pid as i32, libc::SIGKILL) };
+    crate::util::platform::kill_tree(pid);
 }
 
 /// Every background job, oldest first.
@@ -241,7 +241,7 @@ impl Tool for ShellTool {
         if !cwd.exists() {
             return ToolResult::error(format!("Working directory doesn't exist: {}", cwd.display()));
         }
-        let argv = crate::safety::sandbox::wrap_command(&command, vec!["/bin/bash".into(), "-c".into(), command.clone()], &cfg);
+        let argv = crate::safety::sandbox::wrap_command(&command, crate::util::platform::shell_argv(&command), &cfg);
         let mut cmd = Command::new(&argv[0]);
         cmd.args(&argv[1..]).current_dir(&cwd).env_clear().envs(build_environment(&cfg)).stdin(Stdio::null()).stdout(Stdio::piped()).stderr(Stdio::piped());
         let mut child = match crate::util::detach::detach(&mut cmd).spawn() {
@@ -288,9 +288,7 @@ impl Tool for ShellTool {
             let (code, done) = (code.clone(), done.clone());
             tokio::spawn(async move {
                 let st = child.wait().await.ok();
-                #[allow(unused_imports)]
-                use std::os::unix::process::ExitStatusExt;
-                let c = st.map(|s| s.code().unwrap_or_else(|| -(s.signal().unwrap_or(1)))).unwrap_or(-1);
+                let c = st.map(|s| crate::util::platform::exit_code(&s)).unwrap_or(-1);
                 // grandchildren can hold the pipes open; give the pumps a moment, not forever
                 let _ = tokio::time::timeout(Duration::from_secs(2), async {
                     let _ = h_out.await;
