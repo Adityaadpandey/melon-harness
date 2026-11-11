@@ -25,7 +25,7 @@ impl GraphTool {
         let sg = symgraph::load(cwd);
         let q = name.trim().trim_end_matches("()");
         // Router.handle / Router::handle -> only the `handle` that sits in Router
-        let (parent, last) = match q.rsplit_once("::").or_else(|| q.rsplit_once('.')) {
+        let (_parent, last) = match q.rsplit_once("::").or_else(|| q.rsplit_once('.')) {
             Some((p, l)) if !l.is_empty() && !l.contains('/') && !p.ends_with(|c: char| c == '/') => (Some(p.rsplit(['.', ':']).next().unwrap_or(p)), l),
             _ => (None, q),
         };
