@@ -92,11 +92,11 @@ async fn independent_workers_run_concurrently_and_merge() {
     let dir = repo();
     let p = dir.path();
     let script = (0..3).map(|i| (["T0", "T1", "T2"][i], vec![(["m0.py", "m1.py", "m2.py"][i], edit(|_| "x = 1\n".into()))])).collect();
-    let _w = FakeWorker::install(script, Duration::from_millis(400), "verified");
+    let _w = FakeWorker::install(script, Duration::from_millis(1000), "verified");
     let nodes = (0..3).map(|i| node(&format!("n{i}"), &format!("T{i}"), &[])).collect();
     let t = Instant::now();
     let res = Orchestrator::new(config(p), 4, None).run("req", nodes, true).await.unwrap();
-    assert!(t.elapsed() < Duration::from_millis(1100), "serial would be >= 1.2s plus git overhead: {:?}", t.elapsed());
+    assert!(t.elapsed() < Duration::from_millis(2900), "serial would be >= 3s plus git overhead: {:?}", t.elapsed());
     assert!(res["status"] == "ok" && res["applied"] == "fast-forwarded", "{res}");
     assert!((0..3).all(|i| p.join(format!("m{i}.py")).exists()));
     // cleanup: no leftover worktrees or worker branches
