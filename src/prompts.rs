@@ -323,9 +323,9 @@ pub(crate) fn skill_rows(skills: &[&Skill], cap: usize) -> String {
         let Some(path) = &k.path else { continue };
         let is_skill_md = path.file_name().map_or(false, |n| n == "SKILL.md");
         let base = if is_skill_md { path.parent().and_then(|p| p.parent()) } else { path.parent() }.unwrap_or(path);
-        let rel = path.strip_prefix(base).map(|r| r.to_string_lossy().to_string()).unwrap_or_default();
+        let rel = path.strip_prefix(base).map(|r| r.to_string_lossy().replace('\\', "/")).unwrap_or_default();
         let row = format!("- {rel}{}", if !k.description.is_empty() && cap > 0 { format!(": {}", when(&k.description, cap)) } else { String::new() });
-        let key = base.to_string_lossy().replacen(&home, "~", 1);
+        let key = base.to_string_lossy().replacen(&home, "~", 1).replace('\\', "/"); // one spelling on every OS
         match groups.iter_mut().find(|g| g.0 == key) {
             Some(g) => g.1.push(row),
             None => groups.push((key, vec![row])),
