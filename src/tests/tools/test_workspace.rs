@@ -242,6 +242,7 @@ fn os_sandbox_hides_workspace_secrets_from_any_command() {
     assert!(r.status.success() && String::from_utf8_lossy(&r.stdout).contains("API_KEY="));
 }
 
+#[cfg(unix)] // the shell guard only reads /unix-style paths
 #[test]
 fn shell_block_on_a_skill_folder_points_to_the_read_tools() {
     let e = fake_home();
