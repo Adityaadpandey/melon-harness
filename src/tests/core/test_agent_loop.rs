@@ -201,8 +201,12 @@ async fn many_mcp_tools_are_listed_by_name_and_loaded_when_searched_for() {
     assert!(!reg.invoke("tool_search", json!({"query": "zzz"}), tmp.path(), &hooks, None, "t2").await.success);
 }
 
-/// Takes 200ms and answers with its tag: five of them in one turn only finish in time if they overlap.
+/// Takes 200ms and answers with its tag. It counts how many run at once, so the test checks overlap directly instead
+/// of racing a clock that a slow CI machine can stretch.
 struct SleepTool;
+
+static SLEEPING: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+static MOST_SLEEPING: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
 
 #[async_trait]
 impl Tool for SleepTool {
@@ -222,7 +226,10 @@ impl Tool for SleepTool {
         self
     }
     async fn execute(&self, inv: &ToolInvocation) -> ToolResult {
+        use std::sync::atomic::Ordering::SeqCst;
+        MOST_SLEEPING.fetch_max(SLEEPING.fetch_add(1, SeqCst) + 1, SeqCst);
         tokio::time::sleep(Duration::from_millis(200)).await;
+        SLEEPING.fetch_sub(1, SeqCst);
         ToolResult::ok(inv.str("tag").unwrap_or("x"))
     }
 }
@@ -233,9 +240,9 @@ async fn read_only_calls_run_concurrently_in_order() {
     let pairs: Vec<(&str, Value)> = (0..5).map(|i| ("sleepy", json!({"tag": i.to_string()}))).collect();
     let mut agent = scripted(cfg(tmp.path(), json!({})), vec![calls(pairs), text("done")]).await;
     agent.session.tool_registry.register(Arc::new(SleepTool));
-    let t = Instant::now();
     let events = run(&mut agent, "go").await;
-    assert!(t.elapsed() < Duration::from_millis(600), "serial would be >= 1.0s, took {:?}", t.elapsed()); // serial would be >= 1.0s
+    let peak = MOST_SLEEPING.load(std::sync::atomic::Ordering::SeqCst);
+    assert!(peak >= 2, "the calls ran one after another (at most {peak} at once)");
     let outs: Vec<String> = completed(&events).into_iter().map(|(_, r)| r.output).collect();
     assert_eq!(outs, vec!["0", "1", "2", "3", "4"]);
 }
