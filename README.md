@@ -4,7 +4,7 @@
 
 <p align="center">
   <img alt="rust" src="https://img.shields.io/badge/rust-single%20binary-c3a6ff?style=flat-square">
-  <img alt="tests" src="https://img.shields.io/badge/tests-500%2B%20offline-8ff0c4?style=flat-square">
+  <img alt="tests" src="https://img.shields.io/badge/tests-550%2B%20offline-8ff0c4?style=flat-square">
   <img alt="models" src="https://img.shields.io/badge/models-Claude%20%C2%B7%20GPT%20%C2%B7%20Codex%20%C2%B7%20DeepSeek%20%C2%B7%20local-ff8fc7?style=flat-square">
   <img alt="platforms" src="https://img.shields.io/badge/platforms-macOS%20%C2%B7%20Linux%20%C2%B7%20Windows-9fd3ff?style=flat-square">
   <img alt="sandbox" src="https://img.shields.io/badge/sandbox-macOS-ffd28f?style=flat-square">
@@ -19,7 +19,8 @@
   <a href="#reviews-and-fixing-what-they-find">Reviews</a> ·
   <a href="#safety">Safety</a> ·
   <a href="#windows-notes">Windows</a> ·
-  <a href="#not-there-yet">Not there yet</a>
+  <a href="#not-there-yet">Not there yet</a> ·
+  <a href="https://zerd.si">Website</a>
 </p>
 
 # zerd
@@ -128,11 +129,11 @@ Measured from this repo unless it says otherwise.
 
 | | |
 |---|---|
-| Codebase | about 25k lines of Rust, plus 8k lines of tests |
-| Tests | about 500, all offline (a scripted model, no network), around 20 seconds |
+| Codebase | about 28k lines of Rust, plus 8.6k lines of tests |
+| Tests | about 550, all offline (a scripted model, no network), around 20 seconds |
 | Surface | 21 built-in tools, 19 skills, 7 model roles, 10 hook points, 7 approval modes |
 | System prompt | about 3k tokens for a small-window model, 4.1k with the skill list |
-| History | 480+ commits, one person |
+| History | 600+ commits, one person |
 
 Before and after, each taken from the commit that fixed it (measured on the Python version; the Rust port keeps the same logic):
 
