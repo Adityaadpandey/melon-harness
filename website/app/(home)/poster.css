@@ -1,0 +1,53 @@
+/* Hero. The artwork sits on the right, the words on the left over a dark scrim so they never fight
+   the picture. Nothing here moves. The page behind the demo fades out into the sky at the bottom. */
+.poster-hero { position: relative; background: #04060c; color: #fff; overflow: clip; padding-bottom: clamp(240px, 26vw, 380px);
+  -webkit-mask-image: linear-gradient(#000 calc(100% - clamp(240px, 26vw, 380px)), transparent); mask-image: linear-gradient(#000 calc(100% - clamp(240px, 26vw, 380px)), transparent); }
+
+.poster { position: relative; height: 100svh; min-height: 640px; max-height: 1000px; --pad: clamp(24px, 6vw, 96px); }
+.p-img { position: absolute; inset: 0; }
+.p-img picture, .p-img img { display: block; width: 100%; height: 100%; }
+.p-img img { object-fit: cover; object-position: 62% 50%; }
+/* three gradients: darken the left for the text, fade the foot into the page, soften the top under the nav */
+.p-img::after { content: ""; position: absolute; inset: 0; pointer-events: none;
+  background:
+    linear-gradient(90deg, rgba(3, 5, 12, 0.9) 0%, rgba(3, 5, 12, 0.72) 30%, rgba(3, 5, 12, 0) 60%),
+    linear-gradient(0deg, #04060c 0%, rgba(4, 6, 12, 0) 24%),
+    linear-gradient(180deg, rgba(3, 5, 12, 0.6) 0%, rgba(3, 5, 12, 0) 18%); }
+
+.p-top { position: absolute; z-index: 1; left: var(--pad); top: 50%; transform: translateY(-52%); width: min(640px, 52vw); }
+.p-eyebrow { margin: 0 0 clamp(18px, 3vh, 28px); font: 500 12px/1 var(--mono); letter-spacing: 0.18em; text-transform: uppercase; color: rgba(255, 255, 255, 0.62); }
+.p-h1 { margin: 0; font: 400 clamp(38px, 4.9vw, 78px)/1.02 var(--sans); letter-spacing: -0.04em; color: #fff; text-wrap: balance; }
+.p-h1 .l1 { display: block; color: rgba(255, 255, 255, 0.68); }
+.p-h1 .l2 { display: block; margin-top: 0.06em; font-family: var(--serif); font-style: italic; letter-spacing: -0.025em; font-size: 1.08em; }
+.p-sub { margin: clamp(22px, 3.6vh, 36px) 0 0; max-width: 29em; font-size: clamp(16px, 1.3vw, 19px); line-height: 1.58; color: rgba(255, 255, 255, 0.76); text-wrap: pretty; }
+.p-cta { display: flex; flex-wrap: wrap; gap: 12px 14px; margin-top: clamp(24px, 3.6vh, 36px); }
+.p-btn, .p-ghost { display: inline-flex; align-items: center; border-radius: 999px; padding: 13px 26px; font-weight: 600; font-size: 15px; text-decoration: none; }
+.p-btn { background: #fff; color: #0a1a33; }
+.p-btn:hover { background: #dbe9ff; }
+.p-ghost { color: #fff; background: rgba(6, 12, 28, 0.5); border: 1px solid rgba(255, 255, 255, 0.3); }
+.p-ghost:hover { background: rgba(255, 255, 255, 0.14); }
+
+.p-rail { position: absolute; z-index: 1; left: var(--pad); right: var(--pad); bottom: 0; display: flex; justify-content: space-between; gap: 16px; padding: 18px 0 22px; border-top: 1px solid rgba(255, 255, 255, 0.14); font: 12px/1.4 var(--mono); letter-spacing: 0.02em; color: rgba(255, 255, 255, 0.6); }
+
+.p-after { position: relative; z-index: 1; padding-top: clamp(24px, 4vw, 56px); }
+.poster-hero .demo .note { color: rgba(255, 255, 255, 0.55); }
+
+/* The nav is dark glass with light text everywhere: over the artwork it blends in, over the sky it reads as a navy pill. */
+.sky-root .sk-nav, .sky-root .sk-nav.tight { background: rgba(8, 16, 36, 0.5); border-color: rgba(255, 255, 255, 0.16); box-shadow: 0 14px 34px -16px rgba(0, 10, 40, 0.6); }
+.sky-root .sk-nav .sk-logo, .sky-root .sk-nav nav a:not(.sk-pill) { color: #fff; }
+.sky-root .sk-nav .sk-logo .mark path:first-child { fill: #fff; }
+.sky-root .sk-nav .sk-logo .mark-tick { stroke: #0a1a33; }
+.sky-root .sk-nav nav a:not(.sk-pill):hover { background: rgba(255, 255, 255, 0.14); }
+.sky-root .sk-nav nav .sk-pill { background: #fff; color: #0a1a33; }
+.sky-root .sk-nav nav .sk-pill:hover { background: #dbe9ff; }
+
+/* Phones: the picture takes the top of the screen, the words sit under it. */
+@media (max-width: 860px) {
+  .poster { height: auto; min-height: 0; max-height: none; --pad: 20px; }
+  .p-img { height: 64svh; min-height: 420px; bottom: auto; }
+  .p-img img { object-position: 60% 50%; }
+  .p-img::after { background: linear-gradient(0deg, #04060c 0%, rgba(4, 6, 12, 0) 45%), linear-gradient(180deg, rgba(3, 5, 12, 0.6) 0%, rgba(3, 5, 12, 0) 20%); }
+  .p-top { position: relative; left: auto; top: auto; transform: none; width: auto; padding: max(52svh, 370px) var(--pad) 0; }
+  .p-rail { position: relative; left: auto; right: auto; margin: 36px var(--pad) 0; }
+  .p-rail span:last-child { display: none; }
+}
