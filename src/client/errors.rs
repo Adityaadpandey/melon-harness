@@ -76,6 +76,11 @@ pub fn classify(status: Option<u16>, message: &str) -> ProviderError {
         // helper key once failed 78 calls in a week (every sub-agent, summary and review) because each call tried it again.
         Some(401) | Some(403) => {
             e.fallback = true;
+            if status == Some(401) {
+                // every failed request in one week of traces was this, each within a second of starting: the
+                // provider's own words ("Invalid 'Authorization' header") do not say what to do about it
+                e.message.push_str(" (the provider rejected the API key: check it is set in the shell you started melon from, or enter it again with /connect <provider>)");
+            }
             return e;
         }
         _ => {}
@@ -115,7 +120,7 @@ mod tests {
         assert!(classify(Some(402), "pay").quota);
         assert!(classify(Some(400), "bad max_tokens").drop_max_tokens);
         let e = classify(Some(401), "no");
-        assert!(!e.retry && e.fallback);
+        assert!(!e.retry && e.fallback && e.message.contains("/connect"));
         assert!(classify(None, "x").retry);
     }
 }
