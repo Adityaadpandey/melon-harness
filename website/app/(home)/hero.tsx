@@ -14,8 +14,8 @@ const BACK: Placed[] = [
   { shape: "d", left: "28%", top: 380, width: "38vw", speed: 0.1, drift: 190, delay: 40, tone: 0.7 },
 ];
 const FRONT: Placed[] = [
-  { shape: "a", left: "-14%", top: 1260, width: "58vw", speed: 0.2, drift: 150, delay: 30, z: 3 },
-  { shape: "c", left: "52%", top: 1300, width: "64vw", speed: 0.26, drift: 170, delay: 100, z: 3 },
+  { shape: "a", left: "-14%", top: 1470, width: "58vw", speed: 0.2, drift: 150, delay: 30, z: 3 },
+  { shape: "c", left: "52%", top: 1510, width: "64vw", speed: 0.26, drift: 170, delay: 100, z: 3 },
 ];
 
 // A line that rises out from behind a mask, one after another.
