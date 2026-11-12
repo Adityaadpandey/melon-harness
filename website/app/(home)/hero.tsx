@@ -3,6 +3,7 @@ import Link from "next/link";
 import { motion, useReducedMotion, useScroll, useTransform } from "framer-motion";
 import { CloudLayer, type Placed } from "./clouds";
 import Demo from "./demo";
+import Receipt from "./receipt";
 
 const EASE = [0.22, 1, 0.36, 1] as const;
 
@@ -37,6 +38,7 @@ export default function Hero() {
     <section className="hero">
       <CloudLayer clouds={BACK} />
       <div className="wrap hero-copy">
+        <Receipt />
         <h1>
           <Line i={0} className="h-sans">Most agents say done.</Line>
           <Line i={1} className="h-serif">zerd shows the receipt.</Line>
