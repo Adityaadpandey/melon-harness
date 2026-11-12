@@ -1,5 +1,5 @@
 import Link from "next/link";
-import CopyCmd from "./copy-cmd";
+import Install from "./install";
 import Demo from "./demo";
 import "./poster.css";
 
@@ -19,14 +19,14 @@ export default function Hero() {
           <h1 className="p-h1">
             <span className="l1">Most agents say done.</span> <span className="l2">zerd shows the receipt.</span>
           </h1>
-          <p className="p-sub">A terminal coding agent that checks its own work before it tells you it is done.</p>
+          <p className="p-sub">Hand zerd a bug or a refactor. It runs the checks on what it changed, has a second model read the diff, and looks up every file path it cites. Works with Claude, GPT, Codex, DeepSeek or a local model.</p>
           <div className="p-cta">
-            <CopyCmd cmd="curl -fsSL https://zerd.si/install.sh | sh" />
+            <Install />
           </div>
-          <Link className="p-more" href="/docs/try-it-in-two-minutes">See it work in two minutes →</Link>
+          <Link className="p-more" href="/docs/try-it-in-two-minutes">Get started in two minutes</Link>
         </div>
         <div className="p-rail">
-          <span>one native binary, about 11 mb</span>
+          <span>one native binary · open source</span>
           <span>macos · linux · windows</span>
         </div>
       </div>
