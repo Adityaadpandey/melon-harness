@@ -11,12 +11,12 @@ use std::path::PathBuf;
 static INIT: Once = Once::new();
 static DATA: OnceLock<tempfile::TempDir> = OnceLock::new();
 
-/// Point melon's data folder (sessions, traces, lessons, model catalog) at a temp dir, once per test process.
+/// Point zerd's data folder (sessions, traces, lessons, model catalog) at a temp dir, once per test process.
 pub fn init() -> PathBuf {
     let dir = DATA.get_or_init(|| tempfile::tempdir().unwrap());
     INIT.call_once(|| {
         std::fs::write(dir.path().join("models.json"), "[]").ok();
-        unsafe { std::env::set_var("MELON_DATA_DIR", dir.path()) };
+        unsafe { std::env::set_var("ZERD_DATA_DIR", dir.path()) };
     });
     dir.path().to_path_buf()
 }

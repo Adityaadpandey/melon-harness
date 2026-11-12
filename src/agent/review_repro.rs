@@ -10,7 +10,7 @@ pub const REPRO_PROMPT: &str = "A reviewer claims this defect exists in the code
 The verifier's evidence: {evidence}
 
 Prove it by running code, or show that it does not happen. Write the smallest test or script that pushes the exact input from the claim through
-the real function (or the real component, route or query) and prints what comes out. Put it in a NEW file named .melon-repro.<ext>; never edit an
+the real function (or the real component, route or query) and prints what comes out. Put it in a NEW file named .zerd-repro.<ext>; never edit an
 existing file. Run it with the project's own runner (look at package.json / pyproject.toml / the neighbouring tests for the command; node_modules
 is already linked in). No network, no installs, no database. If the defect needs something you cannot run here, say CANNOT_RUN and why.
 
@@ -31,7 +31,7 @@ async fn git(cwd: &Path, args: &[&str]) -> String {
 /// A detached worktree of `rev_tip` holding the changed files as they are now, with node_modules linked in from the
 /// real checkout. None when git refuses.
 pub async fn make_scratch(cwd: &Path, files: &[String], rev_tip: &str, from_worktree: bool) -> Option<PathBuf> {
-    let tree = tempfile::Builder::new().prefix("melon-repro-").tempdir().ok()?.keep();
+    let tree = tempfile::Builder::new().prefix("zerd-repro-").tempdir().ok()?.keep();
     git(cwd, &["worktree", "add", "--detach", &tree.to_string_lossy(), rev_tip]).await;
     if !tree.join(".git").exists() {
         let _ = std::fs::remove_dir_all(&tree);

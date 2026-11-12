@@ -538,8 +538,8 @@ impl Tui {
     pub fn print_welcome(&self, title: &str, lines: &[String]) {
         let mut info = vec![format!("{}{}", bold_paint(title, ACCENT), paint("  ·  a small agent for real repos", MUTED))];
         info.extend(lines.iter().map(|l| paint(l, MUTED)));
-        // melon on the left, text beside it (the melon is 6 rows tall); no colour means no melon
-        let art = if color_on() { super::mascot::melon() } else { vec![] };
+        // zerd on the left, text beside it (the zerd is 6 rows tall); no colour means no zerd
+        let art = if color_on() { super::mascot::mascot() } else { vec![] };
         let pad = " ".repeat(14);
         let mut text = String::from("\n");
         for i in 0..art.len().max(info.len()) {

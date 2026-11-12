@@ -381,7 +381,7 @@ impl ToolRegistry {
         if out.len() == lines.len() {
             return;
         }
-        let full = tempfile::Builder::new().prefix("melon-").suffix(".log").tempfile().ok().and_then(|f| f.keep().ok()).map(|(mut f, p)| {
+        let full = tempfile::Builder::new().prefix("zerd-").suffix(".log").tempfile().ok().and_then(|f| f.keep().ok()).map(|(mut f, p)| {
             use std::io::Write;
             let _ = f.write_all(result.output.as_bytes());
             p
@@ -567,7 +567,7 @@ pub fn create_default_registry(config: ConfigHandle) -> Arc<ToolRegistry> {
     if crate::util::codegraph::locate(&cfg.cwd).is_some() || crate::util::symgraph::listed(&cfg.cwd).len() >= 15 {
         registry.register(Arc::new(super::builtin::graph::GraphTool::new(config.clone())));
     }
-    for dir in [cfg.cwd.join(".melon").join("tools"), crate::config::loader::get_config_dir().join("tools")] {
+    for dir in [cfg.cwd.join(".zerd").join("tools"), crate::config::loader::get_config_dir().join("tools")] {
         for t in super::discovery::discover(&dir) {
             registry.register(t);
         }

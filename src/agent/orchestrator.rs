@@ -117,7 +117,7 @@ pub struct Orchestrator {
 impl Orchestrator {
     pub fn new(config: Config, max_workers: usize, progress: Option<ProgressFn>) -> Orchestrator {
         let run_id = uuid::Uuid::new_v4().simple().to_string()[..6].to_string();
-        let tmp = tempfile::Builder::new().prefix(&format!("melon-{run_id}-")).tempdir().map(|t| t.keep()).unwrap_or_else(|_| std::env::temp_dir().join(format!("melon-{run_id}")));
+        let tmp = tempfile::Builder::new().prefix(&format!("zerd-{run_id}-")).tempdir().map(|t| t.keep()).unwrap_or_else(|_| std::env::temp_dir().join(format!("zerd-{run_id}")));
         Orchestrator {
             repo: config.cwd.clone(),
             config,
@@ -138,7 +138,7 @@ impl Orchestrator {
     async fn worktree(&self, name: &str, base: &str) -> Result<PathBuf, GraphError> {
         let path = self.tmp.join(name);
         let _g = self.git_lock.lock().await; // worktree add/remove touch shared .git metadata
-        let (code, out) = git(&self.repo, &["worktree", "add", "-q", "-b", &format!("melon/{}/{name}", self.run_id), &path.to_string_lossy(), base]).await;
+        let (code, out) = git(&self.repo, &["worktree", "add", "-q", "-b", &format!("zerd/{}/{name}", self.run_id), &path.to_string_lossy(), base]).await;
         if code != 0 {
             return Err(GraphError(format!("git worktree failed: {out}")));
         }
@@ -157,7 +157,7 @@ impl Orchestrator {
     async fn run_worker(&self, node: &mut Node, request: &str, base: &str, before: &str) {
         let Ok(_permit) = self.sem.acquire().await else { return };
         let started = Instant::now();
-        node.branch = format!("melon/{}/{}", self.run_id, node.id);
+        node.branch = format!("zerd/{}/{}", self.run_id, node.id);
         let wt = match self.worktree(&node.id, base).await {
             Ok(w) => w,
             Err(e) => {
@@ -238,7 +238,7 @@ impl Orchestrator {
             }
         }
         git(&wt, &["add", "-A"]).await;
-        git(&wt, &["-c", "user.email=melon@local", "-c", "user.name=melon", "commit", "-qm", &format!("{}: {}", node.id, node.goal.chars().take(60).collect::<String>())]).await;
+        git(&wt, &["-c", "user.email=zerd@local", "-c", "user.name=zerd", "commit", "-qm", &format!("{}: {}", node.id, node.goal.chars().take(60).collect::<String>())]).await;
         let (_, names) = git(&wt, &["diff", "--name-only", base, "HEAD"]).await;
         node.changed = names.lines().filter(|n| !n.is_empty()).map(String::from).collect();
         if node.status == "done" && node.changed.is_empty() {
@@ -251,7 +251,7 @@ impl Orchestrator {
     }
 
     async fn merge(&self, node: &mut Node) -> bool {
-        let (code, out) = git(&self.int_dir, &["-c", "user.email=melon@local", "-c", "user.name=melon", "merge", "--no-ff", "-m", &format!("merge {}", node.id), &node.branch]).await;
+        let (code, out) = git(&self.int_dir, &["-c", "user.email=zerd@local", "-c", "user.name=zerd", "merge", "--no-ff", "-m", &format!("merge {}", node.id), &node.branch]).await;
         if code == 0 {
             return true;
         }
@@ -267,7 +267,7 @@ impl Orchestrator {
         if code != 0 {
             return Err(GraphError("parallel mode needs a git repository with at least one commit".into()));
         }
-        self.integration = format!("melon/{}/integration", self.run_id);
+        self.integration = format!("zerd/{}/integration", self.run_id);
         let result = async {
             {
                 let _g = self.git_lock.lock().await;
@@ -397,7 +397,7 @@ impl Orchestrator {
         for wt in wts.iter().rev() {
             git(&self.repo, &["worktree", "remove", "--force", &wt.to_string_lossy()]).await;
         }
-        let (_, branches) = git(&self.repo, &["branch", "--list", &format!("melon/{}/*", self.run_id)]).await;
+        let (_, branches) = git(&self.repo, &["branch", "--list", &format!("zerd/{}/*", self.run_id)]).await;
         for b in branches.split_whitespace() {
             if b.ends_with("/integration") || b == "*" {
                 continue;

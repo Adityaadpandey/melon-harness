@@ -79,7 +79,7 @@ pub fn classify(status: Option<u16>, message: &str) -> ProviderError {
             if status == Some(401) {
                 // every failed request in one week of traces was this, each within a second of starting: the
                 // provider's own words ("Invalid 'Authorization' header") do not say what to do about it
-                e.message.push_str(" (the provider rejected the API key: check it is set in the shell you started melon from, or enter it again with /connect <provider>)");
+                e.message.push_str(" (the provider rejected the API key: check it is set in the shell you started zerd from, or enter it again with /connect <provider>)");
             }
             return e;
         }

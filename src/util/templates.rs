@@ -11,10 +11,10 @@ use std::sync::OnceLock;
 
 pub fn prompt_dirs(cwd: Option<&Path>) -> Vec<PathBuf> {
     let home = crate::util::platform::home_dir().unwrap_or_default();
-    let mut dirs = vec![home.join(".pi/agent/prompts"), home.join(".melon/prompts"), home.join(".claude/commands"), home.join(".melon/commands")];
+    let mut dirs = vec![home.join(".pi/agent/prompts"), home.join(".zerd/prompts"), home.join(".claude/commands"), home.join(".zerd/commands")];
     if let Some(c) = cwd {
         dirs.push(c.join(".claude/commands"));
-        dirs.push(c.join(".melon/commands"));
+        dirs.push(c.join(".zerd/commands"));
     }
     dirs
 }

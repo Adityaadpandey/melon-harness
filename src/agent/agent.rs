@@ -307,7 +307,7 @@ impl Agent {
         cm.repair_orphans(); // providers reject unanswered tool calls
     }
 
-    /// Work from the repo itself. The folder melon started in stays reachable for other repos next to it.
+    /// Work from the repo itself. The folder zerd started in stays reachable for other repos next to it.
     fn adopt_root(&mut self, root: Option<PathBuf>) -> bool {
         let cfg = self.config.get();
         let Some(root) = root.filter(|r| *r != cfg.cwd) else { return false };
@@ -329,7 +329,7 @@ impl Agent {
         self.add_user(&format!("<system-reminder>\n{text}\n</system-reminder>"));
     }
 
-    /// Record that the loop had to step in ("empty_reply", "text_call", ...). `melon insights` counts these per model,
+    /// Record that the loop had to step in ("empty_reply", "text_call", ...). `zerd insights` counts these per model,
     /// which is how we learn which family needs a prompt note or a compat flag.
     fn nudged(&self, kind: &str) {
         self.session.tracer.emit("nudge", json!({"kind": kind}));
@@ -1260,7 +1260,7 @@ impl Agent {
             if self.no_approver {
                 // nobody can answer the approval prompt in this run, so retrying cannot succeed: stop instead of burning the budget
                 self.failed = true;
-                emit(&tx, AgentEvent::AgentError { error: "Stopped: this change needs approval and the run cannot ask. Re-run with --approval auto-edit (edits) or --approval auto (edits and commands), or start melon interactively.".into() });
+                emit(&tx, AgentEvent::AgentError { error: "Stopped: this change needs approval and the run cannot ask. Re-run with --approval auto-edit (edits) or --approval auto (edits and commands), or start zerd interactively.".into() });
                 return;
             }
 

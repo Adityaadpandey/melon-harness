@@ -1,4 +1,4 @@
-//! Allow / deny / ask rules in Claude Code's notation, so a project can say what Melon may do without a prompt.
+//! Allow / deny / ask rules in Claude Code's notation, so a project can say what Zerd may do without a prompt.
 //!
 //!     Bash(git diff:*)     any command starting with `git diff`
 //!     Bash(npm run build)  exactly that command
@@ -7,7 +7,7 @@
 //!     WebFetch(domain:docs.python.org)
 //!     Bash                 the whole tool (no specifier)
 //!
-//! Example `.melon/permissions.json`:  {"allow": ["Bash(pnpm test:*)"], "deny": ["Read(.env*)", "Bash(rm:*)"], "ask": ["Bash(git push:*)"]}
+//! Example `.zerd/permissions.json`:  {"allow": ["Bash(pnpm test:*)"], "deny": ["Read(.env*)", "Bash(rm:*)"], "ask": ["Bash(git push:*)"]}
 //! Deny wins over ask, ask over allow. An allow never lifts the built-in refusals (plan mode, dangerous commands).
 use super::approval::split_pipeline;
 use crate::util::fnmatch::fnmatch;
@@ -170,10 +170,10 @@ fn read(path: &Path) -> Value {
 pub fn files(cwd: &Path) -> Vec<PathBuf> {
     let home = crate::util::platform::home_dir().unwrap_or_default();
     vec![
-        home.join(".melon/permissions.json"),
+        home.join(".zerd/permissions.json"),
         cwd.join(".claude/settings.json"),
         cwd.join(".claude/settings.local.json"),
-        cwd.join(".melon/permissions.json"),
+        cwd.join(".zerd/permissions.json"),
     ]
 }
 
@@ -196,7 +196,7 @@ pub fn load_rules(cwd: &Path) -> Rules {
 
 /// Append to the project's own file; other keys in it are left as they are.
 pub fn save_rule(cwd: &Path, kind: &str, text: &str) -> std::io::Result<PathBuf> {
-    let path = cwd.join(".melon/permissions.json");
+    let path = cwd.join(".zerd/permissions.json");
     let mut data = std::fs::read_to_string(&path).ok().and_then(|t| serde_json::from_str::<Value>(&t).ok()).filter(Value::is_object).unwrap_or_else(|| serde_json::json!({}));
     let bucket = data.as_object_mut().unwrap().entry(kind).or_insert_with(|| serde_json::json!([]));
     if let Some(a) = bucket.as_array_mut() {
@@ -212,7 +212,7 @@ pub fn save_rule(cwd: &Path, kind: &str, text: &str) -> std::io::Result<PathBuf>
 }
 
 pub fn drop_rule(cwd: &Path, text: &str) -> bool {
-    let path = cwd.join(".melon/permissions.json");
+    let path = cwd.join(".zerd/permissions.json");
     let Some(mut data) = std::fs::read_to_string(&path).ok().and_then(|t| serde_json::from_str::<Value>(&t).ok()) else { return false };
     let mut hit = false;
     for kind in KINDS {

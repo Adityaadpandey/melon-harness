@@ -185,7 +185,7 @@ async fn backup_and_undo_restore_edits_and_remove_created_files() {
     assert_eq!(deleted, vec!["new.txt"]);
     assert!(skipped.is_empty());
     assert!(backup(p).await.is_some());
-    let kept = std::process::Command::new("git").args(["rev-parse", "refs/melon/backup"]).current_dir(p).output().unwrap();
+    let kept = std::process::Command::new("git").args(["rev-parse", "refs/zerd/backup"]).current_dir(p).output().unwrap();
     assert!(kept.status.success());
 }
 

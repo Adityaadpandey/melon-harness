@@ -22,7 +22,7 @@ pub const COMMANDS: &[(&str, &str)] = &[
     ("/agents", "list sub-agents and running background ones; /agents stop ID stops one"),
     ("/permissions", "list or edit allow / deny / ask rules, e.g. /permissions deny Read(.env*)"),
     ("/effort", "how hard the model thinks: low, medium, high or auto (Codex models)"),
-    ("/plan", "toggle plan mode: read-only, melon investigates and presents a plan before touching anything"),
+    ("/plan", "toggle plan mode: read-only, zerd investigates and presents a plan before touching anything"),
     ("/diff", "what changed in the working tree (git diff --stat, /diff full for the patch)"),
     ("/context", "how full the context window is and what is in it"),
     ("/hooks", "list the configured hooks"),
@@ -40,8 +40,8 @@ pub const COMMANDS: &[(&str, &str)] = &[
     ("/sessions", "list saved sessions"),
     ("/resume", "resume a saved session (give its ID)"),
     ("/checkpoint", "create a checkpoint"),
-    ("/learn", "teach melon a rule for this repo (kept between sessions)"),
-    ("/lessons", "list what melon has learned here"),
+    ("/learn", "teach zerd a rule for this repo (kept between sessions)"),
+    ("/lessons", "list what zerd has learned here"),
     ("/forget", "remove a lesson by number"),
     ("/rewind", "list requests that changed files; /rewind <n> puts files back to before request n"),
     ("/verify", "run the checks (tests, lint, types) on the files the last request changed"),
@@ -106,11 +106,11 @@ impl Completions {
     }
 }
 
-pub struct MelonHelper {
+pub struct ZerdHelper {
     inner: Arc<Completions>,
 }
 
-impl Completer for MelonHelper {
+impl Completer for ZerdHelper {
     type Candidate = Pair;
 
     fn complete(&self, line: &str, pos: usize, _ctx: &rustyline::Context<'_>) -> rustyline::Result<(usize, Vec<Pair>)> {
@@ -118,15 +118,15 @@ impl Completer for MelonHelper {
     }
 }
 
-impl Hinter for MelonHelper {
+impl Hinter for ZerdHelper {
     type Hint = String;
 }
-impl Highlighter for MelonHelper {}
-impl Validator for MelonHelper {}
-impl Helper for MelonHelper {}
+impl Highlighter for ZerdHelper {}
+impl Validator for ZerdHelper {}
+impl Helper for ZerdHelper {}
 
 pub struct Input {
-    editor: Arc<Mutex<Editor<MelonHelper, FileHistory>>>,
+    editor: Arc<Mutex<Editor<ZerdHelper, FileHistory>>>,
     history_file: Option<PathBuf>,
     pub skills: Arc<Mutex<Vec<(String, String)>>>,
 }
@@ -143,8 +143,8 @@ impl Input {
     pub fn new(cwd: PathBuf, forbidden: Vec<String>, models: Box<dyn Fn() -> Vec<String> + Send + Sync>, history_file: Option<PathBuf>) -> Input {
         let cfg = Config::builder().completion_type(CompletionType::List).auto_add_history(false).history_ignore_dups(true).unwrap().build();
         let skills = Arc::new(Mutex::new(vec![]));
-        let mut ed: Editor<MelonHelper, FileHistory> = Editor::with_config(cfg).expect("line editor");
-        ed.set_helper(Some(MelonHelper { inner: Arc::new(Completions::new(cwd, forbidden, models, skills.clone())) }));
+        let mut ed: Editor<ZerdHelper, FileHistory> = Editor::with_config(cfg).expect("line editor");
+        ed.set_helper(Some(ZerdHelper { inner: Arc::new(Completions::new(cwd, forbidden, models, skills.clone())) }));
         ed.bind_sequence(KeyEvent::ctrl('J'), EventHandler::Simple(Cmd::Newline));
         if let Some(h) = &history_file {
             if let Some(d) = h.parent() {

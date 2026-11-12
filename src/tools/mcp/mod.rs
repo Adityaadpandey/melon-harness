@@ -158,7 +158,7 @@ impl McpClient {
                 Transport::Http { client: reqwest::Client::new(), url: self.config.url.clone().unwrap_or_default(), session: Mutex::new(None) }
             };
             *self.transport.lock().await = Some(Arc::new(transport));
-            self.rpc("initialize", json!({"protocolVersion": "2025-03-26", "capabilities": {}, "clientInfo": {"name": "melon", "version": "1.0"}})).await?;
+            self.rpc("initialize", json!({"protocolVersion": "2025-03-26", "capabilities": {}, "clientInfo": {"name": "zerd", "version": "1.0"}})).await?;
             self.notify("notifications/initialized").await;
             let listed = self.rpc("tools/list", json!({})).await?;
             let tools: Vec<McpToolInfo> = listed["tools"]

@@ -325,7 +325,7 @@ pub struct Config {
     pub keep_recent_tokens: usize,
     pub allowed_tools: Option<Vec<String>>,
     /// The list above was filled in by pi mode, not written by the user. MCP tools still pass then: someone who
-    /// configured a server wants its tools, and pi mode's short list only trims melon's own.
+    /// configured a server wants its tools, and pi mode's short list only trims zerd's own.
     #[serde(skip)]
     pub allowed_tools_implied: bool,
     pub developer_instructions: Option<String>,
@@ -390,7 +390,7 @@ impl Default for Config {
             review_pipeline_role: "default".into(),
             review_pipeline_tokens: 80_000,
             review_lenses: 0,
-            review_backend: "melon".into(),
+            review_backend: "zerd".into(),
             review_claude_model: String::new(),
             review_run_checks: true,
             review_min_confidence: 60,

@@ -108,7 +108,7 @@ fn rulebook_skips_mews_own_section() {
     let dir = tempfile::tempdir().unwrap();
     let d = dir.path();
     std::fs::create_dir_all(d.join("apps/web")).unwrap();
-    std::fs::write(d.join("AGENTS.md"), "# Rules\nNever read .env\n\n## Learned by melon\n- old lesson under review\n").unwrap();
+    std::fs::write(d.join("AGENTS.md"), "# Rules\nNever read .env\n\n## Learned by zerd\n- old lesson under review\n").unwrap();
     std::fs::write(d.join("apps/web/AGENTS.md"), "Ask before UI changes").unwrap();
     std::fs::create_dir_all(d.join(".claude/skills/debug")).unwrap();
     std::fs::write(d.join(".claude/skills/debug/SKILL.md"), "---\nname: debug\ndescription: Use for any 500\n---\n").unwrap();

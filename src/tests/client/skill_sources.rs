@@ -26,7 +26,7 @@ fn claude_code_skills_load_without_hijacking_requests_or_mews_own_ponytail() {
     let get = |n: &str| skills.iter().find(|s| s.name == n).unwrap_or_else(|| panic!("no skill {n}")).clone();
     assert_eq!(get("tidy").description, "Keeps diffs small and readable");
     assert_eq!(get("review").description, "Review a diff");
-    assert!(get("ponytail").always && !get("ponytail").description.contains("Claude Code")); // melon's compact one wins
+    assert!(get("ponytail").always && !get("ponytail").description.contains("Claude Code")); // zerd's compact one wins
     let matched: Vec<String> = match_skills(&skills, "review this diff", 4).into_iter().map(|s| s.name).collect();
     assert!(!matched.contains(&"review".to_string())); // listed, never auto-fired
 }

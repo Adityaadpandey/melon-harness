@@ -20,9 +20,9 @@ use std::path::PathBuf;
 use ui::app::Cli;
 use ui::style::*;
 
-/// melon: a small coding agent for real repos.
+/// zerd: a small coding agent for real repos.
 #[derive(Parser, Debug)]
-#[command(name = "melon", version, about)]
+#[command(name = "zerd", version, about)]
 struct Args {
     /// What to do (omit for the interactive session)
     prompt: Option<String>,
@@ -56,7 +56,7 @@ struct Args {
     /// Continue the newest saved session that ran in this folder
     #[arg(long = "continue")]
     continue_last: bool,
-    /// Trust this project's .melon/config.toml (hooks, verify commands, approval)
+    /// Trust this project's .zerd/config.toml (hooks, verify commands, approval)
     #[arg(long = "trust")]
     trust_project: bool,
     /// Have a second model argue against risky requests first (always on interactively)
@@ -89,15 +89,15 @@ fn fail(msg: &str) -> ! {
 }
 
 fn main() {
-    // subcommands that are not a request: melon learn-import ..., melon bench ...
+    // subcommands that are not a request: zerd learn-import ..., zerd bench ...
     let raw: Vec<String> = std::env::args().collect();
     if raw.get(1).map(String::as_str) == Some("learn-import") {
         let rt = tokio::runtime::Builder::new_multi_thread().enable_all().build().expect("runtime");
-        let argv: Vec<String> = std::iter::once("melon learn-import".to_string()).chain(raw.into_iter().skip(2)).collect();
+        let argv: Vec<String> = std::iter::once("zerd learn-import".to_string()).chain(raw.into_iter().skip(2)).collect();
         std::process::exit(rt.block_on(agent::learn_import::main(argv)));
     }
     if raw.get(1).map(String::as_str) == Some("graph") {
-        // `melon graph callers parse_invoice` asks the graph tool directly, so you can see what the model would see
+        // `zerd graph callers parse_invoice` asks the graph tool directly, so you can see what the model would see
         const ASK: &[&str] = &["trace", "symbol", "find", "callers", "callees", "impact", "importers", "imports", "blast", "tests", "neighbors", "path", "community", "stats"];
         if raw.get(2).map_or(false, |a| ASK.contains(&a.as_str())) {
             use tools::Tool;
@@ -136,7 +136,7 @@ async fn run(args: Args) -> i32 {
     if !config.ignored_project_keys.is_empty() {
         let keys = config.ignored_project_keys.join(", ");
         if tty && !one_shot {
-            warn(&format!("This project's .melon/config.toml sets: {keys}"));
+            warn(&format!("This project's .zerd/config.toml sets: {keys}"));
             eprintln!("{}", paint("These can run commands or relax approvals. They are ignored unless you trust the file.", MUTED));
             eprint!("Trust it? [y/N] ");
             let _ = std::io::stderr().flush();
@@ -236,13 +236,13 @@ async fn run(args: Args) -> i32 {
         // the symbol graph builds on every core while we get started; a new repo uses that wait to ask about itself
         util::symgraph::warm(cwd.clone());
         println!("{}", paint("◆ indexing the code graph in the background", MUTED));
-        if !cwd.join(".melon/graph.toml").exists() {
+        if !cwd.join(".zerd/graph.toml").exists() {
             util::graphcfg::first_run(&cwd);
         }
     }
-    // a terminal tab names the running program; set a title the way Claude Code does, e.g. "✦ melon · tunyt"
+    // a terminal tab names the running program; set a title the way Claude Code does, e.g. "✦ zerd · tunyt"
     if std::io::stdout().is_terminal() {
-        let title = format!("✦ melon · {}", cwd.file_name().map(|n| n.to_string_lossy().to_string()).unwrap_or_default());
+        let title = format!("✦ zerd · {}", cwd.file_name().map(|n| n.to_string_lossy().to_string()).unwrap_or_default());
         print!("\x1b[22;0t\x1b]0;{title}\x07\x1b]1;{title}\x07\x1b]2;{title}\x07");
         let _ = std::io::stdout().flush();
     }

@@ -18,7 +18,7 @@ impl GraphTool {
     }
 
 
-    /// find/callers/callees/impact/symbol from melon's own tree-sitter graph (live, no snapshot). None means "nothing
+    /// find/callers/callees/impact/symbol from zerd's own tree-sitter graph (live, no snapshot). None means "nothing
     /// here knows that name", so the caller can try the graphify snapshot or give the usual not-found answer.
     fn sym(act: &str, name: Option<&str>, cwd: &Path) -> Option<ToolResult> {
         let name = name?;
@@ -135,7 +135,7 @@ impl GraphTool {
                 cfg.set_note(cwd, file, d, text);
                 match crate::util::graphcfg::save(cwd, &cfg) {
                     Ok(()) => Some(ToolResult::ok(if text.trim().is_empty() { format!("Removed the note on {head}.") } else { format!("Noted on {head}. It is shown whenever this symbol comes up, and marked if the code changes.") })),
-                    Err(e) => Some(ToolResult::error(format!("Could not save .melon/graph.toml: {e}"))),
+                    Err(e) => Some(ToolResult::error(format!("Could not save .zerd/graph.toml: {e}"))),
                 }
             }
         }
@@ -196,7 +196,7 @@ impl Tool for GraphTool {
     fn as_any(&self) -> &dyn Any {
         self
     }
-    /// Everything here only reads, except pinning a note, which writes .melon/graph.toml.
+    /// Everything here only reads, except pinning a note, which writes .zerd/graph.toml.
     fn is_mutating(&self, params: &Value) -> bool {
         params["action"] == "note"
     }

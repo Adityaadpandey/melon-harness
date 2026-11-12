@@ -109,7 +109,7 @@ async fn independent_workers_run_concurrently_and_merge() {
     assert!((0..3).all(|i| p.join(format!("m{i}.py")).exists()));
     // cleanup: no leftover worktrees or worker branches
     assert_eq!(git(p, &["worktree", "list"]).matches('\n').count(), 1);
-    let branches = git(p, &["branch", "--list", "melon/*"]);
+    let branches = git(p, &["branch", "--list", "zerd/*"]);
     assert!(branches.contains("integration") && branches.matches('\n').count() == 1);
 }
 

@@ -3,7 +3,7 @@ target/
 
 # secrets and local state
 .env
-.melon/
+.zerd/
 
 # macOS
 .DS_Store

@@ -1,4 +1,4 @@
-//! Run a review sub-agent as a headless Claude Code session (`claude -p`) instead of a melon agent. It uses the user's
+//! Run a review sub-agent as a headless Claude Code session (`claude -p`) instead of a zerd agent. It uses the user's
 //! own Claude login and quota, loads the repo's CLAUDE.md and skills the way Claude Code always does, and gets only
 //! read-only tools. Nothing here talks to an undocumented API: it is the public CLI.
 use crate::config::Config;

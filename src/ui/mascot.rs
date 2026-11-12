@@ -1,5 +1,5 @@
-//! The melon mascot: one small pixel grid, drawn with half-blocks (two pixel rows per text row).
-//! docs/banner.svg is the same grid scaled up, so both always look like the same melon.
+//! The zerd mascot: one small pixel grid, drawn with half-blocks (two pixel rows per text row).
+//! docs/banner.svg is the same grid scaled up, so both always look like the same mascot.
 use super::style::{bg_code, fg_code, RESET};
 
 const W: usize = 14;
@@ -48,8 +48,8 @@ fn grid() -> [[char; W]; H] {
     g
 }
 
-/// The melon as six rows of coloured half-blocks, each `W` columns wide.
-pub fn melon() -> Vec<String> {
+/// The mascot as six rows of coloured half-blocks, each `W` columns wide.
+pub fn mascot() -> Vec<String> {
     let g = grid();
     (0..H).step_by(2).map(|y| {
         (0..W).map(|x| match (g[y][x], g[y + 1][x]) {

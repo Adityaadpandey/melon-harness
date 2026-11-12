@@ -211,7 +211,7 @@ async fn branch(cwd: &Path, name: &str, skip: &[&str], pr_base: &str, mut notes:
 /// A PR whose branch is not checked out: fetch its head (GitHub keeps it at pull/<n>/head), check it out in a throwaway
 /// worktree and review that.
 async fn remote_pr(cwd: &Path, number: &str, skip: &[&str], pr_base: &str) -> Option<Target> {
-    let r = format!("refs/melon/pr-{number}");
+    let r = format!("refs/zerd/pr-{number}");
     if !fetch(cwd, &[&format!("+pull/{number}/head:{r}")]).await {
         return None;
     }
@@ -231,7 +231,7 @@ async fn remote_pr(cwd: &Path, number: &str, skip: &[&str], pr_base: &str) -> Op
     if mb.is_empty() {
         return None;
     }
-    let tree = tempfile::Builder::new().prefix(&format!("melon-pr-{number}-")).tempdir().ok()?.keep();
+    let tree = tempfile::Builder::new().prefix(&format!("zerd-pr-{number}-")).tempdir().ok()?.keep();
     if ok(cwd, &["worktree", "add", "--detach", &tree.to_string_lossy(), &r]).await.is_empty() && !tree.join(".git").exists() {
         let _ = std::fs::remove_dir_all(&tree);
         return None;

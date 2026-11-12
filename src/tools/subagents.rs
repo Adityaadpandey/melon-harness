@@ -459,7 +459,7 @@ fn claude_tool(name: &str) -> String {
 
 fn agent_dirs(cwd: &Path) -> Vec<std::path::PathBuf> {
     let home = crate::util::platform::home_dir().unwrap_or_default();
-    vec![home.join(".claude/agents"), home.join(".melon/agents"), cwd.join(".claude/agents"), cwd.join(".melon/agents")]
+    vec![home.join(".claude/agents"), home.join(".zerd/agents"), cwd.join(".claude/agents"), cwd.join(".zerd/agents")]
 }
 
 /// A markdown file like Claude Code's `.claude/agents/reviewer.md` (front matter: name, description, tools, model).

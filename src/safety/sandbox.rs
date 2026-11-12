@@ -13,7 +13,7 @@ const SECRET_READ_DENY: &[&str] = &[
     "~/.ssh", "~/.aws", "~/.gnupg", "~/.azure", "~/.kube", "~/.config/gcloud", "~/.config/gh", "~/.docker/config.json", "~/.netrc", "~/.npmrc",
     "~/.git-credentials", "~/Library/Keychains", "~/.codex", "~/.claude", "~/.config/claude", "~/.pypirc", "~/.vault-token", "~/.password-store",
     "~/.terraform.d", "~/.cargo/credentials.toml", "~/.gem/credentials", "~/.config/hub",
-    "~/Library/Application Support/melon", "~/.local/share/melon", "~/.config/melon", // melon's own config and traces
+    "~/Library/Application Support/zerd", "~/.local/share/zerd", "~/.config/zerd", // zerd's own config and traces
 ];
 const TEMP_WRITE: &[&str] = &["/private/tmp", "/tmp", "/private/var/folders", "/private/var/tmp"];
 

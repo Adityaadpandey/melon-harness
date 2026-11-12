@@ -604,7 +604,7 @@ impl Screen {
     }
 
     // -- redraw bookkeeping ----------------------------------------------------------------------------------------------
-    /// The melon blinks when idle and widens its eyes while the agent is working.
+    /// The zerd blinks when idle and widens its eyes while the agent is working.
     fn face(&self) -> &'static str {
         let now = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map_or(0.0, |d| d.as_secs_f64());
         if self.tui.is_turn_active() {
@@ -694,7 +694,7 @@ impl Screen {
         let busy = self.tui.is_turn_active();
         let face = self.face();
         let title = (self.title)();
-        let left = format!("  ({face})  melon  ·  {title}");
+        let left = format!("  ({face})  zerd  ·  {title}");
         let (right, right_style) = if copied {
             ("✓ copied to clipboard  ".to_string(), bold_fg(MINT))
         } else if !self.mouse_on {
@@ -708,7 +708,7 @@ impl Screen {
         let pad = " ".repeat(cols.saturating_sub(left.chars().count() + right.chars().count()).max(1));
         let header = RLine::from(vec![
             sp(bold_fg(MINT), format!("  ({face})")),
-            sp(bold_fg(if busy { LAVENDER } else { FG }), "  melon"),
+            sp(bold_fg(if busy { LAVENDER } else { FG }), "  zerd"),
             sp(fg(MUTED), format!("  ·  {title}{pad}")),
             sp(right_style, right),
         ]);

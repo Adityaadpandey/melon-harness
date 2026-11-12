@@ -400,7 +400,7 @@ impl Cli {
         ok && !matches!(self.last_report.as_ref().and_then(|r| r["status"].as_str()), Some("failed" | "verification_failed"))
     }
 
-    /// Drive melon from another program: one JSON command per stdin line, events and replies on stdout.
+    /// Drive zerd from another program: one JSON command per stdin line, events and replies on stdout.
     ///     {"type": "prompt", "message": "fix the bug", "id": "1"}   start a request (one at a time)
     ///     {"type": "steer", "message": "use python 3.12"}           note read after the current tool calls
     ///     {"type": "abort"}                                          stop the running request
@@ -590,7 +590,7 @@ impl Cli {
         let skills = Arc::new(Mutex::new(self.agent().session.skills.iter().filter(|k| !k.always).map(|k| (k.name.clone(), k.description.clone())).collect::<Vec<_>>()));
         let history = Some(get_data_dir().join("input_history"));
 
-        // a real terminal gets the full-screen layout; MELON_PLAIN=1 (or a pipe) keeps the plain scrolling one
+        // a real terminal gets the full-screen layout; ZERD_PLAIN=1 (or a pipe) keeps the plain scrolling one
         let mut fs = None;
         if fullscreen::wanted() {
             let (config, live) = (self.config.clone(), self.live.clone());
@@ -616,7 +616,7 @@ impl Cli {
             }
         }
         self.tui.print_welcome(
-            "melon",
+            "zerd",
             &[
                 format!("model: {}   approval: {}", cfg.model.name, cfg.approval.value()),
                 format!("cwd: {}{}", home_short(&cfg.cwd), cfg.profile.as_ref().map(|p| format!("   profile: {p}")).unwrap_or_default()),
@@ -690,8 +690,8 @@ impl Cli {
         }
         uprintln!("\n{}", paint("Goodbye!", MUTED));
         if turns > 0 {
-            uprintln!("{}{}", paint("Resume this session:  ", MUTED), bold(&format!("melon --resume {sid}")));
-            uprintln!("{}{}", paint("Or the newest one in this folder:  ", MUTED), bold("melon --continue"));
+            uprintln!("{}{}", paint("Resume this session:  ", MUTED), bold(&format!("zerd --resume {sid}")));
+            uprintln!("{}{}", paint("Or the newest one in this folder:  ", MUTED), bold("zerd --continue"));
         }
     }
 
@@ -1009,7 +1009,7 @@ impl Cli {
         final_response
     }
 
-    /// /connect groq: ask for the key (hidden), keep it in melon's .env, prove it works by listing the provider's
+    /// /connect groq: ask for the key (hidden), keep it in zerd's .env, prove it works by listing the provider's
     /// models, and make those models Tab-completable in /model.
     async fn connect(&mut self, name: &str) {
         let cfg = self.config.get();
@@ -1249,7 +1249,7 @@ impl Cli {
                     let from = if files.iter().any(|f| f.name == d.name) { " (from an agent file)" } else { "" };
                     uprintln!("  {}  {}\n      {}", bold(&d.name), paint(&format!("{mode}, {} turns, {} model{from}", d.max_turns, d.role), MUTED), d.description.chars().take(150).collect::<String>());
                 }
-                uprintln!("{}", paint("Add your own: a markdown file with name/description/tools in .claude/agents/ or .melon/agents/ (repo or home)", MUTED));
+                uprintln!("{}", paint("Add your own: a markdown file with name/description/tools in .claude/agents/ or .zerd/agents/ (repo or home)", MUTED));
             }
             "/permissions" => {
                 use crate::safety::rules::{drop_rule, load_rules, save_rule, KINDS};
@@ -1263,7 +1263,7 @@ impl Cli {
                 } else if word == "remove" && !rule_text.is_empty() {
                     let ok = drop_rule(&cfg.cwd, rule_text);
                     self.reload_rules();
-                    uprintln!("{}", if ok { paint("Removed", MINT) } else { paint("No such rule in .melon/permissions.json", MUTED) });
+                    uprintln!("{}", if ok { paint("Removed", MINT) } else { paint("No such rule in .zerd/permissions.json", MUTED) });
                 } else {
                     let _ = load_rules;
                     let rules = mgr.rules_snapshot();
@@ -1289,7 +1289,7 @@ impl Cli {
                     *self.before_plan.lock().unwrap() = mgr.policy();
                     mgr.set_policy(ApprovalPolicy::Plan);
                     self.config.update(|c| c.approval = ApprovalPolicy::Plan);
-                    uprintln!("{}", paint("Plan mode on: melon can read and search but changes nothing. /plan again to leave.", MINT));
+                    uprintln!("{}", paint("Plan mode on: zerd can read and search but changes nothing. /plan again to leave.", MINT));
                 }
             }
             "/diff" => {
@@ -1389,7 +1389,7 @@ impl Cli {
                             uprintln!("  {}. {t}", i + 1);
                         }
                         if rows.is_empty() {
-                            uprintln!("{}", paint("Nothing learned yet. Rejecting an action with feedback, or /learn <rule>, teaches melon.", MUTED));
+                            uprintln!("{}", paint("Nothing learned yet. Rejecting an action with feedback, or /learn <rule>, teaches zerd.", MUTED));
                         }
                     }
                 }
@@ -1400,7 +1400,7 @@ impl Cli {
                 if files.is_empty() {
                     uprintln!("{}", paint("Nothing to verify: the last request changed no files.", MUTED));
                 } else if checks.is_empty() {
-                    uprintln!("{}", paint("No checks found for those files (add verify rules in .melon/config.toml).", MUTED));
+                    uprintln!("{}", paint("No checks found for those files (add verify rules in .zerd/config.toml).", MUTED));
                 } else {
                     uprintln!("{}", paint(&format!("Verifying: {}", checks.iter().map(|c| c.0.clone()).collect::<Vec<_>>().join(" && ")), MUTED));
                     let cfg_r = &cfg;

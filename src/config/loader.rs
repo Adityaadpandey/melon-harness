@@ -1,4 +1,4 @@
-//! Finds and merges config: the user's `config.toml`, the project's `.melon/config.toml` (gated keys need trust),
+//! Finds and merges config: the user's `config.toml`, the project's `.zerd/config.toml` (gated keys need trust),
 //! a repository profile, and the AGENTS.md / CLAUDE.md instruction files.
 use super::trust::{is_trusted, trust, GATED_KEYS};
 use super::Config;
@@ -13,29 +13,29 @@ pub const INSTRUCTION_FILES: &[&str] = &["AGENTS.md", "CLAUDE.md", "AGENT.MD"];
 /// and an outline alone hid every rule from the model. ponytail: one fixed cap; past it a rulebook falls back to the outline.
 pub const INLINE_LIMIT: usize = 90_000;
 
-/// `~/Library/Application Support/melon` on macOS, `~/.config/melon` elsewhere (platformdirs' `user_config_dir`).
+/// `~/Library/Application Support/zerd` on macOS, `~/.config/zerd` elsewhere (platformdirs' `user_config_dir`).
 pub fn get_config_dir() -> PathBuf {
     if cfg!(target_os = "macos") {
-        crate::util::platform::home_dir().unwrap_or_default().join("Library/Application Support/melon")
+        crate::util::platform::home_dir().unwrap_or_default().join("Library/Application Support/zerd")
     } else {
-        dirs::config_dir().unwrap_or_else(|| crate::util::platform::home_dir().unwrap_or_default().join(".config")).join("melon")
+        dirs::config_dir().unwrap_or_else(|| crate::util::platform::home_dir().unwrap_or_default().join(".config")).join("zerd")
     }
 }
 
 pub fn get_data_dir() -> PathBuf {
-    if let Ok(d) = std::env::var("MELON_DATA_DIR") {
+    if let Ok(d) = std::env::var("ZERD_DATA_DIR") {
         return PathBuf::from(d);
     }
     if cfg!(target_os = "macos") {
-        crate::util::platform::home_dir().unwrap_or_default().join("Library/Application Support/melon")
+        crate::util::platform::home_dir().unwrap_or_default().join("Library/Application Support/zerd")
     } else {
-        dirs::data_dir().unwrap_or_else(|| crate::util::platform::home_dir().unwrap_or_default().join(".local/share")).join("melon")
+        dirs::data_dir().unwrap_or_else(|| crate::util::platform::home_dir().unwrap_or_default().join(".local/share")).join("zerd")
     }
 }
 
-/// The folder holding profiles/ and skills/: inside the rust folder (found from the binary), or `MELON_HOME`.
+/// The folder holding profiles/ and skills/: inside the rust folder (found from the binary), or `ZERD_HOME`.
 pub fn home_dir() -> PathBuf {
-    if let Ok(h) = std::env::var("MELON_HOME") {
+    if let Ok(h) = std::env::var("ZERD_HOME") {
         return PathBuf::from(h);
     }
     if let Ok(exe) = std::env::current_exe() {
@@ -59,7 +59,7 @@ pub fn load_last_model() -> Option<String> {
     std::fs::read_to_string(get_data_dir().join("last_model")).ok().map(|s| s.trim().to_string()).filter(|s| !s.is_empty())
 }
 
-/// Keep an API key in melon's own .env (loaded at every start), readable only by you.
+/// Keep an API key in zerd's own .env (loaded at every start), readable only by you.
 pub fn save_env_key(name: &str, value: &str) -> std::io::Result<PathBuf> {
     let path = get_data_dir().join(".env");
     if let Some(p) = path.parent() {
@@ -119,7 +119,7 @@ pub fn parse_toml(path: &Path) -> Result<Map<String, Value>, String> {
 }
 
 fn project_config(cwd: &Path) -> Option<PathBuf> {
-    let f = resolve(cwd).join(".melon").join(CONFIG_FILE_NAME);
+    let f = resolve(cwd).join(".zerd").join(CONFIG_FILE_NAME);
     f.is_file().then_some(f)
 }
 
@@ -197,7 +197,7 @@ fn taste_for(dirs: &[PathBuf], home: &Path) -> Option<String> {
     let mut blocks = vec![];
     let mut all: Vec<PathBuf> = dirs.to_vec();
     all.push(home.to_path_buf());
-    all.push(home.join(".melon"));
+    all.push(home.join(".zerd"));
     for d in all {
         for f in taste_files(&d) {
             let t = taste_text(&f);

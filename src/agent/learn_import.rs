@@ -1,4 +1,4 @@
-//! Teach melon from the Claude Code sessions you already ran in a repo. Claude Code keeps every session as a jsonl file
+//! Teach zerd from the Claude Code sessions you already ran in a repo. Claude Code keeps every session as a jsonl file
 //! under ~/.claude/projects/<cwd with / as ->/, but deletes them after 30 days. What it never deletes is
 //! ~/.claude/history.jsonl: every prompt you typed, with its folder and session id. So there are two sources: full
 //! transcripts (recent) and prompt history (all time).
@@ -7,13 +7,13 @@
 //!   -1  you interrupted it, rejected one of its tool calls, or your next message corrects it ("no, ...", "still broken")
 //!   +1  your next message moves on ("commit it", "works", "nice")
 //!    0  anything else
-//! Tasks that were not punished go into melon's edit history, so `search` finds those files faster next time. The rules
-//! you stated along the way become lessons, saved in melon's store and in the repo's AGENTS.md.
+//! Tasks that were not punished go into zerd's edit history, so `search` finds those files faster next time. The rules
+//! you stated along the way become lessons, saved in zerd's store and in the repo's AGENTS.md.
 //!
-//!     melon learn-import --repo ~/Devlopment/tunyt                   # quick dry run
-//!     melon learn-import --repo ~/Devlopment/tunyt --deep            # deep dry run: prints adds and drops
-//!     melon learn-import --repo ~/Devlopment/tunyt --deep --reweigh  # same candidates, new verdict (cheap)
-//!     melon learn-import --repo ~/Devlopment/tunyt --deep --apply    # writes the verdict you just reviewed
+//!     zerd learn-import --repo ~/Devlopment/tunyt                   # quick dry run
+//!     zerd learn-import --repo ~/Devlopment/tunyt --deep            # deep dry run: prints adds and drops
+//!     zerd learn-import --repo ~/Devlopment/tunyt --deep --reweigh  # same candidates, new verdict (cheap)
+//!     zerd learn-import --repo ~/Devlopment/tunyt --deep --apply    # writes the verdict you just reviewed
 use crate::agent::learn::{Learned, HEADING};
 use crate::client::llm_client::LLMClient;
 use crate::client::response::StreamEvent;
@@ -246,7 +246,7 @@ pub fn chunks(tasks: &[Task], size: usize) -> Vec<String> {
     out
 }
 
-/// What the repo already tells agents: every AGENTS.md (minus melon's own section, which is under review), Command Code
+/// What the repo already tells agents: every AGENTS.md (minus zerd's own section, which is under review), Command Code
 /// taste, and each skill's name and description.
 pub(crate) fn rulebook(repo: &Path) -> String {
     let mut parts = vec![];
@@ -351,7 +351,7 @@ Skip one-off feature requests and anything only true that day. Be concrete: name
 Return a JSON array of objects {\"rule\": \"<one imperative line, max 30 words>\", \"evidence\": \"<short quote or count>\"}.
 At most {n} items, the best supported first. Nothing else.";
 
-const REDUCE_PROMPT: &str = "You maintain the \"Learned by melon\" section of a repository's AGENTS.md: rules an agent learned
+const REDUCE_PROMPT: &str = "You maintain the \"Learned by zerd\" section of a repository's AGENTS.md: rules an agent learned
 from working with this developer. You get:
   * RULEBOOK: what the repo already tells agents (AGENTS.md files, learned taste, skills)
   * CURRENT: the numbered lessons in the section now
@@ -421,7 +421,7 @@ async fn deep(tasks: &[Task], hooks: &BTreeMap<String, usize>, repo: &Path, lear
 }
 
 #[derive(Parser, Debug)]
-#[command(name = "melon learn-import", about = "Teach melon from the Claude Code sessions you already ran in a repo")]
+#[command(name = "zerd learn-import", about = "Teach zerd from the Claude Code sessions you already ran in a repo")]
 struct Args {
     #[arg(long)]
     repo: PathBuf,
@@ -429,7 +429,7 @@ struct Args {
     projects: Option<PathBuf>,
     #[arg(long)]
     history: Option<PathBuf>,
-    /// write to melon's store and AGENTS.md (default: dry run)
+    /// write to zerd's store and AGENTS.md (default: dry run)
     #[arg(long)]
     apply: bool,
     /// edit history only, skip the model calls
@@ -468,7 +468,7 @@ pub async fn main(argv: Vec<String>) -> i32 {
         return 0;
     }
     if args.deep {
-        // the dry run is saved next to melon's store, so --apply writes exactly what you reviewed (no new model call)
+        // the dry run is saved next to zerd's store, so --apply writes exactly what you reviewed (no new model call)
         // and --reweigh redoes only the last, cheap step on the same candidates
         let saved_path = learned.store_path().with_extension("deep.json");
         let saved: Option<Value> = std::fs::read_to_string(&saved_path).ok().and_then(|t| serde_json::from_str(&t).ok());

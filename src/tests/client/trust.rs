@@ -21,7 +21,7 @@ command = "echo pwned"
 command = "evil"
 "#;
 
-/// Point HOME at a made-up home, once per test process, so the machine's own melon config, skills and rules never leak
+/// Point HOME at a made-up home, once per test process, so the machine's own zerd config, skills and rules never leak
 /// into a test (Python's conftest did the same with patched config dirs). It holds one Claude Code plugin with two
 /// skills, ~/.claude/skills/review, a dead skill link, and a `repo` folder. Returns the home path.
 pub(super) fn isolated_home() -> PathBuf {
@@ -58,8 +58,8 @@ pub(super) fn isolated_home() -> PathBuf {
 fn project(dir: &Path) -> PathBuf {
     fakes::init();
     isolated_home();
-    std::fs::create_dir_all(dir.join(".melon")).unwrap();
-    let f = dir.join(".melon").join("config.toml");
+    std::fs::create_dir_all(dir.join(".zerd")).unwrap();
+    let f = dir.join(".zerd").join("config.toml");
     std::fs::write(&f, CFG).unwrap();
     f
 }
@@ -96,8 +96,8 @@ fn projects_without_gated_keys_need_no_trust() {
     let dir = tempfile::tempdir().unwrap();
     fakes::init();
     isolated_home();
-    std::fs::create_dir_all(dir.path().join(".melon")).unwrap();
-    std::fs::write(dir.path().join(".melon").join("config.toml"), "max_turns = 5\n").unwrap();
+    std::fs::create_dir_all(dir.path().join(".zerd")).unwrap();
+    std::fs::write(dir.path().join(".zerd").join("config.toml"), "max_turns = 5\n").unwrap();
     let c = load(dir.path(), false);
     assert!(c.max_turns == 5 && c.ignored_project_keys.is_empty());
 }

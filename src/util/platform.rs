@@ -1,8 +1,8 @@
 //! The few places where Windows and Unix differ: which shell runs a command, how a process tree is killed,
-//! file permissions and symlinks. Everything else in melon is portable, so the `cfg` noise stays in this file.
+//! file permissions and symlinks. Everything else in zerd is portable, so the `cfg` noise stays in this file.
 use std::path::{Path, PathBuf};
 
-/// `[shell, "-c", command]` for the shell commands melon runs (tool calls, checks, hooks, project tools).
+/// `[shell, "-c", command]` for the shell commands zerd runs (tool calls, checks, hooks, project tools).
 ///
 /// Unix: bash, or plain sh on a box without it (Alpine). Windows: Git Bash, because models write bash and git is
 /// already a requirement. If Git for Windows isn't installed we fall back to PowerShell.

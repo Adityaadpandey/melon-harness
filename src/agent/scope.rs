@@ -1,5 +1,5 @@
 //! Requests that cover many places ("fix all such issues in the whole app") need a sweep, not a few lucky reads. The
-//! sweep makes melon list every place first, then close the list.
+//! sweep makes zerd list every place first, then close the list.
 use crate::util::re::{lit_i, Re};
 use std::sync::OnceLock;
 

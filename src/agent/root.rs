@@ -1,4 +1,4 @@
-//! Finding the project when melon was started one folder above it. Outside a repo the harness cannot see what changed,
+//! Finding the project when zerd was started one folder above it. Outside a repo the harness cannot see what changed,
 //! so it skips checks, review and undo.
 use crate::util::re::Re;
 use std::collections::HashMap;

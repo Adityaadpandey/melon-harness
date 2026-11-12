@@ -1,4 +1,4 @@
-//! Project trust. A repo's .melon/config.toml can define things that execute (hooks, MCP servers, verification
+//! Project trust. A repo's .zerd/config.toml can define things that execute (hooks, MCP servers, verification
 //! commands) or loosen safety. Cloning a repo must not be enough to run them, so those keys are ignored until the
 //! user trusts that exact config file.
 use crate::util::paths::resolve;

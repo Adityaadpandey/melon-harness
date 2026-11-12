@@ -1,9 +1,9 @@
-//! `melon insights`: what the trace files say about how runs actually went, so the harness is tuned from evidence
+//! `zerd insights`: what the trace files say about how runs actually went, so the harness is tuned from evidence
 //! rather than from memory of one bad session. It answers three questions per model: does it answer (failures,
 //! retries, speed, cache), does it use the tools properly (errors, malformed calls), and how often did the loop have to
 //! step in (empty replies, tool calls written as text, cut-off replies, loops).
 //!
-//! Example: `melon insights --days 14` after a week on a new local model shows "bad calls 9%" and "empty reply x12",
+//! Example: `zerd insights --days 14` after a week on a new local model shows "bad calls 9%" and "empty reply x12",
 //! which says to add a compat flag or a prompt note for it, not to blame the task.
 use serde_json::{json, Value};
 use std::collections::BTreeMap;
@@ -131,7 +131,7 @@ pub fn advice(report: &Value) -> Vec<String> {
         }
         let nudges: i64 = m["nudges"].as_object().map(|o| o.values().filter_map(Value::as_i64).sum()).unwrap_or(0);
         if nudges * 10 > n("calls") {
-            out.push(format!("{name}: the loop had to step in {nudges} times in {} calls ({}). A note for this family in src/prompts.rs (FAMILY_NOTES) or .melon/APPEND_SYSTEM.md is the usual fix.", n("calls"), m["nudges"]));
+            out.push(format!("{name}: the loop had to step in {nudges} times in {} calls ({}). A note for this family in src/prompts.rs (FAMILY_NOTES) or .zerd/APPEND_SYSTEM.md is the usual fix.", n("calls"), m["nudges"]));
         }
     }
     for t in report["tools"].as_array().into_iter().flatten() {
@@ -144,7 +144,7 @@ pub fn advice(report: &Value) -> Vec<String> {
 }
 
 pub fn render(report: &Value, days: u64) -> String {
-    let mut out = vec![format!("melon insights: {} session(s) in the last {days} day(s)", report["sessions"])];
+    let mut out = vec![format!("zerd insights: {} session(s) in the last {days} day(s)", report["sessions"])];
     if let Some(t) = report["tasks"].as_object().filter(|t| !t.is_empty()) {
         out.push(format!("\nRequests by outcome: {}", t.iter().map(|(k, v)| format!("{k} {v}")).collect::<Vec<_>>().join(", ")));
     }
@@ -181,7 +181,7 @@ pub fn load(dir: &Path, days: u64) -> Vec<Vec<Value>> {
         .collect()
 }
 
-/// `melon insights [--days N] [--json]`
+/// `zerd insights [--days N] [--json]`
 pub fn main(args: Vec<String>) -> i32 {
     let days = args.iter().position(|a| a == "--days").and_then(|i| args.get(i + 1)).and_then(|d| d.parse().ok()).unwrap_or(7);
     let report = summarize(&load(&crate::config::loader::get_data_dir().join("traces"), days));

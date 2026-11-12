@@ -61,7 +61,7 @@ fn restore(flags: bool) {
 
 pub fn wanted() -> bool {
     use std::io::IsTerminal;
-    std::io::stdout().is_terminal() && std::io::stdin().is_terminal() && std::env::var_os("MELON_PLAIN").is_none()
+    std::io::stdout().is_terminal() && std::io::stdin().is_terminal() && std::env::var_os("ZERD_PLAIN").is_none()
 }
 
 pub fn start(tui: Arc<Tui>, title: Arc<dyn Fn() -> String + Send + Sync>, footer: Arc<dyn Fn() -> String + Send + Sync>, comp: Arc<Completions>, history: Option<PathBuf>) -> Result<Arc<Fs>, String> {

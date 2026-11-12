@@ -38,7 +38,7 @@ fn only_the_changed_files_are_checked_never_a_build_or_the_whole_suite() {
 
 #[test]
 fn nothing_for_files_with_no_cheap_check() {
-    // a Swift app's Tests/ folder is tests/ on macOS: it once made melon run pytest on Swift and call "no tests ran" a failure
+    // a Swift app's Tests/ folder is tests/ on macOS: it once made zerd run pytest on Swift and call "no tests ran" a failure
     let d = tempfile::tempdir().unwrap();
     let p = d.path();
     touch(p, "Tests/check.swift", "x");

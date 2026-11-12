@@ -1,10 +1,10 @@
-//! Project tools without Python: every `.melon/tools/*.toml` (in the repo and in the config dir) becomes a tool whose
-//! implementation is a shell command. The arguments reach it as JSON on stdin and as MELON_ARG_<NAME> variables.
+//! Project tools without Python: every `.zerd/tools/*.toml` (in the repo and in the config dir) becomes a tool whose
+//! implementation is a shell command. The arguments reach it as JSON on stdin and as ZERD_ARG_<NAME> variables.
 //!
-//!     # .melon/tools/lint_sql.toml
+//!     # .zerd/tools/lint_sql.toml
 //!     name = "lint_sql"
 //!     description = "Lint a SQL file with sqlfluff"
-//!     command = "sqlfluff lint \"$MELON_ARG_PATH\""
+//!     command = "sqlfluff lint \"$ZERD_ARG_PATH\""
 //!     kind = "read"            # read (default, runs unasked) or shell (asks like any command)
 //!     [parameters.path]
 //!     type = "string"
@@ -50,7 +50,7 @@ impl Tool for ScriptTool {
         cmd.args(&argv[1..]).current_dir(&inv.cwd).stdin(std::process::Stdio::piped()).stdout(std::process::Stdio::piped()).stderr(std::process::Stdio::piped()).kill_on_drop(true);
         for (k, v) in inv.params.as_object().into_iter().flatten() {
             let text = v.as_str().map(String::from).unwrap_or_else(|| v.to_string());
-            cmd.env(format!("MELON_ARG_{}", k.to_uppercase()), text);
+            cmd.env(format!("ZERD_ARG_{}", k.to_uppercase()), text);
         }
         let Ok(mut child) = crate::util::detach::detach(&mut cmd).spawn() else { return ToolResult::error(format!("could not start: {}", self.command)) };
         if let Some(mut stdin) = child.stdin.take() {
@@ -89,7 +89,7 @@ fn load(file: &Path) -> Option<Arc<dyn Tool>> {
     }))
 }
 
-/// Tools from `<dir>/.melon/tools/*.toml` (or `<dir>/tools/*.toml` for the config dir).
+/// Tools from `<dir>/.zerd/tools/*.toml` (or `<dir>/tools/*.toml` for the config dir).
 pub fn discover(dir: &Path) -> Vec<Arc<dyn Tool>> {
     let mut files: Vec<_> = std::fs::read_dir(dir).map(|rd| rd.flatten().map(|e| e.path()).filter(|p| p.extension().map_or(false, |x| x == "toml")).collect()).unwrap_or_default();
     files.sort();
@@ -103,7 +103,7 @@ mod tests {
     #[test]
     fn loads_a_script_tool() {
         let d = tempfile::tempdir().unwrap();
-        std::fs::write(d.path().join("t.toml"), "name='hi'\ncommand='echo $MELON_ARG_WHO'\n[parameters.who]\ntype='string'\nrequired=true\n").unwrap();
+        std::fs::write(d.path().join("t.toml"), "name='hi'\ncommand='echo $ZERD_ARG_WHO'\n[parameters.who]\ntype='string'\nrequired=true\n").unwrap();
         let tools = discover(d.path());
         assert_eq!(tools[0].name(), "hi");
         let r = tokio::runtime::Runtime::new().unwrap().block_on(tools[0].execute(&ToolInvocation { params: json!({"who": "mel"}), cwd: d.path().into(), epoch: 0, call_id: String::new(), progress: None }));

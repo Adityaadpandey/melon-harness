@@ -5,7 +5,7 @@ use tokio::process::Command;
 /// Unix: a new session (setsid). ssh and git ask for passphrases by opening /dev/tty directly, so a null stdin doesn't
 /// stop them; without a controlling tty they fail straight away instead of drawing "Enter passphrase for key ..." over
 /// the TUI. The child still leads its own group, so `platform::kill_tree(pid)` keeps working.
-/// Windows: no console window flashes up per command, and Ctrl+C aimed at melon doesn't hit the child.
+/// Windows: no console window flashes up per command, and Ctrl+C aimed at zerd doesn't hit the child.
 pub fn detach(cmd: &mut Command) -> &mut Command {
     #[cfg(unix)]
     {

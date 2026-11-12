@@ -71,8 +71,8 @@ fn sections_extracted_by_heading_not_fenced_text() {
 async fn use_skill_tool() {
     let dir = tempfile::tempdir().unwrap();
     let d = dir.path();
-    std::fs::create_dir_all(d.join(".melon/skills")).unwrap();
-    std::fs::write(d.join(".melon/skills/dbg.md"), SKILL).unwrap();
+    std::fs::create_dir_all(d.join(".zerd/skills")).unwrap();
+    std::fs::write(d.join(".zerd/skills/dbg.md"), SKILL).unwrap();
     std::fs::create_dir_all(d.join("docs")).unwrap();
     std::fs::write(d.join("docs/dbg.md"), DOC).unwrap();
     let a = scripted(cfg(d), vec![]).await;
@@ -87,8 +87,8 @@ async fn use_skill_tool() {
 #[tokio::test]
 async fn matching_playbook_is_attached_to_the_request() {
     let dir = tempfile::tempdir().unwrap();
-    std::fs::create_dir_all(dir.path().join(".melon/skills")).unwrap();
-    std::fs::write(dir.path().join(".melon/skills/dbg.md"), SKILL).unwrap();
+    std::fs::create_dir_all(dir.path().join(".zerd/skills")).unwrap();
+    std::fs::write(dir.path().join(".zerd/skills/dbg.md"), SKILL).unwrap();
     let mut a = scripted(cfg(dir.path()), vec![text("ok")]).await;
     let evs = run(&mut a, "there is a bug in checkout").await;
     assert!(evs.iter().any(|e| matches!(e, AgentEvent::Notice(m) if m.contains("Loaded playbooks:") && m.contains("dbg"))));
@@ -203,7 +203,7 @@ fn builtin_skills_load_with_the_right_always_on_core_and_profile_overrides() {
     // the always-on core stays cheap. Python counted with tiktoken (limit 1100); the 4-bytes-a-token estimate runs about
     // 7% higher on this text, so the limit here is 1300.
     assert!(sk.iter().filter(|s| s.always).map(|s| estimate_tokens(&s.body)).sum::<usize>() < 1300);
-    // melon's own skills all carry triggers (the fake home's Claude Code skills are listed only, so they have none)
+    // zerd's own skills all carry triggers (the fake home's Claude Code skills are listed only, so they have none)
     let home = isolated_home();
     assert!(sk.iter().filter(|s| !s.always && !s.path.as_ref().unwrap().starts_with(&home)).all(|s| !s.triggers.is_empty()));
     let mut with_profile = cfg(dir.path());
@@ -252,8 +252,8 @@ fn a_repos_own_claude_skill_loads_and_a_quoted_phrase_in_its_description_trigger
 async fn a_playbook_is_pasted_once_then_named() {
     // Python swapped match_skills for "everything matches"; here a skill whose trigger is in both requests does the same.
     let dir = tempfile::tempdir().unwrap();
-    std::fs::create_dir_all(dir.path().join(".melon/skills")).unwrap();
-    std::fs::write(dir.path().join(".melon/skills/zq-playbook.md"), "---\nname: zq-playbook\ndescription: test\ntriggers: zqreview\n---\nPLAYBOOK BODY\n").unwrap();
+    std::fs::create_dir_all(dir.path().join(".zerd/skills")).unwrap();
+    std::fs::write(dir.path().join(".zerd/skills/zq-playbook.md"), "---\nname: zq-playbook\ndescription: test\ntriggers: zqreview\n---\nPLAYBOOK BODY\n").unwrap();
     let mut a = scripted(cfg(dir.path()), vec![]).await;
     for ask in ["zqreview this", "zqreview again"] {
         *a.session.client.script.lock().unwrap() = Some(vec![text("ok")].into());

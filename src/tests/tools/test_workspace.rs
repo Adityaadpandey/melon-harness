@@ -157,13 +157,13 @@ fn os_sandbox_blocks_writes_outside_and_secret_reads_even_when_text_checks_are_b
     assert!(sandboxed("echo ok > inside.txt", &c, &ws).status.success() && ws.join("inside.txt").exists());
     let user = std::env::var("USER").unwrap_or_default();
     let real_home = PathBuf::from(std::env::var("HOME").unwrap());
-    let victim = real_home.join(format!("melon_sandbox_probe_{}.txt", std::process::id()));
+    let victim = real_home.join(format!("zerd_sandbox_probe_{}.txt", std::process::id()));
     // built dynamically so no static check could see it; the real home is never writable from the sandbox
-    let r = sandboxed(&format!("h=$(eval echo ~{user}); echo x > \"$h/melon_sandbox_probe_{}.txt\"", std::process::id()), &c, &ws);
+    let r = sandboxed(&format!("h=$(eval echo ~{user}); echo x > \"$h/zerd_sandbox_probe_{}.txt\"", std::process::id()), &c, &ws);
     assert!(!r.status.success() && !victim.exists());
     let _ = fs::remove_file(&victim);
     assert!(!sandboxed(&format!("ls {}/.ssh", real_home.display()), &c, &ws).status.success());
-    assert!(sandboxed("echo t > /tmp/melon_sandbox_probe && rm /tmp/melon_sandbox_probe", &c, &ws).status.success());
+    assert!(sandboxed("echo t > /tmp/zerd_sandbox_probe && rm /tmp/zerd_sandbox_probe", &c, &ws).status.success());
     assert!(sandboxed("python3 -c 'print(1)' && git --version", &c, &ws).status.success());
 }
 
@@ -275,7 +275,7 @@ fn a_commit_message_is_prose_not_a_path() {
     let e = fake_home();
     let w = Workspace::new(&e.ws, &[]);
     assert_eq!(w.shell_violation("git commit -m 'Add rules from ~ and /Users/x/notes'", None), None);
-    assert_eq!(w.shell_violation("git commit --message=\"read ~/.melon first\"", None), None);
+    assert_eq!(w.shell_violation("git commit --message=\"read ~/.zerd first\"", None), None);
     // a real path after the message still counts
     assert!(w.shell_violation("git commit -m 'x' && cat /etc/hosts", None).is_some());
 }

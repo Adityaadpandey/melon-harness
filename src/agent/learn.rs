@@ -1,4 +1,4 @@
-//! What melon learns about a repo between sessions, kept outside the repo (data dir). Only things that cannot be
+//! What zerd learns about a repo between sessions, kept outside the repo (data dir). Only things that cannot be
 //! hallucinated go in: lessons (what YOU told it) and edit history (request words -> the files a verified run changed).
 //! Nothing the model merely claims is stored.
 use crate::client::llm_client::LLMClient;
@@ -18,7 +18,7 @@ const MAX_EDITS: usize = 200;
 const PROMPT_CHARS: usize = 1500;
 /// Share of the search query's words a past request must have in common.
 const MIN_OVERLAP: f64 = 0.5;
-pub const HEADING: &str = "## Learned by melon";
+pub const HEADING: &str = "## Learned by zerd";
 const JUDGE_PROMPT: &str = "You watch a coding agent work with its user. Decide whether the user's NEW message teaches the agent something worth remembering for this repo.
 
 Worth keeping:
@@ -104,7 +104,7 @@ impl Learned {
         true
     }
 
-    /// Also write the lesson into the repo's AGENTS.md under '## Learned by melon', so the team gets it too and the next
+    /// Also write the lesson into the repo's AGENTS.md under '## Learned by zerd', so the team gets it too and the next
     /// session reads it as an ordinary instruction. False when the file can't be written.
     fn to_agents_md(&self, text: &str) -> bool {
         let f = self.root.join("AGENTS.md");

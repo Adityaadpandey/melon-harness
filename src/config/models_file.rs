@@ -1,4 +1,4 @@
-//! First time melon opens a repo, write `.melon/config.toml` listing which model does which job, so changing one is
+//! First time zerd opens a repo, write `.zerd/config.toml` listing which model does which job, so changing one is
 //! "uncomment a line" instead of digging through docs. Every line starts commented out, so the file changes nothing until
 //! the developer edits it; an existing config file is never touched.
 //!
@@ -28,7 +28,7 @@ pub fn text(cfg: &Config) -> String {
         c.routing.insert("challenge".into(), vec![crate::agent::challenge::CHALLENGER.into()]);
     }
     let mut s = String::from(
-        "# Which model melon uses for which job in this repo.\n\
+        "# Which model zerd uses for which job in this repo.\n\
          # Every line is commented out, so nothing here changes anything yet.\n\
          # To change one: delete the leading \"# \" on the line (and on the [model] / [routing] header above it).\n\
          # A list is tried left to right: the first model works, the others are fallbacks if it fails.\n\n",
@@ -40,13 +40,13 @@ pub fn text(cfg: &Config) -> String {
     s += &role_line(&c, "summarize", "uses the fast model", "shrinks old conversation when the context fills up");
     s += &role_line(&c, "review", "another model than the main one is preferred", "independent review of the changes");
     s += &role_line(&c, "advisor", "off", "second opinion on a plan before big edits");
-    s += &role_line(&c, "challenge", "off", "argues against risky plans before melon acts");
+    s += &role_line(&c, "challenge", "off", "argues against risky plans before zerd acts");
     s
 }
 
-/// Writes the file if the repo is a git repo with no `.melon/config.toml` yet. Returns the path when it wrote one.
+/// Writes the file if the repo is a git repo with no `.zerd/config.toml` yet. Returns the path when it wrote one.
 pub fn write_if_new(cfg: &Config) -> Option<PathBuf> {
-    let f = cfg.cwd.join(".melon/config.toml");
+    let f = cfg.cwd.join(".zerd/config.toml");
     if f.exists() || !cfg.cwd.join(".git").exists() {
         return None;
     }

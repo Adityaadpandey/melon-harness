@@ -1,7 +1,7 @@
-//! What the developer told melon about their repo, kept in `.melon/graph.toml` so it can be committed and shared:
+//! What the developer told zerd about their repo, kept in `.zerd/graph.toml` so it can be committed and shared:
 //! which folders to leave out of the graph, which ones to keep even though they look dead, and what each area is for.
 //! Most repos are not tidy (generated code, old experiments, fixtures next to real code), and a graph full of that gives
-//! wrong callers. So melon drops the obvious noise by itself and asks about the rest.
+//! wrong callers. So zerd drops the obvious noise by itself and asks about the rest.
 //!
 //!     ignore  = ["examples/", "legacy/", "*.stories.tsx"]   # a folder (trailing /) or a glob
 //!     keep    = ["src/plugins/"]                            # looks unused, is loaded by name: stop asking
@@ -21,7 +21,7 @@ pub struct GraphCfg {
     pub ignore: Vec<String>,
     pub keep: Vec<String>,
     pub areas: BTreeMap<String, String>,
-    /// What melon learned about one symbol, kept next to the code it is about: "src/pay.ts::charge" -> the note.
+    /// What zerd learned about one symbol, kept next to the code it is about: "src/pay.ts::charge" -> the note.
     pub notes: BTreeMap<String, SymNote>,
 }
 
@@ -39,7 +39,7 @@ fn stamp(body: &str) -> String {
 }
 
 fn file(cwd: &Path) -> std::path::PathBuf {
-    cwd.join(".melon/graph.toml")
+    cwd.join(".zerd/graph.toml")
 }
 
 pub fn load(cwd: &Path) -> GraphCfg {
@@ -150,7 +150,7 @@ pub fn interview(cwd: &Path, input: &mut dyn BufRead, out: &mut dyn Write) -> us
     let mut cfg = load(cwd);
     let qs = questions(cwd, &cfg, 10);
     if qs.is_empty() {
-        let _ = writeln!(out, "Nothing left to ask: the graph already reflects what's in .melon/graph.toml.");
+        let _ = writeln!(out, "Nothing left to ask: the graph already reflects what's in .zerd/graph.toml.");
         return 0;
     }
     let _ = writeln!(out, "A few questions so the code graph is clean. Enter takes the default in [brackets]; q stops.\n");
@@ -185,15 +185,15 @@ pub fn interview(cwd: &Path, input: &mut dyn BufRead, out: &mut dyn Write) -> us
         let _ = save(cwd, &cfg); // after every answer, so ^C loses nothing
     }
     let _ = save(cwd, &cfg); // even with no answers: the file marks the repo as asked, so it isn't asked on every start
-    let _ = writeln!(out, "\nSaved to .melon/graph.toml ({} left out, {} area notes). Commit it to share with your team.", cfg.ignore.len(), cfg.areas.len());
+    let _ = writeln!(out, "\nSaved to .zerd/graph.toml ({} left out, {} area notes). Commit it to share with your team.", cfg.ignore.len(), cfg.areas.len());
     answered
 }
 
-/// First time melon opens a repo: the graph is already building in the background, so use the wait to ask.
+/// First time zerd opens a repo: the graph is already building in the background, so use the wait to ask.
 pub fn first_run(cwd: &Path) {
     use crate::ui::style::{paint, MUTED};
     let started = std::time::Instant::now();
-    println!("{}", paint("While it indexes, a few quick questions keep the graph clean (q skips; `melon graph` asks again any time).\n", MUTED));
+    println!("{}", paint("While it indexes, a few quick questions keep the graph clean (q skips; `zerd graph` asks again any time).\n", MUTED));
     interview(cwd, &mut std::io::stdin().lock(), &mut std::io::stdout());
     let g = symgraph::load(cwd); // waits for the indexer if it is still running
     let syms: usize = g.files.values().map(|f| f.defs.len()).sum();

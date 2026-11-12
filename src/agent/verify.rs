@@ -408,7 +408,7 @@ pub async fn backup(cwd: &Path) -> Option<String> {
         sha = if code == 0 { String::from_utf8_lossy(&out).trim().to_string() } else { String::new() };
     }
     if !sha.is_empty() {
-        git(cwd, &["update-ref", "refs/melon/backup", &sha]).await; // keep the objects from being garbage collected while the user may still undo
+        git(cwd, &["update-ref", "refs/zerd/backup", &sha]).await; // keep the objects from being garbage collected while the user may still undo
         return Some(sha);
     }
     None

@@ -862,7 +862,7 @@ pub async fn ask(config: &Config, prompt: &str, role: &str, max_turns: usize, ma
             spent_log().lock().unwrap().push(tokens);
             return answer;
         }
-        // an empty answer (not logged in, timeout) falls through to a melon reviewer instead of losing the review
+        // an empty answer (not logged in, timeout) falls through to a zerd reviewer instead of losing the review
     }
     let mut cfg = config.clone();
     cfg.model_role = role.into();

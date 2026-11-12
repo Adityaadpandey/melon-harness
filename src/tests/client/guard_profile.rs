@@ -118,8 +118,8 @@ fn tunyt_profile_is_selected_by_path_and_project_config_wins() {
     isolated_home();
     let dir = tempfile::tempdir().unwrap();
     let root = dir.path().join("tunyt").join("apps").join("server");
-    std::fs::create_dir_all(root.join(".melon")).unwrap();
-    std::fs::write(root.join(".melon").join("config.toml"), "max_turns = 7\n").unwrap();
+    std::fs::create_dir_all(root.join(".zerd")).unwrap();
+    std::fs::write(root.join(".zerd").join("config.toml"), "max_turns = 7\n").unwrap();
     let opts = || LoadOptions { trust_project: false, pi_mode: None };
     let c = load_config(Some(&root), &opts()).unwrap();
     assert_eq!(c.profile.as_deref(), Some("tunyt"));

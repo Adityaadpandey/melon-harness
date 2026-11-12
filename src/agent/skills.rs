@@ -38,9 +38,9 @@ impl Skill {
     }
 }
 
-/// Skill folders shared with other agents, as (below melon's built-ins, above them). Claude Code's (plugins, then
-/// ~/.claude/skills) rank below, so melon's compact always-on ponytail beats the plugin's longer one; pi's folder ranks
-/// above, and ~/.melon/skills (the user's own pick for melon) ranks above all.
+/// Skill folders shared with other agents, as (below zerd's built-ins, above them). Claude Code's (plugins, then
+/// ~/.claude/skills) rank below, so zerd's compact always-on ponytail beats the plugin's longer one; pi's folder ranks
+/// above, and ~/.zerd/skills (the user's own pick for zerd) ranks above all.
 fn user_dirs() -> (Vec<PathBuf>, Vec<PathBuf>) {
     let home = crate::util::platform::home_dir().unwrap_or_default();
     let mut below = vec![];
@@ -54,7 +54,7 @@ fn user_dirs() -> (Vec<PathBuf>, Vec<PathBuf>) {
         }
     }
     below.push(home.join(".claude/skills"));
-    (below, vec![home.join(".pi/agent/skills"), home.join(".melon/skills")])
+    (below, vec![home.join(".pi/agent/skills"), home.join(".zerd/skills")])
 }
 
 pub fn parse_skill(text: &str, path: Option<&Path>) -> Option<Skill> {
@@ -101,7 +101,7 @@ fn load_uncached(profile: Option<&str>, cwd: &str, skill_dirs: &[String]) -> Vec
         dirs.push(home_dir().join("profiles").join(p).join("skills"));
     }
     let root = Path::new(cwd);
-    dirs.extend([root.join(".claude/skills"), root.join(".melon/skills")]);
+    dirs.extend([root.join(".claude/skills"), root.join(".zerd/skills")]);
     dirs.extend(skill_dirs.iter().map(|d| root.join(d)));
     let mut found: Vec<Skill> = vec![];
     let quoted = lit(r#""([^"]{4,40})""#);

@@ -1,4 +1,4 @@
-//! Melon's own symbol graph: what is defined where, and who calls whom, read straight from the working tree with
+//! Zerd's own symbol graph: what is defined where, and who calls whom, read straight from the working tree with
 //! tree-sitter. No snapshot to go stale and no external tool. Each file is parsed once and re-parsed only when its
 //! size or mtime changes, so asking again after an edit costs one file, not the repo.
 //!

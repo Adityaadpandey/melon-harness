@@ -641,7 +641,7 @@ impl CodexResponsesAdapter {
 impl Adapter for CodexResponsesAdapter {
     fn stream(&self, req: StreamReq) -> EventStream<'_> {
         Box::pin(async_stream::try_stream! {
-            // the "codex/" prefix only routes inside melon; the backend wants the bare name
+            // the "codex/" prefix only routes inside zerd; the backend wants the bare name
             let (instructions, items) = to_responses_input(&req.messages);
             let mut body = json!({
                 "model": req.model.strip_prefix("codex/").unwrap_or(&req.model), "instructions": instructions, "input": items,

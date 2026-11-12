@@ -1,5 +1,5 @@
 //! Probe which models the current API key can actually call. Sends a tiny request to each model on its supported
-//! endpoint and prints status + latency. `melon probe-models [--json out.json]`
+//! endpoint and prints status + latency. `zerd probe-models [--json out.json]`
 use serde_json::{json, Value};
 use std::sync::Arc;
 use std::time::{Duration, Instant};

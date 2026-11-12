@@ -1,4 +1,4 @@
-//! System-prompt construction for Melon, a repository-aware terminal coding agent. Every model call pays for this
+//! System-prompt construction for Zerd, a repository-aware terminal coding agent. Every model call pays for this
 //! prompt, so it stays short: stable rules only, with task-specific detail left to tool schemas and skills.
 use crate::agent::skills::Skill;
 use crate::config::Config;
@@ -19,7 +19,7 @@ const OPEN_MODEL_NOTES: &[&str] = &[
     "When you have enough to act, act: do not re-derive what is already established in the conversation, re-read a file you just edited to check it (the edit result says what changed and reports new errors), or narrate options you will not pursue.",
 ];
 
-/// How melon carries a task through, for every model: build instead of proposing, decide routine things alone, work in
+/// How zerd carries a task through, for every model: build instead of proposing, decide routine things alone, work in
 /// tested slices, and end with a report of what really ran. Both prompts (the full one and the pi one) include these.
 const EXECUTION: &[&str] = &[
     "A plan is not the deliverable unless the user asked for one: investigate, decide, then build and verify it in the same turn.",
@@ -47,12 +47,12 @@ pub fn model_notes(model: &str) -> Vec<String> {
     notes
 }
 
-/// The prompt, with the user's own files laid over it. `SYSTEM.md` replaces melon's prompt and `APPEND_SYSTEM.md` is
-/// added after it; both are looked up in `~/.melon/` and then the repo's `.melon/` (the repo's SYSTEM.md wins, both
+/// The prompt, with the user's own files laid over it. `SYSTEM.md` replaces zerd's prompt and `APPEND_SYSTEM.md` is
+/// added after it; both are looked up in `~/.zerd/` and then the repo's `.zerd/` (the repo's SYSTEM.md wins, both
 /// appends apply). Handy for trying a different prompt on one model without rebuilding:
-/// `echo "Answer in Hindi." > .melon/APPEND_SYSTEM.md`.
+/// `echo "Answer in Hindi." > .zerd/APPEND_SYSTEM.md`.
 pub fn get_system_prompt(config: &Config, user_memory: Option<&str>, tools: &[Arc<dyn Tool>], skills: &[Skill]) -> String {
-    let dirs = [crate::util::platform::home_dir().unwrap_or_default().join(".melon"), config.cwd.join(".melon")];
+    let dirs = [crate::util::platform::home_dir().unwrap_or_default().join(".zerd"), config.cwd.join(".zerd")];
     let file = |name: &str| dirs.iter().filter_map(|d| std::fs::read_to_string(d.join(name)).ok()).map(|t| t.trim().to_string()).filter(|t| !t.is_empty()).collect::<Vec<_>>();
     let mut parts = vec![file("SYSTEM.md").pop().unwrap_or_else(|| built_prompt(config, user_memory, tools, skills))];
     parts.extend(file("APPEND_SYSTEM.md"));
@@ -101,7 +101,7 @@ fn built_prompt(config: &Config, user_memory: Option<&str>, tools: &[Arc<dyn Too
 }
 
 fn identity_section() -> String {
-    "You are **Melon**, a terminal coding agent working with the user inside their repository. Act like a senior engineer who owns the outcome: inspect the real code, make the smallest complete change, verify it, and say plainly what worked and what did not. When the task is clear, act. If it is not, read the repo first and ask the user only what the repo cannot answer".into()
+    "You are **Zerd**, a terminal coding agent working with the user inside their repository. Act like a senior engineer who owns the outcome: inspect the real code, make the smallest complete change, verify it, and say plainly what worked and what did not. When the task is clear, act. If it is not, read the repo first and ask the user only what the repo cannot answer".into()
 }
 
 fn harness_section() -> String {
@@ -214,7 +214,7 @@ Keep going until it is implemented and verified as far as the environment allows
 
 /// A structured handoff prompt for continuing after context compaction.
 pub fn get_compression_prompt() -> String {
-    r#"Create a precise continuation brief for a new Melon session. The next session may not have access to this conversation, so preserve the information needed to continue safely without repeating completed work.
+    r#"Create a precise continuation brief for a new Zerd session. The next session may not have access to this conversation, so preserve the information needed to continue safely without repeating completed work.
 
 Use exactly these headings:
 
@@ -377,7 +377,7 @@ fn pi_prompt(config: &Config, tools: &[Arc<dyn Tool>], skills: &[Skill]) -> Stri
     g.extend(EXECUTION.iter().map(|s| s.to_string()));
     g.extend(model_notes(config.model_name()));
     let mut prompt = format!(
-        "You are an expert coding assistant operating inside melon, a coding agent harness. You help users by reading files, executing commands, editing code, and writing new files.\n\nAvailable tools:\n{listing}\n\nIn addition to the tools above, you may have access to other custom tools depending on the project.\n\nGuidelines:\n{}",
+        "You are an expert coding assistant operating inside zerd, a coding agent harness. You help users by reading files, executing commands, editing code, and writing new files.\n\nAvailable tools:\n{listing}\n\nIn addition to the tools above, you may have access to other custom tools depending on the project.\n\nGuidelines:\n{}",
         g.iter().map(|x| format!("- {x}")).collect::<Vec<_>>().join("\n")
     );
     let context: Vec<&String> = [&config.developer_instructions, &config.user_instructions].into_iter().flatten().collect();
@@ -412,12 +412,12 @@ mod tests {
     #[test]
     fn the_users_prompt_files_replace_and_extend_ours() {
         let dir = tempfile::tempdir().unwrap();
-        std::fs::create_dir_all(dir.path().join(".melon")).unwrap();
+        std::fs::create_dir_all(dir.path().join(".zerd")).unwrap();
         let cfg = Config { cwd: dir.path().to_path_buf(), ..Default::default() };
-        std::fs::write(dir.path().join(".melon/APPEND_SYSTEM.md"), "Answer in Hindi.").unwrap();
+        std::fs::write(dir.path().join(".zerd/APPEND_SYSTEM.md"), "Answer in Hindi.").unwrap();
         let p = get_system_prompt(&cfg, None, &[], &[]);
-        assert!(p.contains("melon") && p.ends_with("Answer in Hindi."));
-        std::fs::write(dir.path().join(".melon/SYSTEM.md"), "You are a pirate.").unwrap();
+        assert!(p.contains("zerd") && p.ends_with("Answer in Hindi."));
+        std::fs::write(dir.path().join(".zerd/SYSTEM.md"), "You are a pirate.").unwrap();
         assert_eq!(get_system_prompt(&cfg, None, &[], &[]), "You are a pirate.\n\nAnswer in Hindi.");
     }
 
