@@ -75,14 +75,16 @@ fn notice(tx: &Tx, m: impl Into<String>) {
 
 /// Pass a model stream through, but give up when the request's time budget is gone: a stalled connection must not
 /// outlive the budget (retries and fallbacks each wait for their own read timeout).
+const OUT_OF_TIME: &str = "Time budget exhausted while waiting for the model";
+
 pub(crate) async fn next_within(deadline: Instant, s: &mut futures::stream::BoxStream<'static, StreamEvent>) -> Option<StreamEvent> {
     let left = deadline.saturating_duration_since(Instant::now());
     if left.is_zero() {
-        return Some(StreamEvent::Error("Time budget exhausted while waiting for the model".into()));
+        return Some(StreamEvent::Error(OUT_OF_TIME.into()));
     }
     match tokio::time::timeout(left, s.next()).await {
         Ok(ev) => ev,
-        Err(_) => Some(StreamEvent::Error("Time budget exhausted while waiting for the model".into())),
+        Err(_) => Some(StreamEvent::Error(OUT_OF_TIME.into())),
     }
 }
 
@@ -1021,6 +1023,10 @@ impl Agent {
                 self.fix_nudged = true;
                 self.add_user(&format!("{} rounds in and nothing is changed yet. If you have a verified finding, name your root cause in one line and make the smallest fix for it (ask first only if it adds or restyles something the user will see; a guard, a prop or a handler change needs no asking). Do not add new files or components just to have a change. If you have no cause, say what you traced and why it holds.", self.calls_used));
             }
+            // what sub-agents and parallel workers spent is part of this request's bill
+            if let Some(u) = crate::tools::subagents::take_usage(self.config.key()) {
+                self.session.context_manager.lock().unwrap().add_usage(&u);
+            }
             let used = self.spent() - self.usage_base;
             let budget = cfg.max_total_tokens;
             if used > budget {
@@ -1035,10 +1041,6 @@ impl Agent {
                 let state = if job.returncode() == Some(0) { "finished".to_string() } else { format!("failed (exit {})", job.returncode().unwrap_or(-1)) };
                 notice(&tx, format!("Background job {} {state} in {:.0}s: {}", job.id, job.started.elapsed().as_secs_f64(), job.command));
                 self.add_user(&format!("[background job {} `{}` {state}; last output:]\n{}", job.id, job.command, job.tail(15)));
-            }
-            for (id, name, report) in crate::tools::subagents::finished(self.config.key()) {
-                notice(&tx, format!("Background sub-agent {name} finished"));
-                self.add_user(&format!("[background sub-agent '{name}' ({id}) finished; check its report like any evidence before relying on it:]\n{report}"));
             }
             for (id, name, report) in crate::tools::subagents::finished(self.config.key()) {
                 notice(&tx, format!("Background sub-agent {name} finished"));
@@ -1119,6 +1121,13 @@ impl Agent {
                         if overflow().is_match(&err) && !not_overflow().is_match(&err) && !self.overflow_retried {
                             overflowed = true; // the provider says the prompt is too big: compact and ask again, once
                             break;
+                        }
+                        if err.starts_with(OUT_OF_TIME) {
+                            // the clock ran out in the middle of a model call. What was read so far is still in context,
+                            // so turn it into an answer, the same as when the clock runs out between calls
+                            drop(stream);
+                            self.wrap_up(task, &tx, &format!("Time budget reached ({:.0}s)", cfg.max_seconds), "The time budget is spent").await;
+                            return;
                         }
                         failed = true;
                         self.failed = true;
@@ -1212,13 +1221,6 @@ impl Agent {
                     self.sweep_pushed += 1;
                     self.nudged("stopped_early");
                     self.add_user(&format!("{} step(s) on your list are still open: {}. Finish them (fix, or mark done with a one-line reason it is fine) before you answer.", left.len(), left.iter().take(6).cloned().collect::<Vec<_>>().join("; ")));
-                    continue;
-                }
-                let waiting = crate::tools::subagents::pending(self.config.key());
-                if waiting > 0 {
-                    // the model has nothing more to do itself, but work it started is still out: its reports are part of the answer
-                    notice(&tx, format!("Waiting for {waiting} background sub-agent(s)"));
-                    crate::tools::subagents::wait_for_report(self.config.key()).await;
                     continue;
                 }
                 let waiting = crate::tools::subagents::pending(self.config.key());
@@ -1370,7 +1372,9 @@ impl Agent {
         let mut text = String::new();
         let messages = self.session.context_manager.lock().unwrap().get_messages();
         let mut s = self.session.client.chat_completion(messages, None, true, &self.role(task));
-        while let Some(ev) = s.next().await {
+        // the budget is already spent when this runs, so nothing else would stop a model that has gone silent:
+        // a minute without a single event ends it with whatever text arrived
+        while let Ok(Some(ev)) = tokio::time::timeout(Duration::from_secs(60), s.next()).await {
             match ev {
                 StreamEvent::TextDelta(c) => {
                     text.push_str(&c);
