@@ -1513,57 +1513,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "melon"
-version = "0.1.1"
-dependencies = [
- "anyhow",
- "async-stream",
- "async-trait",
- "base64 0.23.1",
- "chrono",
- "clap",
- "crossterm",
- "dirs",
- "fancy-regex 0.20.0",
- "futures",
- "futures-util",
- "globset",
- "hex",
- "libc",
- "rand 0.10.3",
- "ratatui",
- "regex",
- "reqwest",
- "rustyline",
- "serde",
- "serde_json",
- "sha1",
- "sha2 0.11.1",
- "shell-words",
- "similar",
- "tempfile",
- "textwrap",
- "tokio",
- "tokio-util",
- "toml",
- "tree-sitter",
- "tree-sitter-c-sharp",
- "tree-sitter-go",
- "tree-sitter-java",
- "tree-sitter-javascript",
- "tree-sitter-php",
- "tree-sitter-python",
- "tree-sitter-ruby",
- "tree-sitter-rust",
- "tree-sitter-typescript",
- "unicode-normalization",
- "unicode-width",
- "uuid",
- "walkdir",
- "which",
-]
-
-[[package]]
 name = "memchr"
 version = "2.8.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3753,6 +3702,57 @@ dependencies = [
  "quote",
  "syn 3.0.9",
  "synstructure",
+]
+
+[[package]]
+name = "zerd"
+version = "0.1.1"
+dependencies = [
+ "anyhow",
+ "async-stream",
+ "async-trait",
+ "base64 0.23.1",
+ "chrono",
+ "clap",
+ "crossterm",
+ "dirs",
+ "fancy-regex 0.20.0",
+ "futures",
+ "futures-util",
+ "globset",
+ "hex",
+ "libc",
+ "rand 0.10.3",
+ "ratatui",
+ "regex",
+ "reqwest",
+ "rustyline",
+ "serde",
+ "serde_json",
+ "sha1",
+ "sha2 0.11.1",
+ "shell-words",
+ "similar",
+ "tempfile",
+ "textwrap",
+ "tokio",
+ "tokio-util",
+ "toml",
+ "tree-sitter",
+ "tree-sitter-c-sharp",
+ "tree-sitter-go",
+ "tree-sitter-java",
+ "tree-sitter-javascript",
+ "tree-sitter-php",
+ "tree-sitter-python",
+ "tree-sitter-ruby",
+ "tree-sitter-rust",
+ "tree-sitter-typescript",
+ "unicode-normalization",
+ "unicode-width",
+ "uuid",
+ "walkdir",
+ "which",
 ]
 
 [[package]]
