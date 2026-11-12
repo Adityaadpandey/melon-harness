@@ -1,6 +1,7 @@
 import Link from "next/link";
 import Image from "next/image";
 import { latestRelease } from "@/lib/latest";
+import { JsonLd } from "@/lib/jsonld";
 import { CloudLayer, type Placed } from "./clouds";
 import CopyCmd from "./copy-cmd";
 import Hero from "./hero";
@@ -34,6 +35,15 @@ const rows: Row[] = [
     "When checks pass but the diff drops a parameter, reorders positional ones or removes an export, the agent is sent back once to keep old calls working or say why not."],
 ];
 
+// Plain question-and-answer pairs, mirrored as FAQ schema so answer engines can quote them.
+const FAQ = [
+  ["What is zerd?", "A terminal coding agent that runs checks on the files it changed, has a second model review the real diff, and verifies every file path and line it mentions against your tree."],
+  ["How do I install zerd?", "On macOS or Linux run: curl -fsSL https://zerd.si/install.sh | sh. On Windows PowerShell run: irm https://zerd.si/install.ps1 | iex. It is a single binary with no runtime to set up."],
+  ["Which models does zerd work with?", "Claude, GPT, Codex, DeepSeek and local models. If a provider's quota runs out, zerd fails over to the next one and tells you."],
+  ["How is zerd different from other coding agents?", "Instead of saying “done”, it reports the checks that ran, a review of the actual diff, and which claims were verified. Safety rules are enforced in code (confined tools and an OS sandbox), not just in the prompt."],
+  ["Is zerd free and open source?", "Yes, the code is on GitHub and the license is in the docs."],
+] as const;
+
 const SHOT_CLOUDS: Placed[] = [
   { shape: "b", left: "-12%", top: 40, width: "44vw", speed: 0.12, drift: 200, delay: 60, tone: 0.9 },
   { shape: "d", left: "62%", top: 380, width: "50vw", speed: 0.16, drift: 240, delay: 120, tone: 0.85 },
@@ -48,6 +58,7 @@ export default async function Home() {
   const rel = await latestRelease();
   return (
     <main className="sky">
+      <JsonLd data={{ "@context": "https://schema.org", "@type": "FAQPage", mainEntity: FAQ.map(([q, a]) => ({ "@type": "Question", name: q, acceptedAnswer: { "@type": "Answer", text: a } })) }} />
       <Hero />
 
       <section className="shot">
