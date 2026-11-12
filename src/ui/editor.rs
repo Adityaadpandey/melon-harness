@@ -102,6 +102,14 @@ impl Editor {
         self.cur = self.line_end(self.cur);
     }
 
+    /// Remove chars a..b and put the cursor where they were.
+    pub fn delete_range(&mut self, a: usize, b: usize) {
+        let b = b.min(self.chars.len());
+        self.chars.drain(a..b);
+        self.cur = a;
+        self.hist_pos = None;
+    }
+
     pub fn kill_to_end(&mut self) {
         let e = self.line_end(self.cur);
         self.chars.drain(self.cur..e);

@@ -62,6 +62,8 @@ fn clip(path: &str, width: usize) -> String {
 #[derive(Default)]
 struct Transcript {
     generation: u64,
+    /// Width the kept lines were wrapped for; a resize re-parses everything.
+    width: usize,
     done_len: usize,
     done: Vec<ALine>,
     tail: Vec<ALine>,
@@ -71,34 +73,63 @@ fn blank(l: &ALine) -> bool {
     ansi::plain(l).trim().is_empty()
 }
 
+/// Break a styled line into rows no wider than `w` columns, keeping each piece's style.
+/// Example: at w=5, "hello world" becomes "hello" and " worl" and "d".
+fn hard_wrap(line: &ALine, w: usize) -> Vec<ALine> {
+    let mut rows: Vec<ALine> = vec![vec![]];
+    let mut used = 0;
+    for (style, text) in line {
+        for c in text.chars() {
+            let cw = UnicodeWidthChar::width(c).unwrap_or(0);
+            if used + cw > w && used > 0 {
+                rows.push(vec![]);
+                used = 0;
+            }
+            let row = rows.last_mut().unwrap();
+            match row.last_mut() {
+                Some((st, t)) if st == style => t.push(c),
+                _ => row.push((*style, c.to_string())),
+            }
+            used += cw;
+        }
+    }
+    rows
+}
+
 /// Styled lines for a piece of output, with runs of blank lines folded into one (every block adds its own gap).
-fn split(chunk: &str, prev: Option<&ALine>) -> Vec<ALine> {
+/// Lines wider than `w` are wrapped, so a narrow window never cuts text off.
+fn split(chunk: &str, prev: Option<&ALine>, w: usize) -> Vec<ALine> {
     let mut out: Vec<ALine> = vec![];
     for ln in ansi::parse(chunk.strip_suffix('\n').unwrap_or(chunk)) {
         let after_blank = out.last().or(prev).map_or(false, blank);
         if blank(&ln) && after_blank {
             continue;
         }
-        out.push(ln);
+        if ansi::plain(&ln).chars().map(|c| UnicodeWidthChar::width(c).unwrap_or(0)).sum::<usize>() > w {
+            out.extend(hard_wrap(&ln, w));
+        } else {
+            out.push(ln);
+        }
     }
     out
 }
 
 impl Transcript {
-    fn sync(&mut self) {
+    fn sync(&mut self, w: usize) {
         sink::with(|s| {
-            if s.generation != self.generation || s.text.len() < self.done_len {
-                self.generation = s.generation; // the head was trimmed (or /clear): start over
+            if s.generation != self.generation || s.text.len() < self.done_len || w != self.width {
+                self.generation = s.generation; // the head was trimmed (or /clear), or the window was resized: start over
+                self.width = w;
                 self.done_len = 0;
                 self.done.clear();
             }
             let cut = s.text.rfind('\n').map_or(0, |i| i + 1);
             if cut > self.done_len {
-                let new = split(&s.text[self.done_len..cut], self.done.last());
+                let new = split(&s.text[self.done_len..cut], self.done.last(), w);
                 self.done.extend(new);
                 self.done_len = cut;
             }
-            self.tail = if cut < s.text.len() { split(&s.text[cut..], self.done.last()) } else { vec![] };
+            self.tail = if cut < s.text.len() { split(&s.text[cut..], self.done.last(), w) } else { vec![] };
         });
     }
 
@@ -180,6 +211,12 @@ pub struct Screen {
     main_rows: usize,
     footer_cache: (Instant, String),
     input_top: usize,
+    /// Chars (anchor, head) picked with the mouse in the input box.
+    in_sel: Option<(usize, usize)>,
+    in_drag: bool,
+    /// Where the input text is on screen and where each row starts, for turning a click into a char index.
+    in_rect: Rect,
+    in_starts: Vec<usize>,
 }
 
 impl Screen {
@@ -206,6 +243,10 @@ impl Screen {
             main_rows: 20,
             footer_cache: (Instant::now() - Duration::from_secs(9), String::new()),
             input_top: 0,
+            in_sel: None,
+            in_drag: false,
+            in_rect: Rect::default(),
+            in_starts: vec![0],
         }
     }
 
@@ -226,7 +267,7 @@ impl Screen {
 
     fn main_width(&mut self, cols: usize) -> usize {
         let side = if self.side_on(cols) { SIDE_WIDTH + 1 } else { 0 };
-        cols.saturating_sub(MARGIN + side + 1).max(40)
+        cols.saturating_sub(MARGIN + side + 1).max(20)
     }
 
     // -- scrolling, selecting, copying -----------------------------------------------------------------------------
@@ -264,7 +305,7 @@ impl Screen {
 
     /// The whole transcript as plain text, for /copy all.
     pub fn all_text(&mut self) -> String {
-        self.tr.sync();
+        self.tr.sync(self.main_rect.width.max(20) as usize);
         (0..self.tr.len()).map(|i| {
             let (lo, hi) = self.body(i);
             self.tr.plain(i).chars().skip(lo).take(hi - lo).collect::<String>()
@@ -306,8 +347,82 @@ impl Screen {
         ((line.min(self.tr.len().saturating_sub(1)), (col as i32 - r.x as i32).max(0) as usize), edge)
     }
 
+    /// Char index in the input text under a screen position (clamped to the visible rows).
+    fn input_idx(&self, col: u16, row: u16) -> usize {
+        let r = self.in_rect;
+        let ed = &self.editor;
+        let line = (row.saturating_sub(r.y) as usize + self.input_top).min(self.in_starts.len() - 1);
+        let start = self.in_starts[line];
+        let end = self.in_starts.get(line + 1).map_or(ed.chars.len(), |n| if ed.chars.get(n - 1) == Some(&'\n') { n - 1 } else { *n });
+        let target = col.saturating_sub(r.x) as usize;
+        let mut used = 0;
+        for i in start..end {
+            let cw = if ed.secret { 1 } else { UnicodeWidthChar::width(ed.chars[i]).unwrap_or(0) };
+            if used + cw > target {
+                return i;
+            }
+            used += cw;
+        }
+        end
+    }
+
+    fn in_input(&self, ev: &MouseEvent) -> bool {
+        let r = self.in_rect;
+        ev.row >= r.y && ev.row < r.y + r.height
+    }
+
+    fn input_mouse(&mut self, ev: MouseEvent) {
+        let idx = self.input_idx(ev.column, ev.row);
+        match ev.kind {
+            MouseEventKind::Down(MouseButton::Left) => {
+                let (when, _, n) = self.click;
+                let n = if when.elapsed().as_secs_f64() < 0.45 { n + 1 } else { 1 };
+                self.click = (Instant::now(), (usize::MAX, 0), n);
+                self.editor.cur = idx;
+                if n >= 2 && !self.editor.is_empty() {
+                    // double-click takes everything in the box
+                    self.in_sel = Some((0, self.editor.chars.len()));
+                    self.copy_input();
+                } else {
+                    self.in_sel = Some((idx, idx));
+                    self.in_drag = true;
+                }
+            }
+            MouseEventKind::Drag(MouseButton::Left) if self.in_drag => {
+                if let Some(s) = &mut self.in_sel {
+                    s.1 = idx;
+                }
+                self.editor.cur = idx;
+            }
+            MouseEventKind::Up(MouseButton::Left) if self.in_drag => {
+                self.in_drag = false;
+                match self.in_sel {
+                    Some((a, b)) if a == b => self.in_sel = None,
+                    Some((a, _)) => {
+                        self.in_sel = Some((a, idx));
+                        self.copy_input();
+                    }
+                    None => {}
+                }
+            }
+            _ => {}
+        }
+    }
+
+    fn copy_input(&mut self) {
+        let Some((a, b)) = self.in_sel.map(|(a, b)| (a.min(b), a.max(b))) else { return };
+        let text: String = self.editor.chars[a..b.min(self.editor.chars.len())].iter().collect();
+        if !text.is_empty() && !self.editor.secret {
+            copy_to_clipboard(&text);
+            self.copied_at = Some(Instant::now());
+        }
+    }
+
     /// Drag to select, double-click for a word, triple-click for a line. Copies on release.
     pub fn mouse(&mut self, ev: MouseEvent) {
+        if self.question.is_none() && (self.in_drag || self.in_input(&ev)) && !self.dragging {
+            return self.input_mouse(ev);
+        }
         match ev.kind {
             MouseEventKind::ScrollUp => self.scroll(3),
             MouseEventKind::ScrollDown => self.scroll(-3),
@@ -387,6 +502,21 @@ impl Screen {
                 Char('n') | Char('N') | Esc => Action::Pick(n - 1),
                 _ => Action::None, // swallow stray typing while a question is open
             };
+        }
+        // a mouse selection in the input: Ctrl+C copies it, typing or Backspace replaces it, anything else just drops it
+        if let Some((a, b)) = self.in_sel.take().map(|(a, b)| (a.min(b), a.max(b))).filter(|(a, b)| a != b) {
+            if ctrl && k.code == Char('c') {
+                self.in_sel = Some((a, b));
+                self.copy_input();
+                return Action::None;
+            }
+            if matches!(k.code, Backspace | Delete) || (matches!(k.code, Char(_)) && !ctrl && !alt) {
+                self.editor.delete_range(a, b);
+                if matches!(k.code, Backspace | Delete) {
+                    self.editor.refresh_menu(&self.comp);
+                    return Action::None;
+                }
+            }
         }
         match k.code {
             PageUp => self.scroll(self.main_rows as isize - 2),
@@ -530,11 +660,11 @@ impl Screen {
         if cols < 20 || rows < 6 {
             return;
         }
-        self.tr.sync();
         let side = self.side_on(cols);
         self.tui.set_side_panel(side);
-        let main_w = self.main_width(cols);
+        let main_w = self.main_width(cols).min(cols.saturating_sub(MARGIN)).max(10);
         sink::set_width(main_w);
+        self.tr.sync(main_w);
 
         // holding the pointer at an edge keeps scrolling and stretches the selection with it
         if self.dragging && self.edge != 0 && self.sel.is_some() {
@@ -550,8 +680,8 @@ impl Screen {
 
         let status = self.status(main_w);
         let tw = cols.saturating_sub(4).max(1);
-        let (wrapped, cursor) = wrap(&self.editor, tw);
-        let cap = (rows * 2 / 5).max(3);
+        let (wrapped, cursor, starts) = wrap(&self.editor, tw);
+        let cap = (rows * 2 / 5).min(rows.saturating_sub(5)).max(1); // leaves room for the header and a few transcript rows
         let in_h = wrapped.len().clamp(1, cap);
         let box_h = in_h + 2;
         let box_y = rows.saturating_sub(1 + box_h);
@@ -574,6 +704,7 @@ impl Screen {
         } else {
             ("drag to copy · /copy all · F2 native select  ".to_string(), fg(FAINT))
         };
+        let right = if !copied && left.chars().count() + right.chars().count() > cols { String::new() } else { right };
         let pad = " ".repeat(cols.saturating_sub(left.chars().count() + right.chars().count()).max(1));
         let header = RLine::from(vec![
             sp(bold_fg(MINT), format!("  ({face})")),
@@ -584,7 +715,7 @@ impl Screen {
         f.render_widget(Paragraph::new(header).style(Style::default().bg(hx(BG_BOX))), Rect::new(0, 0, area.width, 1));
 
         // transcript
-        let main = Rect::new(MARGIN as u16, 1, (main_w.min(cols.saturating_sub(MARGIN))) as u16, body_h as u16);
+        let main = Rect::new(MARGIN as u16, 1, (main_w) as u16, body_h as u16);
         self.main_rect = main;
         self.main_rows = body_h;
         let first = self.first_line();
@@ -624,10 +755,25 @@ impl Screen {
             self.input_top = cursor.0 + 1 - in_h;
         }
         self.input_top = self.input_top.min(wrapped.len().saturating_sub(in_h));
+        self.in_rect = Rect::new(4, (box_y + 1) as u16, tw as u16, in_h as u16);
+        let picked = self.in_sel.map(|(a, b)| (a.min(b), a.max(b))).filter(|(a, b)| a != b);
         let in_lines: Vec<RLine> = wrapped.iter().enumerate().skip(self.input_top).take(in_h).map(|(i, t)| {
             let lead = if i == 0 { sp(bold_fg(ACCENT).bg(hx(BG_BOX)), " ✦ ") } else { sp(box_style, "   ") };
-            RLine::from(vec![sp(fg(ACCENT).bg(hx(BG_BOX)), "▍"), lead, sp(box_style, t.clone())])
+            let mut v = vec![sp(fg(ACCENT).bg(hx(BG_BOX)), "▍"), lead];
+            let chars: Vec<char> = t.chars().collect();
+            let (rs, re) = (starts[i], starts[i] + chars.len());
+            match picked {
+                Some((a, b)) if a < re && b > rs => {
+                    let (x, y) = (a.max(rs) - rs, b.min(re) - rs);
+                    v.push(sp(box_style, chars[..x].iter().collect::<String>()));
+                    v.push(sp(box_style.add_modifier(Modifier::REVERSED), chars[x..y].iter().collect::<String>()));
+                    v.push(sp(box_style, chars[y..].iter().collect::<String>()));
+                }
+                _ => v.push(sp(box_style, t.clone())),
+            }
+            RLine::from(v)
         }).collect();
+        self.in_starts = starts;
         f.render_widget(Paragraph::new(in_lines), Rect::new(0, (box_y + 1) as u16, area.width, in_h as u16));
         f.set_cursor_position((4 + cursor.1 as u16, (box_y + 1 + cursor.0.saturating_sub(self.input_top)) as u16));
 
@@ -678,8 +824,10 @@ impl Screen {
     }
 }
 
-fn wrap(ed: &Editor, tw: usize) -> (Vec<String>, (usize, usize)) {
+/// The input text cut into display rows: the rows, where the cursor sits (row, column) and the char index each row starts at.
+fn wrap(ed: &Editor, tw: usize) -> (Vec<String>, (usize, usize), Vec<usize>) {
     let mut rows = vec![String::new()];
+    let mut starts = vec![0];
     let (mut w, mut cursor) = (0, (0, 0));
     for (i, c) in ed.chars.iter().enumerate() {
         if i == ed.cur {
@@ -687,12 +835,14 @@ fn wrap(ed: &Editor, tw: usize) -> (Vec<String>, (usize, usize)) {
         }
         if *c == '\n' {
             rows.push(String::new());
+            starts.push(i + 1);
             w = 0;
             continue;
         }
         let cw = if ed.secret { 1 } else { UnicodeWidthChar::width(*c).unwrap_or(0) };
         if w + cw > tw {
             rows.push(String::new());
+            starts.push(i);
             w = 0;
             if i == ed.cur {
                 cursor = (rows.len() - 1, 0);
@@ -704,11 +854,12 @@ fn wrap(ed: &Editor, tw: usize) -> (Vec<String>, (usize, usize)) {
     if ed.cur == ed.chars.len() {
         if w >= tw {
             rows.push(String::new());
+            starts.push(ed.chars.len());
             w = 0;
         }
         cursor = (rows.len() - 1, w);
     }
-    (rows, cursor)
+    (rows, cursor, starts)
 }
 
 /// A thin light that sweeps back and forth above the input while the agent works.
@@ -874,7 +1025,7 @@ mod tests {
 
     #[test]
     fn blank_runs_fold() {
-        let l = split("a\n\n\n\nb\n", None);
+        let l = split("a\n\n\n\nb\n", None, 80);
         assert_eq!(l.iter().map(ansi::plain).collect::<Vec<_>>(), vec!["a", "", "b"]);
     }
 
@@ -882,9 +1033,16 @@ mod tests {
     fn input_wraps_and_tracks_cursor() {
         let mut e = Editor::new(None);
         e.insert_str("abcdefgh\nxy");
-        let (rows, cur) = wrap(&e, 5);
+        let (rows, cur, starts) = wrap(&e, 5);
+        assert_eq!(starts, vec![0, 5, 9]);
         assert_eq!(rows, vec!["abcde", "fgh", "xy"]);
         assert_eq!(cur, (2, 2));
+    }
+
+    #[test]
+    fn long_lines_wrap_instead_of_clipping() {
+        let rows = split("hello world", None, 5);
+        assert_eq!(rows.iter().map(ansi::plain).collect::<Vec<_>>(), vec!["hello", " worl", "d"]);
     }
 
     #[test]
