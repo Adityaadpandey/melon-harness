@@ -90,13 +90,17 @@ impl Tool for SubagentTool {
         let job = Job { def: self.definition.clone(), parent: self.config.get(), goal, resume: inv.str("resume").map_or(false, |r| !r.is_empty()), id: id.clone(), progress: inv.progress.clone(), call_id: inv.call_id.clone(), cwd: inv.cwd.clone() };
         if inv.params["background"].as_bool().unwrap_or(false) {
             let (owner, name) = (self.config.key(), self.definition.name.clone());
-            board().lock().unwrap().running.push((owner, id.clone()));
-            tokio::spawn(async move {
+            let (goal, bid) = (job.goal.clone(), id.clone());
+            // the board is held across the spawn so the task cannot finish before its row exists
+            let mut b = board().lock().unwrap();
+            let task = tokio::spawn(async move {
                 let result = run_job(job).await;
                 let mut b = board().lock().unwrap();
-                b.running.retain(|(_, i)| *i != id);
+                b.running.retain(|r| r.id != id);
                 b.done.push((owner, id, name, result.to_model_output()));
             });
+            b.running.push(Running { owner, id: bid, name: self.definition.name.clone(), goal, started: std::time::Instant::now(), task: task.abort_handle() });
+            drop(b);
             return ToolResult::ok(format!("Started sub-agent '{}' in the background. Its report is delivered to you when it finishes: carry on with other work, do not wait or poll, and do not start the same job again.", self.definition.name));
         }
         run_job(job).await
@@ -125,8 +129,33 @@ struct Job {
 /// carries the parent's config key, so two agents in one process never read each other's reports.
 #[derive(Default)]
 pub struct Board {
-    running: Vec<(usize, String)>,
+    running: Vec<Running>,
     done: Vec<(usize, String, String, String)>, // owner, agent id, agent name, report
+}
+
+struct Running {
+    owner: usize,
+    id: String,
+    name: String,
+    goal: String,
+    started: std::time::Instant,
+    task: tokio::task::AbortHandle,
+}
+
+/// This parent's background sub-agents still at work: (agent id, name, goal, seconds so far). What `/agents` shows.
+pub fn running(owner: usize) -> Vec<(String, String, String, u64)> {
+    board().lock().unwrap().running.iter().filter(|r| r.owner == owner).map(|r| (r.id.clone(), r.name.clone(), r.goal.clone(), r.started.elapsed().as_secs())).collect()
+}
+
+/// Stop one background sub-agent (`/agents stop ab12cd34`). Its parent is told it was stopped, so it does not wait
+/// for a report that will never come.
+pub fn stop(owner: usize, id: &str) -> bool {
+    let mut b = board().lock().unwrap();
+    let Some(i) = b.running.iter().position(|r| r.owner == owner && r.id == id) else { return false };
+    let r = b.running.remove(i);
+    r.task.abort();
+    b.done.push((owner, r.id, r.name, "Stopped by the user before it finished. It has no report; do not start it again unless asked.".into()));
+    true
 }
 
 fn board() -> &'static Mutex<Board> {
@@ -145,7 +174,7 @@ pub fn finished(owner: usize) -> Vec<(String, String, String)> {
 /// How many of this parent's background sub-agents are still working or have a report waiting.
 pub fn pending(owner: usize) -> usize {
     let b = board().lock().unwrap();
-    b.running.iter().filter(|r| r.0 == owner).count() + b.done.iter().filter(|d| d.0 == owner).count()
+    b.running.iter().filter(|r| r.owner == owner).count() + b.done.iter().filter(|d| d.0 == owner).count()
 }
 
 /// Returns once one of this parent's background sub-agents has a report ready, or none is left running.
@@ -153,12 +182,17 @@ pub async fn wait_for_report(owner: usize) {
     loop {
         {
             let b = board().lock().unwrap();
-            if b.done.iter().any(|d| d.0 == owner) || !b.running.iter().any(|r| r.0 == owner) {
+            if b.done.iter().any(|d| d.0 == owner) || !b.running.iter().any(|r| r.owner == owner) {
                 return;
             }
         }
         tokio::time::sleep(Duration::from_millis(200)).await;
     }
+}
+
+#[cfg(test)]
+pub fn track(owner: usize, id: &str, name: &str, task: tokio::task::AbortHandle) {
+    board().lock().unwrap().running.push(Running { owner, id: id.into(), name: name.into(), goal: "g".into(), started: std::time::Instant::now(), task });
 }
 
 #[cfg(test)]

@@ -1234,6 +1234,15 @@ impl Cli {
                 }
             }
             "/agents" => {
+                let owner = self.config.key();
+                if let Some(id) = args.strip_prefix("stop").map(str::trim) {
+                    let ok = crate::tools::subagents::stop(owner, id);
+                    uprintln!("{}", paint(&if ok { format!("  stopped sub-agent {id}") } else { format!("  no running background sub-agent '{id}'") }, MUTED));
+                    return true;
+                }
+                for (id, name, goal, secs) in crate::tools::subagents::running(owner) {
+                    uprintln!("  {} {}  {}\n      {}", paint("running", MINT), bold(&name), paint(&format!("{id}, {secs}s  (/agents stop {id})"), MUTED), goal.chars().take(150).collect::<String>());
+                }
                 let files = crate::tools::subagents::load_agent_files(&cfg.cwd);
                 for d in crate::tools::subagents::default_definitions(&cfg) {
                     let mode = if d.allowed_tools.as_ref().map_or(false, |t| !t.is_empty() && t.iter().all(|x| crate::tools::subagents::READONLY_TOOLS.contains(&x.as_str()))) { "read-only" } else { "can edit/run" };

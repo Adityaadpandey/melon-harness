@@ -131,6 +131,19 @@ async fn a_guessed_folder_opens_the_only_file_with_that_name() {
 }
 
 #[tokio::test]
+async fn a_background_sub_agent_can_be_listed_and_stopped() {
+    use crate::tools::subagents::{finished, running, stop, track};
+    let owner = 0xBEEF; // no real agent has this key, so other tests' sub-agents are not seen here
+    let task = tokio::spawn(tokio::time::sleep(std::time::Duration::from_secs(600)));
+    track(owner, "ab12cd34", "investigator", task.abort_handle());
+    assert_eq!(running(owner).iter().map(|r| r.0.as_str()).collect::<Vec<_>>(), ["ab12cd34"]);
+    assert!(!stop(owner, "nope") && stop(owner, "ab12cd34"));
+    assert!(task.await.unwrap_err().is_cancelled() && running(owner).is_empty());
+    // the parent hears about it, so it neither waits for the report nor starts the job again
+    assert!(finished(owner)[0].2.contains("Stopped by the user"));
+}
+
+#[tokio::test]
 async fn resuming_an_agent_that_is_gone_says_so() {
     let tmp = tempfile::tempdir().unwrap();
     let c = cfg(tmp.path(), json!({"pi_mode": false}));
