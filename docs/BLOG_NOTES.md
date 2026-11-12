@@ -3,7 +3,7 @@
 Raw material for a blog post (or three). Everything here comes from the git history (426 commits), the code, and the saved
 benchmark files. Where a number is an estimate it says so, and where something was never measured it says that too.
 
-Repo: https://github.com/Adityaadpandey/zerd-harness (package `zerd-harness`, command `zerd`).
+Repo: https://github.com/Adityaadpandey/zerd.si (package `zerd`, command `zerd`).
 
 ---
 

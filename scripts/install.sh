@@ -12,7 +12,7 @@ esac
 dir="${ZERD_BIN:-$HOME/.local/bin}"
 mkdir -p "$dir"
 tmp="$(mktemp -d)"; trap 'rm -rf "$tmp"' EXIT
-base="https://github.com/Adityaadpandey/zerd-harness/releases/latest/download/zerd-$t.tar.gz"
+base="https://github.com/Adityaadpandey/zerd.si/releases/latest/download/zerd-$t.tar.gz"
 curl -fsSL "$base" -o "$tmp/m.tar.gz"
 curl -fsSL "$base.sha256" -o "$tmp/m.sha256"
 want="$(cut -d' ' -f1 "$tmp/m.sha256")"

@@ -9,7 +9,7 @@ New-Item -ItemType Directory -Force $dir | Out-Null
 $tmp = Join-Path ([IO.Path]::GetTempPath()) ("zerd-" + [Guid]::NewGuid())
 New-Item -ItemType Directory $tmp | Out-Null
 try {
-  $base = 'https://github.com/Adityaadpandey/zerd-harness/releases/latest/download/zerd-x86_64-pc-windows-msvc.zip'
+  $base = 'https://github.com/Adityaadpandey/zerd.si/releases/latest/download/zerd-x86_64-pc-windows-msvc.zip'
   $zip = Join-Path $tmp 'zerd.zip'
   Invoke-WebRequest "$base" -OutFile $zip
   $want = ((Invoke-WebRequest "$base.sha256").Content.Trim() -split '\s+')[0]

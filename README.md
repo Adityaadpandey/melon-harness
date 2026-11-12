@@ -55,11 +55,11 @@ irm https://zerd.si/install.ps1 | iex
 ```
 
 It installs `zerd.exe` into `%LOCALAPPDATA%\zerd\bin` and adds that folder to your user PATH (open a new terminal after).
-Or grab the tarball / zip for your machine from the [releases page](https://github.com/Adityaadpandey/zerd-harness/releases).
+Or grab the tarball / zip for your machine from the [releases page](https://github.com/Adityaadpandey/zerd.si/releases).
 Building from source (any system):
 
 ```bash
-git clone https://github.com/Adityaadpandey/zerd-harness && cd zerd-harness
+git clone https://github.com/Adityaadpandey/zerd.si && cd zerd.si
 cargo build --release                                       # binary: target/release/zerd
 ln -sf "$PWD/target/release/zerd" ~/.local/bin/zerd       # put it on your PATH (Windows: target\release\zerd.exe)
 ```
