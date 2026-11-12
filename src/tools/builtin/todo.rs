@@ -73,7 +73,7 @@ impl Tool for TodosTool {
                 "id": {"type": ["string", "null"], "description": "Todo ID or a unique phrase of the step (for start, complete)"},
                 "content": {"type": ["string", "null"], "description": "Todo content (for add)"},
                 "items": {"type": ["array", "null"], "description": "The full list, for 'set': every step with its status. One call replaces many add/complete calls",
-                          "items": {"type": "object", "properties": {"id": {"type": ["string", "null"]}, "content": {"type": "string"}, "done": {"type": "boolean"}, "status": {"type": "string", "enum": ["pending", "in_progress", "done"], "description": "Exactly one step is in_progress while you work; mark it done the moment it passes"}}, "required": ["content"]}},
+                          "items": {"type": "object", "properties": {"id": {"type": ["string", "null"]}, "content": {"type": "string"}, "done": {"type": ["boolean", "string", "null"]}, "status": {"type": "string", "enum": ["pending", "in_progress", "done"], "description": "Exactly one step is in_progress while you work; mark it done the moment it passes"}}, "required": ["content"]}},
             }),
             &["action"],
         )
@@ -91,9 +91,10 @@ impl Tool for TodosTool {
                     .map(|(i, it)| Todo {
                         id: it["id"].as_str().filter(|s| !s.is_empty()).map(String::from).unwrap_or_else(|| (i + 1).to_string()),
                         content: it["content"].as_str().unwrap_or("").to_string(),
-                        // either spelling: done true/false, or status "pending" | "in_progress" | "done" (Claude Code's "completed" too)
-                        done: it["done"].as_bool().unwrap_or(false) || matches!(it["status"].as_str(), Some("done" | "completed")),
-                        active: it["status"] == "in_progress",
+                        // either spelling: done true/false, or status "pending" | "in_progress" | "done" (Claude Code's "completed" too).
+                        // Models also put the status word in `done` (done: "in_progress"); read it there rather than reject the call.
+                        done: it["done"].as_bool().unwrap_or(false) || [&it["status"], &it["done"]].iter().any(|v| matches!(v.as_str(), Some("done" | "completed" | "true"))),
+                        active: it["status"] == "in_progress" || it["done"] == "in_progress",
                     })
                     .collect();
                 let mut list = list;

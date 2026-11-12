@@ -751,6 +751,11 @@ async fn todos_complete_by_the_id_the_model_gave_in_set_or_by_a_unique_phrase() 
     assert_eq!(t.render(), "[x] a\n[~] b\n[ ] c");
     t.execute(&inv(tmp.path(), json!({"action": "start", "id": "c"}))).await;
     assert_eq!(t.render(), "[x] a\n[ ] b\n[~] c");
+    // a model that writes the status word into `done` is understood, not sent back for another round
+    let loose = json!({"action": "set", "items": [{"content": "a", "done": "completed"}, {"content": "b", "done": "in_progress"}]});
+    assert!(t.validate_params(&loose).is_ok());
+    t.execute(&inv(tmp.path(), loose)).await;
+    assert_eq!(t.render(), "[x] a\n[~] b");
 }
 
 #[tokio::test]
