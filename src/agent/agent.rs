@@ -1023,9 +1023,12 @@ impl Agent {
                 self.fix_nudged = true;
                 self.add_user(&format!("{} rounds in and nothing is changed yet. If you have a verified finding, name your root cause in one line and make the smallest fix for it (ask first only if it adds or restyles something the user will see; a guard, a prop or a handler change needs no asking). Do not add new files or components just to have a change. If you have no cause, say what you traced and why it holds.", self.calls_used));
             }
-            // what sub-agents and parallel workers spent is part of this request's bill
+            // What sub-agents and parallel workers spent is part of this request's bill, so it joins the total that
+            // /cost and the report show. It does not use up this agent's token budget: that budget guards this
+            // agent's own context from running away, and each sub-agent already has limits of its own.
             if let Some(u) = crate::tools::subagents::take_usage(self.config.key()) {
                 self.session.context_manager.lock().unwrap().add_usage(&u);
+                self.usage_base += u.prompt_tokens - u.cached_tokens + u.completion_tokens;
             }
             let used = self.spent() - self.usage_base;
             let budget = cfg.max_total_tokens;
