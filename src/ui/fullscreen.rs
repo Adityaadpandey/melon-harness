@@ -66,6 +66,11 @@ pub fn wanted() -> bool {
 
 pub fn start(tui: Arc<Tui>, title: Arc<dyn Fn() -> String + Send + Sync>, footer: Arc<dyn Fn() -> String + Send + Sync>, comp: Arc<Completions>, history: Option<PathBuf>) -> Result<Arc<Fs>, String> {
     sink::install();
+    // The first frame is drawn on a background thread, so the pane width is only set there. The welcome banner prints
+    // before that, and would clip itself to the full terminal: 3 columns too wide, which wraps over the mascot.
+    if let Ok((cols, _)) = crossterm::terminal::size() {
+        sink::set_width((cols as usize).saturating_sub(super::screen::MARGIN + 1).max(20));
+    }
     enable_raw_mode().map_err(|e| e.to_string())?;
     let mut out = std::io::stdout();
     let flags = crossterm::terminal::supports_keyboard_enhancement().unwrap_or(false); // Shift+Enter arrives as itself
