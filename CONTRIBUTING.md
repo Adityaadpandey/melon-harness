@@ -34,7 +34,7 @@ ones in `src/tests/` that fails without your change.
 | `skills/`, `profiles/` | built-in skills and project profiles |
 | `docs/` | long-form docs and images |
 | `scripts/` | the install scripts served from zerd.si |
-| `website/` | the Next.js site for zerd.si |
+| `website/` | the Next.js site for zerd.si; its docs pages are built from `README.md` (`npm run sync`), so edit the README, not the generated pages |
 
 ## License
 
