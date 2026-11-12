@@ -1,0 +1,11 @@
+# Copy this to .zerd/config.toml in your repo (or ~/.config/zerd/config.toml for every repo).
+# Keys that run things (hooks, mcp_servers, verify_commands) only apply once you pass --trust.
+
+[model]
+temperature = 0
+
+# Example: let the agent read and write files through an MCP filesystem server.
+# Change the path to your own project folder.
+[mcp_servers.filesystem]
+command = "npx"
+args = ["-y", "@modelcontextprotocol/server-filesystem", "/path/to/your/project"]

@@ -1,5 +1,5 @@
 //! The zerd mascot: one small pixel grid, drawn with half-blocks (two pixel rows per text row).
-//! docs/banner.svg is the same grid scaled up, so both always look like the same mascot.
+//! docs/assets/banner.svg is the same grid scaled up, so both always look like the same mascot.
 use super::style::{bg_code, fg_code, RESET};
 
 const W: usize = 14;
@@ -61,7 +61,7 @@ pub fn mascot() -> Vec<String> {
     }).collect()
 }
 
-/// The same grid as SVG rects, for docs/banner.svg.
+/// The same grid as SVG rects, for docs/assets/banner.svg.
 pub fn svg(x0: usize, y0: usize, px: usize) -> String {
     let g = grid();
     (0..H).flat_map(|y| (0..W).map(move |x| (x, y))).filter(|&(x, y)| g[y][x] != '.')

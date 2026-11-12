@@ -1,6 +1,0 @@
-[model]
-temperature = 0
-
-[mcp_servers.filesystem]
-command = "npx"
-args = ["-y", "@modelcontextprotocol/server-filesystem", "/Users/aditya/Devlopment/mew-agent", "/tmp"]

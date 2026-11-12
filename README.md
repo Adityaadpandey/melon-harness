@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="docs/banner.svg" alt="zerd: the coding agent that proves its work" width="100%">
+  <img src="docs/assets/banner.svg" alt="zerd: the coding agent that proves its work" width="100%">
 </p>
 
 <p align="center">
@@ -33,7 +33,7 @@ don't exercise the change, it says so.
 It is one native Rust binary (about 11 MB, starts in a few milliseconds). No Python, no Node, nothing to install next to it.
 
 <p align="center">
-  <img src="docs/screenshot.png" alt="zerd working on a real repo: side panel, token breakdown, verification and review" width="100%">
+  <img src="docs/assets/screenshot.png" alt="zerd working on a real repo: side panel, token breakdown, verification and review" width="100%">
 </p>
 
 <sub>A real session, not a mock-up. The request was judged hard and routed to the strong model, that provider hit a rate limit and
@@ -306,7 +306,7 @@ Skills live in `skills/`, repo profiles in `profiles/`, and the diagrams used he
 ## Life of a request
 
 <p align="center">
-  <img src="docs/flow.svg" alt="Request flow: classify, scout, edit, verification gate, review, citation check" width="100%">
+  <img src="docs/assets/flow.svg" alt="Request flow: classify, scout, edit, verification gate, review, citation check" width="100%">
 </p>
 
 The same flow as a diagram you can follow branch by branch:
