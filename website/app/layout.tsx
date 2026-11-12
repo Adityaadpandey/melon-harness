@@ -1,11 +1,10 @@
 import type { Metadata } from "next";
 import Link from "next/link";
-import { Inter, Instrument_Serif, JetBrains_Mono } from "next/font/google";
+import { Bricolage_Grotesque, JetBrains_Mono } from "next/font/google";
 import { REPO } from "@/lib/docs";
 import "./globals.css";
 
-const sans = Inter({ subsets: ["latin"], variable: "--font-sans" });
-const serif = Instrument_Serif({ subsets: ["latin"], weight: "400", style: ["normal", "italic"], variable: "--font-serif" });
+const sans = Bricolage_Grotesque({ subsets: ["latin"], variable: "--font-sans" });
 const mono = JetBrains_Mono({ subsets: ["latin"], variable: "--font-mono" });
 
 export const metadata: Metadata = {
@@ -17,11 +16,11 @@ export const metadata: Metadata = {
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="en" className={`${sans.variable} ${serif.variable} ${mono.variable}`}>
+    <html lang="en" className={`${sans.variable} ${mono.variable}`}>
       <body>
         <header className="nav">
           <div className="nav-in">
-            <Link href="/" className="logo"><span className="logo-mark">z</span>zerd</Link>
+            <Link href="/" className="logo">zerd<i className="logo-tick" aria-hidden /></Link>
             <nav>
               <Link href="/docs/try-it-in-two-minutes">Docs</Link>
               <Link href="/docs/models-and-routing">Models</Link>
@@ -34,7 +33,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         <footer className="foot">
           <div className="foot-in">
             <div>
-              <Link href="/" className="logo"><span className="logo-mark">z</span>zerd</Link>
+              <Link href="/" className="logo">zerd<i className="logo-tick" aria-hidden /></Link>
               <p>The terminal coding agent that proves its work.</p>
             </div>
             <div className="foot-cols">
