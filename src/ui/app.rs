@@ -658,6 +658,9 @@ impl Cli {
             if user_input.is_empty() {
                 continue;
             }
+            if fs.is_some() {
+                self.tui.echo_sent(&user_input);
+            }
             if user_input.starts_with('/') {
                 if !self.handle_command(&user_input).await {
                     break;

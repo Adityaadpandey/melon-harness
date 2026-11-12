@@ -557,6 +557,21 @@ impl Tui {
         self.print_above(&if color_on() { on_bg(&format!("{line} "), BG_BOX) } else { line });
     }
 
+    /// What the person just sent, kept in the transcript after the input box clears (full-screen mode only; the plain
+    /// prompt leaves the typed line on the terminal itself). Long lines wrap in the transcript, so only the line count is capped.
+    pub fn echo_sent(&self, text: &str) {
+        const MAX_LINES: usize = 12;
+        let lines: Vec<&str> = text.trim().lines().collect();
+        let mut shown: Vec<String> = lines.iter().take(MAX_LINES).map(|l| {
+            let l = format!(" {}{}", bold_paint("▍ ", ACCENT), bold_paint(l, FG));
+            if color_on() { on_bg(&format!("{l} "), BG_BOX) } else { l }
+        }).collect();
+        if lines.len() > MAX_LINES {
+            shown.push(paint(&format!("   … +{} more lines", lines.len() - MAX_LINES), MUTED));
+        }
+        self.print_above(&format!("\n{}", shown.join("\n")));
+    }
+
     fn print_block(&self, md: &str) {
         if md.trim().is_empty() {
             return;
