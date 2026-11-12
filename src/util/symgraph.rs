@@ -514,6 +514,15 @@ impl SymGraph {
 /// "update these three callers" instead of a grep to find out whether there are any:
 ///   [graph: the signature of `parse_invoice` changed and it is used in 2 other place(s): app.py:4 (main), jobs.py:9 (nightly). ...]
 /// ponytail: compares the first line of each definition only, so a change on a later line of a multi-line signature is missed.
+/// Uses written as `billing/refund.py:5 (refund), jobs/nightly.py:5 (renew_all)`, the first `max` of them.
+fn ref_list(uses: &[Ref], name: &str, max: usize) -> String {
+    if uses.is_empty() {
+        return "nowhere".into();
+    }
+    let list = uses.iter().take(max).map(|r| format!("{}:{}{}", r.file, r.line, r.in_def.as_ref().map_or(String::new(), |d| format!(" ({d})")))).collect::<Vec<_>>().join(", ");
+    if uses.len() > max { format!("{list}, and {} more (graph callers {name})", uses.len() - max) } else { list }
+}
+
 pub fn edit_note(cwd: &Path, path: &Path, old: &str, new: &str) -> Option<String> {
     let root = resolve(cwd);
     let rel = resolve(path).strip_prefix(&root).ok()?.to_string_lossy().replace('\\', "/");
@@ -546,9 +555,7 @@ pub fn edit_note(cwd: &Path, path: &Path, old: &str, new: &str) -> Option<String
         if uses.is_empty() {
             continue;
         }
-        let list = uses.iter().take(8).map(|r| format!("{}:{}{}", r.file, r.line, r.in_def.as_ref().map_or(String::new(), |d| format!(" ({d})")))).collect::<Vec<_>>().join(", ");
-        let more = if uses.len() > 8 { format!(", and {} more (graph callers {name})", uses.len() - 8) } else { String::new() };
-        rows.push(format!("[graph: the signature of `{name}` {what} and it is used in {} other place(s): {list}{more}. Update them, or check they still fit.]", uses.len()));
+        rows.push(format!("[graph: the signature of `{name}` {what} and it is used in {} other place(s): {}. Update them, or check they still fit.]", uses.len(), ref_list(&uses, name, 8)));
     }
     (!rows.is_empty()).then(|| rows.join("\n"))
 }
@@ -671,14 +678,17 @@ pub fn grep_hint(cwd: &Path, pattern: &str) -> Option<String> {
     if g.files.len() < 15 || defs.is_empty() || defs.len() > 4 {
         return None;
     }
+    // The model asked grep, so answer here with what the graph knows instead of telling it to ask again: the real
+    // uses, already separated from comments, strings and unrelated things that share the name.
     if let [(f, i)] = defs[..] {
         let d = &g.files[f].defs[*i];
-        return Some(format!("[graph: {} {name} is defined at {f}:{}-{}, used in {} place(s). `graph callers {name}` lists them without the noise, `graph symbol {name}` reads just its body.]", d.kind, d.line, d.end, g.callers(f, name).len()));
+        let uses = g.callers(f, name);
+        return Some(format!("[graph: {} {name} is defined at {f}:{}-{}, used in {} place(s): {}. These are its real uses; text matches above may include comments and other things with the same name.]", d.kind, d.line, d.end, uses.len(), ref_list(&uses, name, 12)));
     }
     // Two unrelated things share the name (billing/charge.py and games/charge.py both define `charge`): grep mixes
     // them together, the graph keeps each one's users apart.
-    let each: Vec<String> = defs.iter().map(|(f, i)| format!("{f}:{} ({} use(s))", g.files[f].defs[*i].line, g.callers(f, name).len())).collect();
-    Some(format!("[graph: {} different definitions are named {name}: {}. These matches mix them; `graph callers {name}` lists the users of each one separately.]", defs.len(), each.join(", ")))
+    let each: Vec<String> = defs.iter().map(|(f, i)| { let uses = g.callers(f, name); format!("{f}:{} ({} use(s): {})", g.files[f].defs[*i].line, uses.len(), ref_list(&uses, name, 6)) }).collect();
+    Some(format!("[graph: {} different definitions are named {name}, and the matches above mix them. {}.]", defs.len(), each.join("; ")))
 }
 
 pub fn listed(cwd: &Path) -> Vec<String> {
@@ -942,10 +952,10 @@ mod tests {
         files.push(("pay.py".into(), "from billing.charge import charge\ncharge(1)\n".into()));
         let d = repo(&files.iter().map(|(a, b)| (a.as_str(), b.as_str())).collect::<Vec<_>>());
         let h = grep_hint(d.path(), "\\bparse_invoice\\(").unwrap();
-        assert!(h.contains("function parse_invoice is defined at lib.py:1-2, used in 1 place(s)"), "{h}");
+        assert!(h.contains("function parse_invoice is defined at lib.py:1-2, used in 1 place(s): app.py:2."), "{h}");
         // same name, two unrelated functions: the hint says so and counts each one's users apart
         let h = grep_hint(d.path(), "charge").unwrap();
-        assert!(h.contains("2 different definitions are named charge:") && h.contains("billing/charge.py:1 (1 use(s))") && h.contains("games/charge.py:1 (0 use(s))"), "{h}");
+        assert!(h.contains("2 different definitions are named charge") && h.contains("billing/charge.py:1 (1 use(s): pay.py:2)") && h.contains("games/charge.py:1 (0 use(s): nowhere)"), "{h}");
         assert!(grep_hint(d.path(), "parse.*invoice").is_none() && grep_hint(d.path(), "nothing_here").is_none());
     }
 
