@@ -9,9 +9,9 @@ async fn scripted_agent_answers() {
 }
 
 #[test]
-fn mascot_is_six_rows_of_fourteen_columns() {
+fn mascot_is_seven_rows_of_sixteen_columns() {
     let rows = crate::ui::mascot::mascot();
-    assert_eq!(rows.len(), 6);
-    assert!(rows.iter().all(|r| crate::ui::style::strip_ansi(r).chars().count() == 14));
+    assert_eq!(rows.len(), 7);
+    assert!(rows.iter().all(|r| crate::ui::style::strip_ansi(r).chars().count() == 16));
     assert!(crate::ui::mascot::svg(0, 0, 4).contains(r##"fill="#3f7d3a""##));
 }
