@@ -1,9 +1,9 @@
-# melon: everything we built and decided, written for the blog
+# zerd: everything we built and decided, written for the blog
 
 Raw material for a blog post (or three). Everything here comes from the git history (426 commits), the code, and the saved
 benchmark files. Where a number is an estimate it says so, and where something was never measured it says that too.
 
-Repo: https://github.com/Adityaadpandey/melon-harness (package `melon-harness`, command `melon`).
+Repo: https://github.com/Adityaadpandey/zerd-harness (package `zerd-harness`, command `zerd`).
 
 ---
 
@@ -35,8 +35,8 @@ Commits per day: Oct 13 (29), Oct 14 (96), Oct 15 (72), Oct 16 (36), Oct 17 (26)
 | **Oct 17** | Playbooks (PR review, commit review, bug hunt, security, scalability, planning). Permission rules in Claude Code notation. User-defined sub-agents. JS/TS auto-verify via each package's own typecheck. `/rewind`. Task notes that survive compaction. Nested `AGENTS.md`. Custom slash commands. `gh` and `curl` allowed outside the sandbox, but only one plain command, only with approval. |
 | **Oct 18** | The review system grew up: **review targets** (working tree, last N commits, one commit, branch, PR, including a PR not checked out), lenses, a **contracts** reviewer, a verifier that batches six claims at a time, **sandboxed repro of HIGH findings**, the **advisor** tool, **fix runs** and a **fix verifier**. The motive was a head-to-head with Claude Code's review on one PR. |
 | **Oct 19** | Context quality (compaction keeps every user message, a `FILES AND CODE` section, restores working files). Then **learning**: lessons from corrections, written into `AGENTS.md`, and `learn_import --deep` that mines old Claude Code sessions. A context-replay and review benchmark saved to disk. |
-| **Oct 20** | README rewritten with diagrams and decisions. The project's code, CLI text, env vars and folders all say melon (`melon --resume`, `MELON_PLAIN`, `~/.melon`, `.melon/`, `refs/melon/backup`). Then a day of **measuring and trimming**: transcript redraws, idle redraws, grep and search index speed. `resume` brings back the whole session. A head-to-head against Claude Code on 11 tasks, and the two things it taught: the **signature guard** and **fewer todo-only turns**. |
-| **Oct 21** | `pyproject.toml` and a `melon` command (`uv tool install -e .`), the API key is also read from melon's data folder so it works from any directory. README rewritten to be read, not just kept. |
+| **Oct 20** | README rewritten with diagrams and decisions. The project's code, CLI text, env vars and folders all say zerd (`zerd --resume`, `ZERD_PLAIN`, `~/.zerd`, `.zerd/`, `refs/zerd/backup`). Then a day of **measuring and trimming**: transcript redraws, idle redraws, grep and search index speed. `resume` brings back the whole session. A head-to-head against Claude Code on 11 tasks, and the two things it taught: the **signature guard** and **fewer todo-only turns**. |
+| **Oct 21** | `pyproject.toml` and a `zerd` command (`uv tool install -e .`), the API key is also read from zerd's data folder so it works from any directory. README rewritten to be read, not just kept. |
 | **Oct 22** | A research day. Claude Code 2.1.301 (binary plus saved transcripts), pi and opencode were read side by side, and the best ideas were ported. **Provider robustness:** `max_tokens` sent and shrunk to the room left, a cut-off reply continued instead of its half-written tool call being run, `reasoning_content` passed back to the model that wrote it, almost-JSON arguments repaired, errors judged by their text, cache hits read from DeepSeek and Kimi's own fields, a different temperature per model family. **Tool results:** shell exit codes explained (grep finding nothing is not a failure), `Read` and `old_str` style near-misses fixed before they run, `12|` line-number prefixes tolerated in an edit, per-edit diagnostics (Python, JSON, TOML, JS, Go, and TypeScript through the project's own `tsserver`). **Context:** `<system-reminder>` notes, summary guards, a compaction thrash breaker, a compaction that reuses the cached prefix, per-provider thinking switches, per-model prompt notes, a skill list capped at 1% of the window. |
 
 ## 3. Architecture in plain words
@@ -102,7 +102,7 @@ into the repo's own `AGENTS.md`, so a human can read, edit and commit them.
 already says, so only new rules get added.
 
 ### 4.9 Pi mode: delete rails that don't pay rent
-melon began with a lot of guardrails: call caps, a scout before every task, reference retries, aggressive clearing. Copying the
+zerd began with a lot of guardrails: call caps, a scout before every task, reference retries, aggressive clearing. Copying the
 simple design of the pi agent (seven tools, a tiny prompt, files read whole) and measuring it showed which rails were worth
 keeping. It became the default (`--no-pi` brings the old setup back).
 *The honest part:* it wasn't one-way. Within the same day the replay showed **3.4x the input tokens** when old results were never
@@ -122,11 +122,11 @@ The answer states its scope (working tree, last 3 commits, PR 42), lists every f
 exercise the change, and labels guesses `[guess]`.
 
 ### 4.13 Trust is per exact file
-A repo's `.melon/config.toml` can't turn on hooks, MCP servers, verify commands or approval changes until you trust that exact
+A repo's `.zerd/config.toml` can't turn on hooks, MCP servers, verify commands or approval changes until you trust that exact
 file, and editing it revokes the trust. A cloned repo can't quietly turn on code execution.
 
 ### 4.14 Let a benchmark miss become a rule
-The head-to-head (section 6) had one melon miss: asked to dedupe, `unique_by` lost its `seen=` parameter, the checks passed, and
+The head-to-head (section 6) had one zerd miss: asked to dedupe, `unique_by` lost its `seen=` parameter, the checks passed, and
 the run said `verified`. Passing tests did not cover the old call. So a **signature guard** now compares the diff's public
 signatures with the old ones (Python through `ast`, TS/JS exports through a light reader) and sends the agent back once if a
 parameter was dropped, made required, reordered, or an export vanished. Tests, new files, moved functions and anything the
@@ -216,18 +216,18 @@ Good blog posts need these. All are visible in the commit history.
 | Review sub-agent spawning its own challenger: 80k tokens, 4 minutes | commit message, Oct 15 |
 | Skills list was half of a 26k-char system prompt | commit message, Oct 16 |
 | Kimi-K2.7-Code on the 11-task bench after the provider and tool-result work: 11/11 with 85 calls and 799k input tokens, against 7/11 with 45 calls and 233k on Oct 13. **Not a clean A/B**: the harness differed a lot between the runs, one run each. The open-model prompt notes, reminders, thinking switches, tsserver and cache-reusing compaction have unit tests but are not benchmarked. | `bench/results/` Kimi runs |
-| **melon vs Claude Code, 11 tasks, one run each: 10/11 and 10/11** | `bench/results/vs-melon-codex_gpt-5.6-luna.json`, `bench/results/vs-cc-claude-code.json` |
-| Prompt tokens 1.01M (melon) vs 1.31M (Claude Code); cached share 87% vs 76% | same files, summed |
-| Model calls 113 vs 42; wall time 355s vs 273s (melon is slower and chattier here) | same files, summed |
-| Claude Code cost $1.49 for the 11 tasks; melon's cost is not recorded (Codex login) | same files |
-| 31 of melon's 113 calls were todo-only turns | commit message, Oct 20 |
+| **zerd vs Claude Code, 11 tasks, one run each: 10/11 and 10/11** | `bench/results/vs-zerd-codex_gpt-5.6-luna.json`, `bench/results/vs-cc-claude-code.json` |
+| Prompt tokens 1.01M (zerd) vs 1.31M (Claude Code); cached share 87% vs 76% | same files, summed |
+| Model calls 113 vs 42; wall time 355s vs 273s (zerd is slower and chattier here) | same files, summed |
+| Claude Code cost $1.49 for the 11 tasks; zerd's cost is not recorded (Codex login) | same files |
+| 31 of zerd's 113 calls were todo-only turns | commit message, Oct 20 |
 | Transcript redraw with 20k lines: 93ms to under 5ms; idle redraws 10/s to 0.4/s | commit messages, Oct 20 |
 | Broad grep on a 24k-file repo 5.1s to 1.1s; cold search index 11.1s to 5.6s (index file 25MB to 19MB) | commit messages, Oct 20 |
 | Deep learn on a real repo: 563 sessions since 2026-05-25 mined; the run produced 17 lessons and dropped the older noise | working notes from the Oct 19 run |
 
 **Not claimed anywhere, on purpose**
 - The head-to-head is **one run per task on 11 small tasks, with different models** (Codex luna vs Sonnet 5.5), so it supports
-  "in the same range" and nothing stronger. Do not write "melon beats Claude Code". Do write that melon sent fewer tokens and
+  "in the same range" and nothing stronger. Do not write "zerd beats Claude Code". Do write that zerd sent fewer tokens and
   more calls, and that each missed a different task.
 - The cross-model task benchmark (`bench/results/final-*`) shows 22/22 for one model and 4/22 for most others. That looks like
   quota blocking, not ability, so it is not quoted.
@@ -240,7 +240,7 @@ several runs per task, rerun the model comparison on a day with free quota, and 
 
 ## 7. Suggested blog outline
 
-1. **Hook.** "Done" is the most overused word in agent output. Show the screenshot where melon says `verified`, and then says
+1. **Hook.** "Done" is the most overused word in agent output. Show the screenshot where zerd says `verified`, and then says
    the checks don't exercise the changed behaviour.
 2. **The rule.** Every token and every tool call should earn its place.
 3. **The single door.** Why safety lives in code, with the silent-approval bug as the origin story.

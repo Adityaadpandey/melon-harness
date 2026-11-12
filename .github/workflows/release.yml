@@ -1,4 +1,4 @@
-# Push a tag like v0.1.0 and this builds melon for mac, linux (static) and windows and attaches the tarballs to the GitHub release.
+# Push a tag like v0.1.0 and this builds zerd for mac, linux (static) and windows and attaches the tarballs to the GitHub release.
 name: release
 
 on:
@@ -31,17 +31,17 @@ jobs:
         if: contains(matrix.target, 'windows')
         shell: pwsh
         run: |
-          $name = "melon-${{ matrix.target }}"
-          Compress-Archive -Path target/${{ matrix.target }}/release/melon.exe -DestinationPath "$name.zip"
+          $name = "zerd-${{ matrix.target }}"
+          Compress-Archive -Path target/${{ matrix.target }}/release/zerd.exe -DestinationPath "$name.zip"
           (Get-FileHash "$name.zip" -Algorithm SHA256).Hash.ToLower() + "  $name.zip" | Out-File -Encoding ascii "$name.zip.sha256"
       - name: package
         if: "!contains(matrix.target, 'windows')"
         run: |
-          name=melon-${{ matrix.target }}
-          tar -czf $name.tar.gz -C target/${{ matrix.target }}/release melon
+          name=zerd-${{ matrix.target }}
+          tar -czf $name.tar.gz -C target/${{ matrix.target }}/release zerd
           shasum -a 256 $name.tar.gz > $name.tar.gz.sha256
       - uses: softprops/action-gh-release@v2
         with:
           files: |
-            melon-${{ matrix.target }}.tar.gz*
-            melon-${{ matrix.target }}.zip*
+            zerd-${{ matrix.target }}.tar.gz*
+            zerd-${{ matrix.target }}.zip*

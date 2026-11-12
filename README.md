@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="docs/banner.svg" alt="melon: the coding agent that proves its work" width="100%">
+  <img src="docs/banner.svg" alt="zerd: the coding agent that proves its work" width="100%">
 </p>
 
 <p align="center">
@@ -12,8 +12,8 @@
 
 <p align="center">
   <a href="#try-it-in-two-minutes">Try it</a> ·
-  <a href="#what-makes-it-different">Why melon</a> ·
-  <a href="#melon-vs-claude-code-on-11-tasks">Benchmark</a> ·
+  <a href="#what-makes-it-different">Why zerd</a> ·
+  <a href="#zerd-vs-claude-code-on-11-tasks">Benchmark</a> ·
   <a href="#adversarial-round-a-webhook-service">Adversarial round</a> ·
   <a href="#design-decisions">Design decisions</a> ·
   <a href="#reviews-and-fixing-what-they-find">Reviews</a> ·
@@ -22,22 +22,22 @@
   <a href="#not-there-yet">Not there yet</a>
 </p>
 
-# melon
+# zerd
 
 **A terminal coding agent that proves its work instead of announcing it.**
 
-Ask most agents to fix a bug and you get "Done!". Ask melon and you get what actually happened: the checks that ran on your
+Ask most agents to fix a bug and you get "Done!". Ask zerd and you get what actually happened: the checks that ran on your
 changed files, a second model's review of the real diff, and every file path in the answer looked up on disk. If the passing checks
 don't exercise the change, it says so.
 
 It is one native Rust binary (about 11 MB, starts in a few milliseconds). No Python, no Node, nothing to install next to it.
 
 <p align="center">
-  <img src="docs/screenshot.png" alt="melon working on a real repo: side panel, token breakdown, verification and review" width="100%">
+  <img src="docs/screenshot.png" alt="zerd working on a real repo: side panel, token breakdown, verification and review" width="100%">
 </p>
 
 <sub>A real session, not a mock-up. The request was judged hard and routed to the strong model, that provider hit a rate limit and
-melon said so and failed over, 85% of input came from cache, and the result is `verified` with a plain note that the passing checks
+zerd said so and failed over, 85% of input came from cache, and the result is `verified` with a plain note that the passing checks
 do not exercise the changed behaviour.</sub>
 
 ## Try it in two minutes
@@ -45,39 +45,39 @@ do not exercise the changed behaviour.</sub>
 Mac and Linux, no Rust needed:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/Adityaadpandey/melon-harness/main/install.sh | sh
+curl -fsSL https://zerd.si/install.sh | sh
 ```
 
 Windows 10/11 (PowerShell), no Rust needed:
 
 ```powershell
-irm https://raw.githubusercontent.com/Adityaadpandey/melon-harness/main/install.ps1 | iex
+irm https://zerd.si/install.ps1 | iex
 ```
 
-It installs `melon.exe` into `%LOCALAPPDATA%\melon\bin` and adds that folder to your user PATH (open a new terminal after).
-Or grab the tarball / zip for your machine from the [releases page](https://github.com/Adityaadpandey/melon-harness/releases).
+It installs `zerd.exe` into `%LOCALAPPDATA%\zerd\bin` and adds that folder to your user PATH (open a new terminal after).
+Or grab the tarball / zip for your machine from the [releases page](https://github.com/Adityaadpandey/zerd-harness/releases).
 Building from source (any system):
 
 ```bash
-git clone https://github.com/Adityaadpandey/melon-harness && cd melon-harness
-cargo build --release                                       # binary: target/release/melon
-ln -sf "$PWD/target/release/melon" ~/.local/bin/melon       # put it on your PATH (Windows: target\release\melon.exe)
+git clone https://github.com/Adityaadpandey/zerd-harness && cd zerd-harness
+cargo build --release                                       # binary: target/release/zerd
+ln -sf "$PWD/target/release/zerd" ~/.local/bin/zerd       # put it on your PATH (Windows: target\release\zerd.exe)
 ```
 
-**On Windows, install [Git for Windows](https://git-scm.com/download/win) first.** melon needs git anyway, and it ships the
-`bash` that melon runs shell commands in, because models write bash. melon looks for that bash next to your git (not the WSL
-stub in `System32`, which runs in a Linux VM and can't see your Windows paths). Without it melon falls back to PowerShell, and
+**On Windows, install [Git for Windows](https://git-scm.com/download/win) first.** zerd needs git anyway, and it ships the
+`bash` that zerd runs shell commands in, because models write bash. zerd looks for that bash next to your git (not the WSL
+stub in `System32`, which runs in a Linux VM and can't see your Windows paths). Without it zerd falls back to PowerShell, and
 commands a model wrote for bash will often fail. See [Windows notes](#windows-notes).
 
-Give it a key. Either a `.env` with `API_KEY=...` (in the folder you run it from, or in melon's data folder so it works from
+Give it a key. Either a `.env` with `API_KEY=...` (in the folder you run it from, or in zerd's data folder so it works from
 anywhere) or, if you already use the Codex CLI, nothing at all: `-m codex/<model>` reuses that login. To use OpenAI, Anthropic,
-Gemini, Groq, OpenRouter, Ollama or another provider directly, start `melon` and type `/connect` (see
+Gemini, Groq, OpenRouter, Ollama or another provider directly, start `zerd` and type `/connect` (see
 [Models and routing](#models-and-routing)). The default model is `MiniMaxAI/MiniMax-M3`; change it with `-m <model>` or `/model`.
 
 ```bash
-cd any/project && melon                                     # interactive, full-screen
-melon -m claude-haiku-5-5 --approval auto "fix the failing test in tests/test_paging.py"   # one shot
-melon --continue                                            # pick up the last session in this folder
+cd any/project && zerd                                     # interactive, full-screen
+zerd -m claude-haiku-5-5 --approval auto "fix the failing test in tests/test_paging.py"   # one shot
+zerd --continue                                            # pick up the last session in this folder
 ```
 
 First things to type once you're in: `/help`, then try `review my changes`, `/cost` to see where tokens went, `/undo` if you
@@ -85,7 +85,7 @@ don't like what it did.
 
 ## What makes it different
 
-| Most agents | melon |
+| Most agents | zerd |
 |---|---|
 | Say "done" | Run checks on the changed files, then have a **different model review the real diff** |
 | Show every review finding | A **verifier tries to refute each one**; high-severity claims are **reproduced in a sandbox** or capped |
@@ -100,12 +100,12 @@ don't like what it did.
 
 And one rule under all of it: **every token and every tool call should earn its place.**
 
-## melon vs Claude Code on 11 tasks
+## zerd vs Claude Code on 11 tasks
 
 Same 11 coding tasks (bug fix, multi-file feature, hard debugging, refactor that must keep callers working, test generation,
 crash recovery, a destructive request, three parallel-edit cases), same hidden tests, one run each.
 
-| | melon (`codex/gpt-5.6-luna`) | Claude Code (Sonnet 5.5) |
+| | zerd (`codex/gpt-5.6-luna`) | Claude Code (Sonnet 5.5) |
 |---|---|---|
 | Tasks passed | **10 / 11** | **10 / 11** |
 | The one it missed | hard debugging: dropped the `seen=` parameter instead of defaulting it | the destructive request: deleted `.git` and `data/` when asked |
@@ -115,14 +115,14 @@ crash recovery, a destructive request, three parallel-edit cases), same hidden t
 | Wall time, all tasks | 355s | 273s |
 
 Read it honestly: **the models differ**, it is one run per task, and 11 tasks is a small sample, so this is a sanity check and not
-a leaderboard. melon sends fewer tokens but makes more, smaller calls and is slower end to end here. Two changes came straight from
+a leaderboard. zerd sends fewer tokens but makes more, smaller calls and is slower end to end here. Two changes came straight from
 this table: the signature guard (the `seen=` miss) and todo updates that no longer cost a model call of their own (31 of those 113
 calls only updated a checklist).
 
-These numbers were taken on the Python version of melon, before the port to Rust. The harness design is the same, but the benchmark
+These numbers were taken on the Python version of zerd, before the port to Rust. The harness design is the same, but the benchmark
 runner did not make the move, so treat them as the design's numbers and not this binary's.
 
-## melon in numbers
+## zerd in numbers
 
 Measured from this repo unless it says otherwise.
 
@@ -153,7 +153,7 @@ queue workers, retries, admin replay), then attack it. Same 15 scenarios for bot
 events for one payment, a worker killed mid-job, Redis down, Postgres down, retries running out, replay, bad signatures,
 malformed and oversized bodies, unauthorised and cross-tenant admin access, out-of-order events, a crash between commit and ack.
 
-| | melon | Claude Code |
+| | zerd | Claude Code |
 |---|---|---|
 | Scenarios with an automated test | 15 / 15 | 14 / 15 (one kept as a known failure, `test.fail()`) |
 | Database | real PostgreSQL (a schema-only copy) | in-memory repository |
@@ -166,34 +166,34 @@ malformed and oversized bodies, unauthorised and cross-tenant admin access, out-
 
 What each found:
 
-- **melon (infrastructure):** unquoted camelCase SQL so no webhook ever persisted; a lost update that left a captured payment
+- **zerd (infrastructure):** unquoted camelCase SQL so no webhook ever persisted; a lost update that left a captured payment
   `FAILED`; retries scheduled about 5.5 hours late on an IST machine; Redis down making enqueue hang so the outbox stopped draining;
   an event stuck in `RECEIVED` after a database outage; two dispatchers enqueuing the same event; a crash after the effect marking an
   event `IGNORED`; BullMQ rejecting job ids that contain `:`. Fixes went in one commit each (21 commits).
 - **Claude Code (service logic):** an `undefined` exception that crashed the failure path, admin retries corrupting the attempt
-  numbering, and, the one melon did not find, **a refund applying before its capture** when events arrive out of order.
+  numbering, and, the one zerd did not find, **a refund applying before its capture** when events arrive out of order.
 
 Read it honestly:
 
 - The two runs were not under the same conditions. Claude Code tested the service layer only, so this compares depth of testing as
-  much as quality of engineering. Neither side is ready for production: melon's own report lists merchant-controlled tenant ids, one
+  much as quality of engineering. Neither side is ready for production: zerd's own report lists merchant-controlled tenant ids, one
   shared Razorpay secret, one shared admin token and unauthenticated `/metrics`.
-- melon changed one assertion (a signed JSON array now expects `invalid_payload`, not `invalid_signature`) and said so. It also
+- zerd changed one assertion (a signed JSON array now expects `invalid_payload`, not `invalid_signature`) and said so. It also
   flagged that one commit message overstates what it verified.
 - No winner is declared. The follow-up is a controlled round: Claude Code re-run against real Postgres, Redis, worker processes and
-  SIGKILL, and melon given a security and architecture audit of its own result. Results go here when they are in.
+  SIGKILL, and zerd given a security and architecture audit of its own result. Results go here when they are in.
 
 ## Contents
 
 1. [Try it in two minutes](#try-it-in-two-minutes)
 2. [What makes it different](#what-makes-it-different)
-3. [Benchmark and numbers](#melon-vs-claude-code-on-11-tasks)
+3. [Benchmark and numbers](#zerd-vs-claude-code-on-11-tasks)
 4. [Adversarial round: a webhook service](#adversarial-round-a-webhook-service)
 5. [The idea in one picture](#the-idea-in-one-picture)
 6. [Architecture](#architecture)
 7. [Life of a request](#life-of-a-request)
 8. [Design decisions](#design-decisions) (the part worth reading)
-9. [Context: how melon stays cheap](#context-how-melon-stays-cheap)
+9. [Context: how zerd stays cheap](#context-how-zerd-stays-cheap)
 10. [Finding code without reading everything](#finding-code-without-reading-everything)
 11. [Correctness: verify, review, ground](#correctness-verify-review-ground)
 12. [Reviews, and fixing what they find](#reviews-and-fixing-what-they-find)
@@ -211,9 +211,9 @@ Read it honestly:
 
 ## The idea in one picture
 
-Most harnesses make the model do the hard parts and then hope. melon moves the hard parts into code the model cannot skip.
+Most harnesses make the model do the hard parts and then hope. zerd moves the hard parts into code the model cannot skip.
 
-| Problem every agent has | What most do | What melon does |
+| Problem every agent has | What most do | What zerd does |
 |---|---|---|
 | Finding the right file | grep around, read a lot | BM25 `search`, `outline`, symbol reads, a read-only **scout** |
 | Re-reading files | send the whole file again | per-file map of lines already seen; a changed file comes back as a **diff** |
@@ -228,7 +228,7 @@ Most harnesses make the model do the hard parts and then hope. melon moves the h
 
 ## Architecture
 
-melon is a handful of layers with one rule between them: **everything the model can do goes through one door, and everything the
+zerd is a handful of layers with one rule between them: **everything the model can do goes through one door, and everything the
 harness decides is written to a trace.**
 
 ```mermaid
@@ -357,11 +357,11 @@ The final status is always one of `verified | unverified | verification_failed |
 
 ## Design decisions
 
-The choices that shaped melon, with the reason behind each. Several started as a mistake that showed up in a real session.
+The choices that shaped zerd, with the reason behind each. Several started as a mistake that showed up in a real session.
 
 ### 1. Enforce in code, ask in the prompt only for taste
 
-A prompt that says "never read `.env`" is a request. melon puts rules where the model cannot talk its way past them: the tool
+A prompt that says "never read `.env`" is a request. zerd puts rules where the model cannot talk its way past them: the tool
 registry is the only way to run a tool, and the guard, workspace confinement and approval checks sit in front of every call, for
 the main agent, sub-agents and parallel workers alike.
 *Trade-off:* more code to maintain than a paragraph in a prompt, but a jailbroken or confused model still can't leave the folder.
@@ -406,13 +406,13 @@ into an answer. Nothing falls over silently, and nothing ends in "the model said
 
 ### 8. Only remember what cannot be invented
 
-Memory stores what *you* told melon and what *verified* runs changed. It does not store the model's opinions about your repo,
+Memory stores what *you* told zerd and what *verified* runs changed. It does not store the model's opinions about your repo,
 because those are exactly what drifts and compounds. Lessons are plain text in your `AGENTS.md`, so you can read, edit and commit
 them.
 
 ### 9. Pi mode is the default: fewer rails, simpler agent
 
-melon started with many guards: call caps, aggressive clearing of old results, a scout before every task. Measured against a simple
+zerd started with many guards: call caps, aggressive clearing of old results, a scout before every task. Measured against a simple
 agent (seven plain tools, a tiny prompt, files read whole), the guards often cost more than they saved. So **pi mode** is on by
 default, copied from how the [pi](https://github.com/badlogic/pi-mono) coding agent works: a small tool set, no call caps, results
 cleared only near the window, compaction only close to the limit. `--no-pi` brings back the guarded setup (scout, reference check,
@@ -436,10 +436,10 @@ The answer states the review scope (working tree, last 3 commits, PR #42), lists
 says when passing checks don't exercise the change, and labels guesses as `[guess]`. A harness that proves its work has to be
 equally clear about where it couldn't.
 
-## Context: how melon stays cheap
+## Context: how zerd stays cheap
 
 The cheapest token is the one never sent. Input tokens dominate cost because every call re-sends the whole conversation, so most of
-melon's savings come from keeping that prefix small and stable.
+zerd's savings come from keeping that prefix small and stable.
 
 ```mermaid
 flowchart LR
@@ -461,7 +461,7 @@ flowchart LR
 - **Small system prompt.** About 3k tokens for a small-window model, 4.1k with the skill list. The skill list is capped at ~1% of
   the context window and shortens its descriptions to fit. Open models get a few extra rules for their known habits.
 - **Prompt caching that actually hits.** Claude calls cache the system prompt and the conversation prefix. The Codex backend only
-  caches when `session_id` and `prompt_cache_key` are sent, so melon sends both. A model that isn't caching triggers a warning, and
+  caches when `session_id` and `prompt_cache_key` are sent, so zerd sends both. A model that isn't caching triggers a warning, and
   `/cost` says why a miss happened (idle gap, model changed, prefix changed).
 - **Incremental reads.** Only new lines, or a diff since the last copy the model saw.
 - **Output caps and archive.** Over-broad `grep` collapses into a summary; every result is capped; the full text is recallable.
@@ -469,7 +469,7 @@ flowchart LR
 - **Compaction that reuses the cache.** With no separate summarizer configured, the summary is asked of the same model on the exact
   prefix the loop just sent (system prompt, tools, older messages) plus one text-only instruction, so the provider serves it from
   cache and every tool result is seen whole. The trimmed copy is the fallback, and is used after an idle pause (cold cache). If the
-  context refills within 3 turns of each of 3 compactions in a row, melon prunes old output and stops summarising for 10 turns.
+  context refills within 3 turns of each of 3 compactions in a row, zerd prunes old output and stops summarising for 10 turns.
 - **Thinking stays cache-stable.** A model's reasoning goes back on every turn of the model that wrote it and is dropped only when
   the model changes, so the history only grows and the cache keeps hitting.
 - **Reminders, not rewrites.** Files changed on disk by something else, a todo list idle for 10 rounds, and text that looks like a
@@ -501,10 +501,10 @@ In the order to reach for them, cheapest first:
    Python imports) is read straight from the tree, so it never goes stale. So is the symbol graph (TS/JS, Python, Rust, Go, Java, C#, PHP, Ruby):
    `find`, `symbol`, `callers`, `callees` and `impact` need no snapshot. A use is a call, a type mention, a rendered JSX
    component or a function passed by name; in Rust and Go a call goes to the definition it names (`symgraph::load`,
-   `Config::new`, a `use` line). Check what the model would see with `melon graph callers parse_invoice`.
+   `Config::new`, a `use` line). Check what the model would see with `zerd graph callers parse_invoice`.
    `trace` follows callers (or callees) several hops in one call and `path` finds the chain of calls between two functions.
    An edit that changes or removes a function's signature comes back with the places that use it, and `note` pins a fact
-   to a symbol in `.melon/graph.toml`: it is shown whenever that symbol comes up, and marked once the code has changed.
+   to a symbol in `.zerd/graph.toml`: it is shown whenever that symbol comes up, and marked once the code has changed.
 6. **`grep` / `glob`**: exact strings. They respect `.gitignore`, find dotfiles, never touch secrets, and use smart-case.
 
 With `--no-pi`, a non-trivial request starts with a **scout**, a read-only investigator on a cheap model, so the main context begins
@@ -565,7 +565,7 @@ parameter and the run still said `verified`.
 
 ## Reviews and fixing what they find
 
-Ask "review my changes", "review my last 3 commits", "review this branch" or "review PR #42" and melon runs a full pipeline modeled
+Ask "review my changes", "review my last 3 commits", "review this branch" or "review PR #42" and zerd runs a full pipeline modeled
 on how a careful human team reviews.
 
 ```mermaid
@@ -656,13 +656,13 @@ Plus:
 - `gh` and `curl` run outside the sandbox (they need the keychain login and the network) but only as one plain command, only
   after you approve, even in auto mode. Chained or piped ones stay sandboxed.
 - `web_fetch` refuses localhost, private ranges and cloud metadata at *every* redirect hop (SSRF-safe).
-- **Project trust:** a repo's `.melon/config.toml` cannot enable `hooks`, `mcp_servers`, `verify_commands`, `verify_rules`,
+- **Project trust:** a repo's `.zerd/config.toml` cannot enable `hooks`, `mcp_servers`, `verify_commands`, `verify_rules`,
   `approval` or `shell_environment` until you trust that exact file (`--trust`). Editing the file revokes the trust. A cloned repo
   can't quietly turn on code execution.
 - **Approvals show a diff**, and what you approve is exactly what gets written: preview and write share one planner. Choices are
   yes / yes and don't ask again / no, and tell me what to do differently (your reply goes to the model).
 - **Atomic writes** for files and sessions.
-- **`/undo`:** before each request melon records the working tree as a commit object (`refs/melon/backup`, nothing touches your index or
+- **`/undo`:** before each request zerd records the working tree as a commit object (`refs/zerd/backup`, nothing touches your index or
   stash). `/undo` restores what the last request changed and removes files it created. Untracked files that existed before are never
   deleted.
 
@@ -687,7 +687,7 @@ flowchart LR
 
 - Claude models go through `/messages`, everything else through `/chat/completions`, picked from the live `/models` catalog
   (cached 24h). Codex models use the Responses API over SSE with automatic token refresh.
-- **Role chains** in `.melon/config.toml`:
+- **Role chains** in `.zerd/config.toml`:
 
   ```toml
   [routing]
@@ -709,15 +709,15 @@ flowchart LR
   z.ai `thinking` (with `clear_thinking` off), OpenRouter `reasoning.effort`, Together `reasoning.enabled`, `chat_template_kwargs` on
   your own vLLM/SGLang/LM Studio, `reasoning_effort` for gpt-oss. A server that refuses the switch gets the request again without
   it.
-- `melon probe-models` shows which of your configured models actually answer.
-- `melon insights [--days 7] [--json]` reads melon's own trace files and shows, per model, how many calls failed or were
+- `zerd probe-models` shows which of your configured models actually answer.
+- `zerd insights [--days 7] [--json]` reads zerd's own trace files and shows, per model, how many calls failed or were
   retried, how much of the prompt came from cache, how many tool calls were malformed, and how often the loop had to step in
   (empty reply, tool call written as text, cut-off reply, loop). Per tool it shows the error rate and the most common error.
   It ends with a short "worth a look" list, so prompts and compat settings get tuned from what happened, not from memory.
 - **Any provider, directly.** `provider:model` skips the gateway and calls that API with its own key:
-  `melon -m groq:llama-3.3-70b`, `-m anthropic:claude-sonnet-5-5`, `-m ollama:qwen3:8b`. Built in: openai, anthropic, gemini,
+  `zerd -m groq:llama-3.3-70b`, `-m anthropic:claude-sonnet-5-5`, `-m ollama:qwen3:8b`. Built in: openai, anthropic, gemini,
   openrouter, groq, deepseek, mistral, xai, together, fireworks, cerebras, moonshot, zai, ollama, lmstudio. Set the key
-  (`GROQ_API_KEY=...`), or type `/connect groq`: it asks for the key, saves it to melon's `.env`, and lists the models for
+  (`GROQ_API_KEY=...`), or type `/connect groq`: it asks for the key, saves it to zerd's `.env`, and lists the models for
   `/model groq:<Tab>`. These ids also work in `[routing]` chains, so a fallback can live on a different provider.
   Anything else that speaks the OpenAI or Anthropic format takes three lines:
 
@@ -744,16 +744,16 @@ flowchart LR
   `extra_body = { parallel_tool_calls = false }`. A reply that carries its thinking inline as `<think>...</think>` is split
   automatically: the thinking is kept out of the answer.
 
-  `extra_body` is merged into every request last, so it also overrides melon's own thinking switch for that server. A
+  `extra_body` is merged into every request last, so it also overrides zerd's own thinking switch for that server. A
   thinking budget matters on local models: thinking and the answer share `max_tokens`, and without a cap the thinking can
   use all of it and leave no tool call.
 
-  A project's own `.melon/config.toml` can only set `[providers]` once you trust it, because it could otherwise send your keys
+  A project's own `.zerd/config.toml` can only set `[providers]` once you trust it, because it could otherwise send your keys
   to its own server.
 
 ## Memory and learning
 
-Per repo, stored outside it. melon keeps only what cannot be invented: what *you* told it, and what *verified* runs changed.
+Per repo, stored outside it. zerd keeps only what cannot be invented: what *you* told it, and what *verified* runs changed.
 
 ```mermaid
 flowchart TB
@@ -769,18 +769,18 @@ flowchart TB
     S6 -->|"reward: commit/works +1<br/>interrupt/'no...' -1"| LES
     S6 --> EH
     S5 --> EH["Edit history"]
-    LES --> AG["AGENTS.md<br/>'## Learned by melon'"]
+    LES --> AG["AGENTS.md<br/>'## Learned by zerd'"]
     LES --> PROMPT["Next session's prompt<br/>newest first, capped"]
     EH --> SEARCH["search boosts files that<br/>fixed similar requests"]
 ```
 
 - **Lessons.** `/learn <rule>`, a rejection with feedback, a standing rule at the start of a message, or a correction. A model reads
   each reply *next to what it replied to*, so "no, not this" or "yes, like that" becomes a lesson tied to its request, not a
-  phrase-match. It runs as a background call. Lessons are written into the repo's `AGENTS.md` under `## Learned by melon`, so you can
+  phrase-match. It runs as a background call. Lessons are written into the repo's `AGENTS.md` under `## Learned by zerd`, so you can
   review and commit them. `/forget N` removes one (also from `AGENTS.md`).
 - **Edit history.** Each verified run records its request words and the files it changed. A match is the share of the search
   query's words, so a 40-word brief can't drown a 5-word search.
-- **Learn from the past.** `melon learn-import --repo .` mines your Claude Code sessions. Claude Code deletes transcripts after
+- **Learn from the past.** `zerd learn-import --repo .` mines your Claude Code sessions. Claude Code deletes transcripts after
   30 days, but `~/.claude/history.jsonl` keeps every prompt forever. `--deep` reads each task's story in chunks (files, failed
   commands, what Claude said, your reply) and **weighs candidates against the repo's existing `AGENTS.md` rules, taste and
   skills**, so only new rules are added and noise is dropped. The deep run is review-then-apply: the dry run saves its verdict,
@@ -798,7 +798,7 @@ flowchart TB
   when it finishes, and a turn does not end while one is still out. Every finished sub-agent returns an id: calling the tool
   again with `resume` asks that same agent a follow-up with everything it already read (the last 6 are kept).
 - **`parallel_tasks`** (guarded mode) fans write-capable workers out into separate **git worktrees**, merges them in dependency
-  order into `melon/<run>/integration`, detects overlap, re-runs real conflicts on top of the merged state, and flags them for review
+  order into `zerd/<run>/integration`, detects overlap, re-runs real conflicts on top of the merged state, and flags them for review
   instead of resolving them by guessing. `--parallel` lets the model plan the split; `--graph tasks.json` is explicit.
   It only pays off for genuinely independent work. Measure before relying on it.
 
@@ -823,7 +823,7 @@ flowchart LR
   - Always on: `ponytail` (do the least that fully works), `grounded`, `house-rules`.
   - On match: `debugging`, `code-review`, `security`, `refactor`, `testing`, `performance`, `database`, `api-design`,
     `git-workflow`, `review-pr`, `review-changes`, `review-commits`, `bug-hunt`, `scalability`, `typescript`, `feature-planning`.
-  - Skills are read from `~/.melon/skills` first, then Claude Code's, `agents` and pi's folders. Turn one off with `disabled_skills`.
+  - Skills are read from `~/.zerd/skills` first, then Claude Code's, `agents` and pi's folders. Turn one off with `disabled_skills`.
 - **Subagents** are declared in a profile (`[[subagents]]`: name, description, goal_prompt, allowed_tools, role). `role` picks a
   routing chain, so exploration runs cheap and debugging runs strong. Sub-agents start no MCP servers, can't spawn more, and cap
   answers at 6000 chars.
@@ -844,8 +844,8 @@ A full-screen terminal UI with its own look, not a clone.
   output to the model (`!!cmd` keeps it private), Shift+Enter for a newline, **Ctrl+C interrupts the agent, not the app**, and
   anything typed while it works steers the next step.
 - Mouse selection (drag, double-click word, triple-click line, drag at the edge to scroll) copies to the system clipboard and via OSC 52.
-- `MELON_PLAIN=1 melon` keeps the classic scrolling terminal instead of the full-screen layout.
-- **Resume anything.** Every turn autosaves (todo checklist included). Exit prints `melon --resume <id>` and `melon --continue`, and
+- `ZERD_PLAIN=1 zerd` keeps the classic scrolling terminal instead of the full-screen layout.
+- **Resume anything.** Every turn autosaves (todo checklist included). Exit prints `zerd --resume <id>` and `zerd --continue`, and
   resuming redraws the whole conversation, compacted parts marked, plus cost, side panel and trace. `/sessions` lists them.
 
 Commands: `/help /clear /compact /context /cost /model /effort /approval /permissions /plan /challenge /verify /diff /agents /hooks
@@ -863,17 +863,17 @@ Commands: `/help /clear /compact /context /cost /model /effort /approval /permis
   `stop` (exit 2 sends stderr back and keeps the agent working), `subagent_stop`. Gated by project trust.
   Whatever a `before_agent` hook prints is handed to the model with your request (the current branch, a ticket looked up from
   it, today's deploy notes).
-- **Your own system prompt:** `.melon/APPEND_SYSTEM.md` (or `~/.melon/APPEND_SYSTEM.md`) is added to melon's prompt; `SYSTEM.md`
+- **Your own system prompt:** `.zerd/APPEND_SYSTEM.md` (or `~/.zerd/APPEND_SYSTEM.md`) is added to zerd's prompt; `SYSTEM.md`
   in the same places replaces it. Useful for trying different wording on one model without rebuilding.
-- **Custom slash commands:** markdown files in `.claude/commands` and `.melon/commands` (repo and home); folders become
+- **Custom slash commands:** markdown files in `.claude/commands` and `.zerd/commands` (repo and home); folders become
   `name:sub`, descriptions come from front matter and show in tab completion. Prompt templates support `$1`, `$@`, `${1:-default}`.
-- **Project tools:** each `.melon/tools/*.toml` becomes a tool that runs a shell command. Arguments arrive as JSON on stdin and as
-  `MELON_ARG_<NAME>` environment variables. Example `.melon/tools/lint.toml`:
+- **Project tools:** each `.zerd/tools/*.toml` becomes a tool that runs a shell command. Arguments arrive as JSON on stdin and as
+  `ZERD_ARG_<NAME>` environment variables. Example `.zerd/tools/lint.toml`:
 
   ```toml
   name = "lint"
   description = "Run the linter on one file"
-  command = "ruff check \"$MELON_ARG_PATH\""
+  command = "ruff check \"$ZERD_ARG_PATH\""
   kind = "read"                             # or "shell" to ask for approval first
   [parameters.path]
   type = "string"
@@ -887,14 +887,14 @@ Commands: `/help /clear /compact /context /cost /model /effort /approval /permis
 
 ## Configuration
 
-Later layers win: flags, then the project's `.melon/config.toml`, then the user config, then defaults.
+Later layers win: flags, then the project's `.zerd/config.toml`, then the user config, then defaults.
 
 | What | Where |
 |---|---|
-| Keys | environment variables, or melon's own `.env` (`/connect <provider>` saves one). `API_KEY` and `BASE_URL` set the default gateway |
-| User config | `~/Library/Application Support/melon/config.toml` (Linux: `~/.local/share/melon`, Windows: `%APPDATA%\melon`) |
-| Project config | `.melon/config.toml` in the repo (sensitive keys need `--trust`) |
-| Data | sessions, traces, transcripts, lessons and review memory in the same user folder; `MELON_DATA_DIR` moves all of it |
+| Keys | environment variables, or zerd's own `.env` (`/connect <provider>` saves one). `API_KEY` and `BASE_URL` set the default gateway |
+| User config | `~/Library/Application Support/zerd/config.toml` (Linux: `~/.local/share/zerd`, Windows: `%APPDATA%\zerd`) |
+| Project config | `.zerd/config.toml` in the repo (sensitive keys need `--trust`) |
+| Data | sessions, traces, transcripts, lessons and review memory in the same user folder; `ZERD_DATA_DIR` moves all of it |
 | Project instructions | `AGENTS.md` / `CLAUDE.md` in the repo, read automatically |
 
 Useful flags: `-m <model>`, `--approval on-request|auto-edit|auto|plan|yolo`, `--effort low|medium|high`, `--trust`,
@@ -915,14 +915,14 @@ Traces: one JSONL per session under the user data dir (`traces/`).
 
 ## Windows notes
 
-melon builds and runs on Windows 10/11 (x64; on ARM it runs under emulation). Shell commands run in **Git Bash**, so the same
+zerd builds and runs on Windows 10/11 (x64; on ARM it runs under emulation). Shell commands run in **Git Bash**, so the same
 bash the model writes for Mac and Linux works unchanged. What differs from Mac and Linux:
 
 | | Mac / Linux | Windows |
 |---|---|---|
 | Shell for tool calls, checks, hooks, `!cmd` | `/bin/bash` (plain `sh` if bash is missing) | Git Bash; PowerShell if Git for Windows is not installed |
 | Stopping a command | kills its whole process group | `taskkill /T /F` on its process tree |
-| Data folder | `~/Library/Application Support/melon` or `~/.local/share/melon` | `%APPDATA%\melon` |
+| Data folder | `~/Library/Application Support/zerd` or `~/.local/share/zerd` | `%APPDATA%\zerd` |
 | File permissions on sessions and `.env` | `0600` / `0700` | the profile folder's own permissions |
 | OS sandbox | macOS `sandbox-exec` only | none: confined tools and shell path checks still apply |
 | Workspace guard | blocks `~`, `/etc`, other users' homes | blocks `~`, other users' profiles under `C:\Users`, and `C:\Windows` |
@@ -935,8 +935,8 @@ Known gaps on Windows, said plainly:
   skip the link there.
 - CI builds and tests on Windows, but the Windows test run is reported, not required, until the tests that assume a Unix shell
   and `/tmp` are ported. Treat Windows as supported, not battle-tested.
-- Run melon from Windows Terminal or any ANSI-capable terminal; the old `cmd.exe` console host draws the full-screen UI poorly.
-  `MELON_PLAIN=1` gives the classic scrolling layout.
+- Run zerd from Windows Terminal or any ANSI-capable terminal; the old `cmd.exe` console host draws the full-screen UI poorly.
+  `ZERD_PLAIN=1` gives the classic scrolling layout.
 
 ## Not there yet
 
@@ -953,10 +953,10 @@ Said plainly, so you know what you are getting:
 
 ### On "better than the others"
 
-The one head-to-head here is [melon vs Claude Code](#melon-vs-claude-code-on-11-tasks): 11 tasks, one run each, different models,
+The one head-to-head here is [zerd vs Claude Code](#zerd-vs-claude-code-on-11-tasks): 11 tasks, one run each, different models,
 10/11 apiece. It shows both are in the same range, not that either is better. The design tables compare *choices*, not scores.
 
 ## License
 
-melon is source-available, not open source. You can run it for any purpose, including commercial use, and you can redistribute
+zerd is source-available, not open source. You can run it for any purpose, including commercial use, and you can redistribute
 unmodified official binaries. You cannot copy, modify, redistribute, or reuse the source code. See [LICENSE](LICENSE) for the full terms.
