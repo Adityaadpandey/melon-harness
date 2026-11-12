@@ -113,6 +113,24 @@ async fn a_background_agents_report_reaches_its_own_parent_before_the_turn_ends(
 }
 
 #[tokio::test]
+async fn a_guessed_folder_opens_the_only_file_with_that_name() {
+    let tmp = tempfile::tempdir().unwrap();
+    let d = tmp.path();
+    std::fs::create_dir_all(d.join("apps/server/routes")).unwrap();
+    std::fs::create_dir_all(d.join("apps/web")).unwrap();
+    std::fs::write(d.join("apps/server/routes/auth.ts"), "export const login = 1;\n").unwrap();
+    std::fs::write(d.join("apps/server/index.ts"), "a\n").unwrap();
+    std::fs::write(d.join("apps/web/index.ts"), "b\n").unwrap();
+    let c = cfg(d, json!({"pi_mode": false}));
+    let reg = create_default_registry(ConfigHandle::new(c.clone()));
+    let r = reg.invoke("read_file", json!({"path": "src/routes/auth.ts"}), d, &HookSystem::new(&c), None, "s1").await;
+    assert!(r.success && r.output.contains("Opened the only file with that name: apps/server/routes/auth.ts") && r.output.contains("login"), "{}", r.output);
+    // two files share the name: picking one would be a guess, so it still asks
+    let r = reg.invoke("read_file", json!({"path": "src/index.ts"}), d, &HookSystem::new(&c), None, "s1").await;
+    assert!(!r.success && r.error.unwrap_or_default().contains("Files with that name"));
+}
+
+#[tokio::test]
 async fn resuming_an_agent_that_is_gone_says_so() {
     let tmp = tempfile::tempdir().unwrap();
     let c = cfg(tmp.path(), json!({"pi_mode": false}));

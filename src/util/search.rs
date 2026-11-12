@@ -225,18 +225,23 @@ pub fn split_lines(text: &str) -> Vec<&str> {
 
 /// Hint for a guessed path: real files with the same name (or stem) under root.
 pub fn similar_paths(root: &Path, missing: &Path, forbidden: &[String]) -> String {
-    let files = list_files(root, forbidden);
-    let name = missing.file_name();
-    let stem = missing.file_stem();
-    let mut same: Vec<&PathBuf> = files.iter().filter(|f| f.file_name() == name).collect();
-    if same.is_empty() && stem.is_some() {
-        same = files.iter().filter(|f| f.file_stem() == stem).collect();
-    }
+    let (same, _) = similar(root, missing, forbidden);
     if same.is_empty() {
         return " Don't guess paths: locate it with glob or grep files_only first.".into();
     }
     let shown: Vec<String> = same.iter().take(5).map(|f| f.strip_prefix(root).unwrap_or(f).to_string_lossy().to_string()).collect();
     format!(" Files with that name: {}", shown.join(", "))
+}
+
+/// Files in the repo named like a path that does not exist, and whether the whole file name matched (`true`) or only
+/// the part before the extension. Asked for `src/routes/auth.ts`, finds `apps/server/src/routes/auth.ts`.
+pub fn similar(root: &Path, missing: &Path, forbidden: &[String]) -> (Vec<PathBuf>, bool) {
+    let files = list_files(root, forbidden);
+    let same: Vec<PathBuf> = files.iter().filter(|f| f.file_name() == missing.file_name()).cloned().collect();
+    if !same.is_empty() || missing.file_stem().is_none() {
+        return (same, true);
+    }
+    (files.into_iter().filter(|f| f.file_stem() == missing.file_stem()).collect(), false)
 }
 
 /// Notes on paths a sub-agent report names that are not on disk, with the real file of that name.

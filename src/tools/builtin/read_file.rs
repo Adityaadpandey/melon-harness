@@ -200,8 +200,17 @@ impl Tool for ReadFileTool {
                 }
             }
         }
+        // A guessed folder with the right file name ("src/routes/auth.ts" for "apps/server/src/routes/auth.ts"): when
+        // exactly one file has that name it is the one meant, so open it and say so instead of costing a round.
+        let mut moved = String::new();
         if !path.exists() {
-            return ToolResult::error(format!("File not found: {}.{}", path.display(), similar_paths(&inv.cwd, &path, &cfg.forbidden_paths)));
+            match crate::util::search::similar(&inv.cwd, &path, &cfg.forbidden_paths) {
+                (same, true) if same.len() == 1 => {
+                    moved = format!("[{p} does not exist. Opened the only file with that name: {}. Use this path from now on.]\n", same[0].strip_prefix(&inv.cwd).unwrap_or(&same[0]).display());
+                    path = same[0].clone();
+                }
+                _ => return ToolResult::error(format!("File not found: {}.{}", path.display(), similar_paths(&inv.cwd, &path, &cfg.forbidden_paths))),
+            }
         }
         if let Some(sym) = symbol {
             let src = std::fs::read(&path).map(|b| String::from_utf8_lossy(&b).to_string()).unwrap_or_default();
@@ -242,7 +251,7 @@ impl Tool for ReadFileTool {
             Err(e) => e.as_bytes().iter().map(|&b| b as char).collect(), // latin-1, as the Python harness fell back to
         };
         if cfg.pi_mode {
-            return ToolResult::ok(self.pi_incremental(&path, &content, offset, limit, inv.epoch));
+            return ToolResult::ok(format!("{moved}{}", self.pi_incremental(&path, &content, offset, limit, inv.epoch)));
         }
         let lines: Vec<&str> = crate::util::search::split_lines(&content);
         let total = lines.len();
@@ -333,7 +342,7 @@ impl Tool for ReadFileTool {
         if start_idx > 0 || end_idx < total {
             output = format!("Showing lines {}-{end_idx} of {total}\n\n{output}", start_idx + 1);
         }
-        let mut r = ToolResult::ok_with(output, json!({"path": path.to_string_lossy(), "total_lines": total, "shown_start": start_idx + 1, "shown_end": end_idx}));
+        let mut r = ToolResult::ok_with(format!("{moved}{output}"), json!({"path": path.to_string_lossy(), "total_lines": total, "shown_start": start_idx + 1, "shown_end": end_idx}));
         r.truncated = truncated;
         r
     }
