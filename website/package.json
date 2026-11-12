@@ -8,16 +8,17 @@
     "start": "next start"
   },
   "dependencies": {
-    "@shikijs/rehype": "^4.6.0",
-    "github-slugger": "^2.0.0",
+    "@tailwindcss/postcss": "^4.3.5",
+    "@types/mdx": "^2.0.14",
+    "fumadocs-core": "^16.19.0",
+    "fumadocs-mdx": "^15.6.1",
+    "fumadocs-ui": "^16.19.0",
+    "mermaid": "^12.3.0",
     "next": "^16.4.6",
+    "postcss": "^8.5.32",
     "react": "^19.3.1",
     "react-dom": "^19.3.1",
-    "react-markdown": "^10.1.0",
-    "rehype-autolink-headings": "^7.1.0",
-    "rehype-slug": "^6.0.0",
-    "remark-gfm": "^4.0.1",
-    "remark-github-blockquote-alert": "^2.1.0"
+    "tailwindcss": "^4.3.5"
   },
   "devDependencies": {
     "@types/node": "^26.6.6",
