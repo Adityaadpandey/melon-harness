@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 import Link from "next/link";
-import { groups, blurb } from "@/lib/docs";
+import { groups } from "@/lib/docs";
 
 export const metadata: Metadata = { title: "Docs" };
 
@@ -17,7 +17,6 @@ export default function DocsHome() {
               {g.pages.map((p) => (
                 <li key={p.slug}>
                   <Link href={`/docs/${p.slug}`}>{p.title}</Link>
-                  <span>{blurb(p.body)}</span>
                 </li>
               ))}
             </ul>

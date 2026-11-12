@@ -37,22 +37,3 @@ export const groupOf = (slug: string) => groups.find((g) => g.pages.some((p) => 
 
 export const readingMinutes = (body: string) => Math.max(1, Math.round(body.split(/\s+/).length / 220));
 
-// First plain paragraph of the body, markdown stripped, cut near 110 chars.
-export function blurb(body: string, max = 110): string {
-  let fence = false;
-  for (const raw of body.split("\n")) {
-    const line = raw.trim();
-    if (/^(`{3,}|~{3,})/.test(line)) { fence = !fence; continue; }
-    if (fence || !line || /^([#>|!\-*+\d]|<|\[!)/.test(line) && !/^\*\*|^\*[^*\s]/.test(line)) continue;
-    const text = line
-      .replace(/!?\[([^\]]*)\]\([^)]*\)/g, "$1")
-      .replace(/[`*_~]/g, "")
-      .trim();
-    // skip lead-ins like "Run this:" and fragments that start mid-sentence
-    if (text.length < 30 || text.endsWith(":") || !/^[A-Z0-9]/.test(text)) continue;
-    const first = text.match(/^.*?[.!?](?=\s|$)/)?.[0] ?? text;
-    if (first.length <= max) return first;
-    return first.slice(0, max).replace(/\s+\S*$/, "") + "…";
-  }
-  return "";
-}
