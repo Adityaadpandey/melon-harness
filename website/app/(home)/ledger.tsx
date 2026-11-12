@@ -1,6 +1,5 @@
 "use client";
 import { useState } from "react";
-import { AnimatePresence, motion } from "framer-motion";
 
 export type Row = [bad: string, good: [string, string, string], how: string];
 
@@ -18,13 +17,7 @@ export default function Ledger({ rows }: { rows: Row[] }) {
               <span className="good"><span className="sr-only">zerd </span><i className="m m-good" aria-hidden="true">✓</i>{a}<strong>{b}</strong>{c}</span>
               <span className="plus" aria-hidden="true" />
             </button>
-            <AnimatePresence initial={false}>
-              {on && (
-                <motion.div id={`how-${i}`} className="how-wrap" initial={{ height: 0, opacity: 0 }} animate={{ height: "auto", opacity: 1 }} exit={{ height: 0, opacity: 0 }} transition={{ duration: 0.45, ease: [0.22, 1, 0.36, 1] }}>
-                  <p className="how">{how}</p>
-                </motion.div>
-              )}
-            </AnimatePresence>
+            {on && <div id={`how-${i}`}><p className="how">{how}</p></div>}
           </li>
         );
       })}

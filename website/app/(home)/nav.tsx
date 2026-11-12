@@ -1,16 +1,10 @@
-"use client";
 import Link from "next/link";
-import { motion, useMotionValueEvent, useScroll } from "framer-motion";
-import { useState } from "react";
 import Logo from "./logo";
 
-// Frosted glass bar. It floats a little away from the top edge and tightens once you scroll.
+// Dark glass bar pinned to the top. No scroll listener, no entrance animation.
 export default function Nav({ repo }: { repo: string }) {
-  const { scrollY } = useScroll();
-  const [tight, setTight] = useState(false);
-  useMotionValueEvent(scrollY, "change", (v) => setTight(v > 24));
   return (
-    <motion.header className={`sk-nav${tight ? " tight" : ""}`} initial={{ y: -24, opacity: 0 }} animate={{ y: 0, opacity: 1 }} transition={{ duration: 0.9, ease: [0.22, 1, 0.36, 1] }}>
+    <header className="sk-nav">
       <div className="sk-nav-in">
         <Logo />
         <nav aria-label="Main">
@@ -20,6 +14,6 @@ export default function Nav({ repo }: { repo: string }) {
           <a className="sk-pill" href="#install">Install</a>
         </nav>
       </div>
-    </motion.header>
+    </header>
   );
 }
