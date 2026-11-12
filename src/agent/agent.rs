@@ -39,6 +39,9 @@ use tokio::sync::mpsc::UnboundedSender;
 pub type Tx = UnboundedSender<AgentEvent>;
 
 const DOC_SUFFIX: &[&str] = &[".md", ".mdx", ".txt", ".rst"];
+/// What the scout is sent ahead of the user's request. Without it the scout reads "fix the checkout bug" as its own
+/// job and spends its turns trying to solve it, when all the main agent needs back is where to look.
+const SCOUT_BRIEF: &str = "Locate the code for the request below; do not do the work and do not propose a design. Report: the files and functions that would have to change (file:line), who calls them (ask the graph), the tests that cover them, and anything that would surprise someone making the change. Stop as soon as you can name those.";
 const REVIEW_NO_WORKERS: &str = "parallel_tasks runs coding workers that edit files in their own worktrees; a review only reads. Read the files yourself, or use subagent_investigator for a read-only question.";
 const CUT_CALL: &str = "Not run: your reply hit the output token limit, so this call's arguments may be truncated. Re-issue it in smaller pieces: write a long file as a short first version and grow it with edits, or split one big edit into several.";
 
@@ -1338,7 +1341,7 @@ impl Agent {
             return String::new();
         }
         self.session.tracer.emit("scout", json!({"goal": crate::util::text::head_chars(message, 200)}));
-        let res = reg.invoke("subagent_investigator", json!({"goal": message}), &cfg.cwd, &self.session.hook_system, Some(&self.session.approval_manager), "").await;
+        let res = reg.invoke("subagent_investigator", json!({"goal": format!("{SCOUT_BRIEF}\n\nThe request:\n{message}")}), &cfg.cwd, &self.session.hook_system, Some(&self.session.approval_manager), "").await;
         if !res.success {
             self.scout_error = res.error.unwrap_or_else(|| "unknown error".into()).lines().next().unwrap_or("").to_string();
             return String::new();

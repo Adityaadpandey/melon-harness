@@ -165,7 +165,11 @@ impl Tool for FakeScout {
     fn as_any(&self) -> &dyn std::any::Any {
         self
     }
-    async fn execute(&self, _inv: &ToolInvocation) -> ToolResult {
+    async fn execute(&self, inv: &ToolInvocation) -> ToolResult {
+        // the scout is briefed to locate, not to solve: a goal that is the bare request is the old bug
+        if !inv.str("goal").unwrap_or("").starts_with("Locate the code") {
+            return ToolResult::error("the scout was handed the raw request");
+        }
         ToolResult::ok("route -> svc.ts:42")
     }
 }
