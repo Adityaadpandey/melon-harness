@@ -1,7 +1,7 @@
 "use client";
 import { useState } from "react";
 
-// Install command with a copy button. Shows "Copied" for a moment after a click.
+// Install command with a copy button. Says "Copied" for a moment after a click.
 export default function CopyCmd({ cmd }: { cmd: string }) {
   const [done, setDone] = useState(false);
   const copy = async () => {
@@ -14,9 +14,8 @@ export default function CopyCmd({ cmd }: { cmd: string }) {
     }
   };
   return (
-    <div className="cmdbox">
-      <span className="cmdbox-prompt">$</span>
-      <code>{cmd}</code>
+    <div className="cmd">
+      <code><span aria-hidden="true">$ </span>{cmd}</code>
       <button type="button" onClick={copy} aria-label="Copy install command">
         {done ? "Copied" : "Copy"}
       </button>

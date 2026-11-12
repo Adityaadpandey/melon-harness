@@ -1,116 +1,105 @@
 import Link from "next/link";
+import Image from "next/image";
 import { latestRelease } from "@/lib/latest";
 import CopyCmd from "./copy-cmd";
 import "./home.css";
 
-const features = [
-  ["Checks, then a second opinion", "Runs the checks that cover your changed files, then a different model reviews the real diff."],
-  ["Findings get cross-examined", "A verifier tries to refute each review finding. High-severity claims are reproduced in a sandbox or capped."],
-  ["No invented paths", "Every path:line in the answer is looked up in your tree before you see it."],
-  ["Cheap by design", "Remembers what it read and sends only new lines or a diff. 85% of input comes from cache in a real session."],
-  ["Rules enforced in code", "Confined tools, a path-scanning shell and an OS sandbox, not a prompt asking nicely."],
-  ["Fails over, and says so", "When a provider hits its quota zerd switches to another one and tells you."],
+const INSTALL = "curl -fsSL https://zerd.si/install.sh | sh";
+
+// Each row: what most agents do, then zerd's answer as [plain, bold, plain].
+// Wording follows the "what makes it different" docs page.
+const rows: [string, [string, string, string]][] = [
+  ["Say “done”", ["Run checks on the changed files, then have a ", "different model review the real diff", ""]],
+  ["Show every review finding", ["A ", "verifier tries to refute each one", "; high-severity claims are reproduced in a sandbox or capped"]],
+  ["Quietly invent a file or line", ["Every path:line in the answer is ", "checked against your tree", ""]],
+  ["Re-send the whole file every turn", ["Remember what was read; send only ", "new lines or a diff", ""]],
+  ["Ask the prompt to behave (“never read .env”)", ["", "Enforce it in code", ": confined tools, a path-scanning shell, an OS sandbox"]],
+  ["Die when a provider’s quota runs out", ["", "Fail over", " to another provider and tell you"]],
+  ["Forget what you told them", ["Turn your corrections into ", "lessons in your own AGENTS.md", ""]],
+  ["Break an old caller while “refactoring”", ["", "Signature guard", " sends it back if a public parameter disappeared"]],
 ];
 
-const steps = [
-  ["Checks", "Runs the checks that cover the files you changed."],
-  ["Second-model review", "A different model reviews the real diff, not a summary of it."],
-  ["Verifier and paths", "A verifier tries to refute each finding, and every path:line is looked up on disk."],
+// Receipt lines. Delay in the stylesheet comes from the --i index.
+const receipt: [string, string, string][] = [
+  ["ok", "Biome check on 3 changed files", "passed"],
+  ["ok", "TypeScript check", "passed"],
+  ["ok", "Review of the real diff by a second model", "done"],
+  ["ok", "Every path:line looked up on disk", "found"],
 ];
-
-const models = ["Claude", "GPT", "Codex", "DeepSeek", "Local models"];
-const platforms = ["macOS", "Linux", "Windows"];
 
 export default async function Home() {
   const rel = await latestRelease();
   return (
     <main className="home">
-      <section className="h-hero">
-        <div className="h-tags">
-          <span className="tag tag-live">{rel ? `v${rel.version}` : "open source"}</span>
-          <span className="tag">One native Rust binary</span>
-          <span className="tag">macOS · Linux · Windows</span>
-        </div>
-        <h1>
-          The terminal coding agent
-          <br />
-          <em>that proves its work.</em>
-        </h1>
-        <p className="h-lead">
-          Ask most agents to fix a bug and you get “Done!”. Ask zerd and you get what actually happened: the checks that ran, a
-          second model’s review of the real diff, and every file path looked up on disk.
-        </p>
-        <CopyCmd cmd="curl -fsSL https://zerd.si/install.sh | sh" />
-        <p className="h-win">
-          Windows: <code>irm https://zerd.si/install.ps1 | iex</code>
-        </p>
-        <div className="h-actions">
-          <Link className="h-btn primary" href="/docs/try-it-in-two-minutes">Get started</Link>
-          <Link className="h-btn" href="/docs/what-makes-it-different">Why zerd</Link>
-        </div>
-      </section>
-
-      <section className="h-shot">
-        <div className="frame">
-          <div className="frame-bar">
-            <i /><i /><i />
-            <span>zerd</span>
+      <section className="hero">
+        <div className="hero-copy">
+          <h1>Most agents say done. zerd shows the receipt.</h1>
+          <p className="lead">
+            zerd is a terminal coding agent. After it edits your code it runs the checks that cover your changed files,
+            gets a second model to review the real diff, and looks up every file path it mentions.
+          </p>
+          <CopyCmd cmd={INSTALL} />
+          <p className="win">Windows: <code>irm https://zerd.si/install.ps1 | iex</code></p>
+          <div className="actions">
+            <Link className="btn" href="/docs/try-it-in-two-minutes">Get started</Link>
+            <Link className="plain" href="/docs/what-makes-it-different">Why zerd</Link>
+            {rel && <span className="ver">v{rel.version}</span>}
           </div>
-          <img src="/docs/assets/screenshot.png" alt="A real zerd session: side panel, token breakdown, verification and review" />
         </div>
-        <p className="h-cap">A real session, not a mock-up.</p>
-      </section>
 
-      <section className="h-sec">
-        <p className="label">What you get</p>
-        <h2>Evidence, not <em>vibes.</em></h2>
-        <div className="h-grid">
-          {features.map(([t, d], i) => (
-            <div className="h-card" key={t}>
-              <span className="num">{String(i + 1).padStart(2, "0")}</span>
-              <h3>{t}</h3>
-              <p>{d}</p>
-            </div>
-          ))}
-        </div>
-      </section>
-
-      <section className="h-sec">
-        <p className="label">How it works</p>
-        <h2>Three steps before you <em>see “done”.</em></h2>
-        <ol className="h-steps">
-          {steps.map(([t, d], i) => (
-            <li key={t}>
-              <span className="num">Step {i + 1}</span>
-              <h3>{t}</h3>
-              <p>{d}</p>
-            </li>
-          ))}
-        </ol>
-      </section>
-
-      <section className="h-sec">
-        <p className="label">Models and platforms</p>
-        <h2>Works with the models <em>you already use.</em></h2>
-        <div className="h-strip">
-          {models.map((m) => <span key={m}>{m}</span>)}
-          <b />
-          {platforms.map((p) => <span key={p}>{p}</span>)}
-        </div>
-        <Link className="h-link" href="/docs/models-and-routing">Models and routing →</Link>
-      </section>
-
-      <section className="h-cta">
-        <h2>
-          Try it on your next bug.
-          <br />
-          <em>Read what actually happened.</em>
-        </h2>
-        <CopyCmd cmd="curl -fsSL https://zerd.si/install.sh | sh" />
-        <div className="h-actions">
-          <Link className="h-btn primary" href="/docs/try-it-in-two-minutes">Get started</Link>
+        <div className="pair">
+          <figure className="term muted">
+            <figcaption>What most agents say</figcaption>
+            <pre>Done! I fixed the bug.</pre>
+          </figure>
+          <figure className="term receipt">
+            <figcaption>What zerd shows</figcaption>
+            <pre>
+              {receipt.map(([k, text, res], i) => (
+                <span className="line" style={{ ["--i" as string]: i }} key={text}>
+                  <span className={k}>✓</span> {text}: {res}{"\n"}
+                </span>
+              ))}
+              <span className="line" style={{ ["--i" as string]: receipt.length }}>{"\n"}status: <span className="ok">verified</span></span>
+            </pre>
+          </figure>
         </div>
       </section>
+
+      <section className="shot">
+        <figure>
+          <Image src="/docs/assets/screenshot.png" alt="A zerd session in the terminal, ending in a verified summary" width={3024} height={1780} sizes="(min-width: 1200px) 1144px, 100vw" priority />
+          <figcaption>A real session, not a mock-up.</figcaption>
+        </figure>
+      </section>
+
+      <section className="ledger">
+        <h2>What zerd does that most agents don’t</h2>
+        <div className="head" aria-hidden="true"><span>Most agents</span><span>zerd</span></div>
+        {rows.map(([bad, [a, b, c]]) => (
+          <div className="row" key={bad}>
+            <p className="bad"><span className="who">Most agents </span>{bad}</p>
+            <p className="good"><span className="who">zerd </span>{a}<strong>{b}</strong>{c}</p>
+          </div>
+        ))}
+        <p className="rule">Every token and every tool call should earn its place.</p>
+      </section>
+
+      <section className="install">
+        <h2>Install it and try it on a small change.</h2>
+        <p>One binary, no runtime to set up. Paste this in a terminal.</p>
+        <CopyCmd cmd={INSTALL} />
+        <p className="win">Windows: <code>irm https://zerd.si/install.ps1 | iex</code></p>
+        <div className="actions">
+          <Link className="btn" href="/docs/try-it-in-two-minutes">Get started</Link>
+          <Link className="plain" href="/docs/what-makes-it-different">Why zerd</Link>
+        </div>
+      </section>
+
+      <p className="models">
+        zerd works with Claude, GPT, Codex, DeepSeek and local models, on macOS, Linux and Windows.{" "}
+        <Link href="/docs/models-and-routing">How models are chosen and routed</Link>.
+      </p>
     </main>
   );
 }
