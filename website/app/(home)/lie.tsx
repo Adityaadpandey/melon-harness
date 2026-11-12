@@ -12,6 +12,7 @@ export default function Lie() {
       </div>
 
       <div className="lie-answer" aria-live="polite">
+        <div className="lie-head"><i className={on ? "dot ok" : "dot"} />{on ? "zerd · checked before answering" : "Most agents · nothing checked"}</div>
         <p>
           Fixed the redirect loop. The refresh ran twice in{" "}
           <span className="claim">
