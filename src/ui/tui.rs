@@ -536,14 +536,24 @@ impl Tui {
 
     // -- transcript -----------------------------------------------------------------------------------------------
     pub fn print_welcome(&self, title: &str, lines: &[String]) {
-        let mut info = vec![format!("{}{}", bold_paint(title, ACCENT), paint("  ·  a small agent for real repos", MUTED))];
-        info.extend(lines.iter().map(|l| paint(l, MUTED)));
-        // zerd on the left, text beside it (the zerd is 6 rows tall); no colour means no zerd
+        // zerd (16 columns) sits on the left with the text beside it; no colour, or a narrow terminal, means no zerd
         let art = if color_on() { super::mascot::mascot() } else { vec![] };
-        let pad = " ".repeat(14);
+        let art = if term_width() < 64 { vec![] } else { art };
+        let indent = if art.is_empty() { 2 } else { 2 + 16 + 3 }; // "  " + art + "   "
+        let room = term_width().saturating_sub(indent + 1);
+        let tagline = clip_chars(&format!("{title}  ·  a small agent for real repos"), room);
+        let (head, tail) = tagline.split_at(title.len().min(tagline.len()));
+        let mut info = vec![format!("{}{}", bold_paint(head, ACCENT), paint(tail, MUTED))];
+        info.extend(lines.iter().map(|l| paint(&clip_chars(l, room), MUTED)));
+        let pad = " ".repeat(16);
         let mut text = String::from("\n");
         for i in 0..art.len().max(info.len()) {
-            text.push_str(&format!("  {}   {}\n", art.get(i).unwrap_or(&pad), info.get(i).map(String::as_str).unwrap_or("")));
+            let info_line = info.get(i).map(String::as_str).unwrap_or("");
+            if art.is_empty() {
+                text.push_str(&format!("  {info_line}\n"));
+            } else {
+                text.push_str(&format!("  {}   {info_line}\n", art.get(i).unwrap_or(&pad)));
+            }
         }
         out(&text);
     }
