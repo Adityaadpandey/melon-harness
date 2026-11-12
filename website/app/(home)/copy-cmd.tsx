@@ -2,7 +2,7 @@
 import { useState } from "react";
 
 // Install command with a copy button. Says "Copied" for a moment after a click.
-export default function CopyCmd({ cmd }: { cmd: string }) {
+export default function CopyCmd({ cmd, big = false }: { cmd: string; big?: boolean }) {
   const [done, setDone] = useState(false);
   const copy = async () => {
     try {
@@ -14,11 +14,12 @@ export default function CopyCmd({ cmd }: { cmd: string }) {
     }
   };
   return (
-    <div className="cmd">
+    <div className={big ? "cmd big" : "cmd"}>
       <code><span aria-hidden="true">$ </span>{cmd}</code>
       <button type="button" onClick={copy} aria-label="Copy install command">
         {done ? "Copied" : "Copy"}
       </button>
+      <span className="sr-only" role="status">{done ? "Install command copied" : ""}</span>
     </div>
   );
 }
