@@ -2,14 +2,13 @@ import Link from "next/link";
 import Image from "next/image";
 import { latestRelease } from "@/lib/latest";
 import { JsonLd } from "@/lib/jsonld";
-import CopyCmd from "./copy-cmd";
 import Hero from "./hero";
 import Ledger, { type Row } from "./ledger";
+import Install from "./install";
 import Lie from "./lie";
+import Round from "./round";
 import AppWindow from "./window";
 import "./sky.css";
-
-const INSTALL = "curl -fsSL https://zerd.si/install.sh | sh";
 
 // Each row: what most agents do, zerd's answer as [plain, bold, plain], and one line on how
 // it is enforced. Wording follows the "what makes it different" page and the docs it links to.
@@ -51,8 +50,8 @@ export default async function Home() {
       <section className="shot">
         <div className="wrap shot-grid">
           <div className="shot-text">
-            <p className="eyebrow">A real session</p>
-            <h2><span className="h-sans">Not a replay this time.</span> <span className="h-serif">A real session, ending in a verified summary.</span></h2>
+            <p className="eyebrow">A real session on Tunyt</p>
+            <h2><span className="h-sans">No “done!” at the end.</span> <span className="h-serif">A summary that says what was checked.</span></h2>
           </div>
           <div className="shot-win">
             <AppWindow title="zerd · ~/Devlopment/tunyt">
@@ -67,11 +66,13 @@ export default async function Home() {
           <div>
             <p className="eyebrow">Try it</p>
             <h2><span className="h-sans">Try to make</span> <span className="h-serif">an agent lie.</span></h2>
-            <p className="lie-lead">Same answer, two agents. Flip the switch and watch what the lookup does to the path and the test claim.</p>
+            <p className="lie-lead">Same answer from two agents. Flip the switch and see what zerd does to the file path and to the claim that tests passed.</p>
           </div>
           <div><Lie /></div>
         </div>
       </section>
+
+      <Round />
 
       <section className="wrap ledger">
         <div>
@@ -80,6 +81,45 @@ export default async function Home() {
         </div>
         <Ledger rows={rows} />
         <p className="rule">Every token and every tool call should earn its place.</p>
+      </section>
+
+
+      <section className="wrap two">
+        <div>
+          <p className="eyebrow">Safety</p>
+          <h2><span className="h-sans">Two questions,</span> <span className="h-serif">answered in code.</span></h2>
+        </div>
+        <div className="two-cols">
+          <div>
+            <h3>What can it touch?</h3>
+            <p>File tools stay inside the folder you started in; <code>..</code> and symlinks that point out are refused. Shell commands are scanned for paths in your home, <code>/etc</code> or other users’ folders before they run. On macOS an OS sandbox backs both up, and <code>.env</code>, keys and SSH folders are protected by default.</p>
+          </div>
+          <div>
+            <h3>When does it ask?</h3>
+            <p>Seven approval modes, from <code>plan</code> (read-only) to <code>auto</code>, and Shift+Tab cycles them. Approvals show the diff, and what you approve is exactly what gets written. <code>/undo</code> restores what the last request changed.</p>
+          </div>
+        </div>
+        <p className="two-note">The kernel sandbox is macOS only. On Linux and Windows you get the confined tools and the shell scan, not the OS layer.</p>
+      </section>
+
+      <section className="wrap fit">
+        <div>
+          <p className="eyebrow">Fit</p>
+          <h2><span className="h-sans">Use zerd when</span> <span className="h-serif">you want proof.</span></h2>
+        </div>
+        <div className="fit-cols">
+          <ul>
+            <li><strong>You review before you merge.</strong> Run a review on the working tree, a commit, a branch or a PR, and get findings a second agent already tried to refute.</li>
+            <li><strong>Quota runs out mid-task.</strong> zerd tells you, then moves to the next provider.</li>
+            <li><strong>Work splits cleanly.</strong> <code>parallel_tasks</code> gives each worker its own git worktree and merges in dependency order.</li>
+          </ul>
+          <ul className="not">
+            <li>No image input yet.</li>
+            <li>No IDE extension.</li>
+            <li>The 11-task benchmark came from the Python version, before the Rust port.</li>
+            <li>Many defaults are tuned on one repo.</li>
+          </ul>
+        </div>
       </section>
 
       <section className="end" id="install">
@@ -95,8 +135,7 @@ export default async function Home() {
             <p className="eyebrow">Install</p>
             <h2><span className="h-sans">Try it on</span> <span className="h-serif">a small change.</span></h2>
             <p className="end-lead">One binary, no runtime to set up. Paste this in a terminal.</p>
-            <CopyCmd cmd={INSTALL} big />
-            <p className="win-cmd">Windows: <code>irm https://zerd.si/install.ps1 | iex</code></p>
+            <Install big />
             <div className="end-cta">
               <Link className="p-btn" href="/docs/try-it-in-two-minutes">Get started</Link>
               <Link className="p-ghost" href="/docs/what-makes-it-different">Why zerd</Link>
