@@ -6,6 +6,7 @@ import CopyCmd from "./copy-cmd";
 import Hero from "./hero";
 import Ledger, { type Row } from "./ledger";
 import Lie from "./lie";
+import Perf from "./perf";
 import Reveal from "./reveal";
 import AppWindow from "./window";
 import "./sky.css";
@@ -73,6 +74,8 @@ export default async function Home() {
         </div>
       </section>
 
+      <Perf />
+
       <section className="wrap ledger">
         <Reveal>
           <h2><span className="h-sans">What zerd does</span> <span className="h-serif">that most agents don’t.</span></h2>
@@ -80,6 +83,8 @@ export default async function Home() {
         <Ledger rows={rows} />
         <p className="rule">Every token and every tool call should earn its place.</p>
       </section>
+
+      <Perf />
 
       <section className="end" id="install">
         <CloudLayer clouds={END_CLOUDS} />

@@ -52,6 +52,7 @@ export default function Hero() {
             <a className="btn-dark" href="#install"><span>Install zerd</span><b aria-hidden="true">↓</b></a>
             <Link className="btn-glass" href="/docs/try-it-in-two-minutes">Read the docs</Link>
           </div>
+          <p className="hero-fine">One native binary, about 11 MB, for macOS, Linux and Windows.</p>
         </motion.div>
       </div>
 

@@ -245,3 +245,39 @@
 @media (max-width: 1099px) { .hero-copy { display: flex; flex-direction: column; } .receipt-slot { order: 3; margin-top: 56px; } .hero-aside { order: 2; } }
 @media (prefers-reduced-motion: reduce) { .receipt-sway, .receipt-feed { animation: none; } }
 @media (max-width: 900px) { .cloud-layer.front { display: none; } }
+
+/* brand: the receipt mark, ticks and cut lines */
+.sk-logo { gap: 9px; align-items: center; }
+.sk-logo .mark { display: block; transition: transform 0.5s cubic-bezier(.22, 1, .36, 1); }
+.sk-logo:hover .mark { transform: rotate(-6deg) translateY(-1px); }
+.mark-tick { stroke-dasharray: 1; stroke-dashoffset: 0; }
+.sk-logo:hover .mark-tick { animation: draw 0.55s ease-out; }
+@keyframes draw { from { stroke-dashoffset: 1; } to { stroke-dashoffset: 0; } }
+.hero-fine { margin-top: 16px; font-size: 14px; color: var(--ink3); }
+
+.perf { display: flex; align-items: center; gap: 12px; color: var(--ink3); padding-top: clamp(30px, 5vw, 60px); }
+.perf-cut { font-size: 20px; line-height: 1; transform: scaleX(-1); }
+.perf-line { flex: 1; border-top: 2px dashed rgba(10, 26, 51, 0.3); }
+
+.m { font-family: var(--mono); font-style: normal; font-size: 0.62em; font-weight: 700; margin-right: 0.9em; vertical-align: 0.12em; }
+.m-bad { color: #b3203a; } .m-good { color: #1d4f91; }
+
+/* the install ticket: command on the left, a perforated stub on the right */
+.cmd-wrap.big { margin-top: 36px; max-width: 780px; filter: drop-shadow(0 24px 24px rgba(10, 26, 51, 0.32)); }
+.cmd-wrap .cmd.big { position: relative; margin-top: 0; max-width: none; padding: 0 0 0 26px; min-height: 84px; border-radius: 16px; box-shadow: none; gap: 0;
+  -webkit-mask: radial-gradient(circle 12px at calc(100% - 132px) 0, #0000 97%, #000), radial-gradient(circle 12px at calc(100% - 132px) 100%, #0000 97%, #000); -webkit-mask-composite: source-in;
+  mask: radial-gradient(circle 12px at calc(100% - 132px) 0, #0000 97%, #000), radial-gradient(circle 12px at calc(100% - 132px) 100%, #0000 97%, #000); mask-composite: intersect; }
+.cmd-wrap .cmd.big code { flex: 1; padding-right: 18px; }
+.cmd-wrap .cmd.big button { align-self: stretch; width: 132px; border-radius: 0; background: transparent; color: #eaf2fb; border-left: 2px dashed rgba(234, 242, 251, 0.45); font-size: 15px; transition: background 0.3s; }
+.cmd-wrap .cmd.big button:hover { background: rgba(255, 255, 255, 0.1); }
+.copy-stamp { position: absolute; right: 22px; top: -22px; padding: 3px 12px 6px; border: 3px solid #1d4f91; border-radius: 9px; background: #fcfbf6; color: #1d4f91; font-family: var(--serif); font-style: italic; font-size: 28px; line-height: 1; transform: rotate(-8deg); animation: slam 0.35s cubic-bezier(.2, 1.4, .4, 1) both; pointer-events: none; }
+@keyframes slam { from { opacity: 0; transform: rotate(-22deg) scale(2.2); } to { opacity: 1; transform: rotate(-8deg) scale(1); } }
+
+/* footer ends like the bottom of a receipt */
+.sk-foot-end { max-width: 1240px; margin: 0 auto; padding: 0 clamp(20px, 4vw, 48px) 48px; display: flex; flex-direction: column; align-items: center; gap: 12px; text-align: center; }
+.sk-foot-end .r-bars { width: 180px; height: 34px; margin: 0; }
+.sk-foot .sk-foot-end p { max-width: none; margin: 0; font-family: var(--mono); font-size: 12.5px; color: #2b4366; }
+@media (prefers-reduced-motion: reduce) { .copy-stamp, .sk-logo:hover .mark-tick { animation: none; } }
+.end .btn-glass { background: rgba(255, 255, 255, 0.8); border-color: rgba(10, 26, 51, 0.18); }
+.row .bad, .row .good { padding-left: 1.7em; text-indent: -1.7em; }
+.row .m { display: inline-block; width: 1.7em; margin-right: 0; text-indent: 0; }

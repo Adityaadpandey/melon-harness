@@ -14,8 +14,8 @@ export default function Ledger({ rows }: { rows: Row[] }) {
         return (
           <li key={bad} className={on ? "row on" : "row"}>
             <button type="button" aria-expanded={on} aria-controls={`how-${i}`} onClick={() => setOpen(on ? null : i)}>
-              <span className="bad"><span className="sr-only">Most agents </span>{bad}</span>
-              <span className="good"><span className="sr-only">zerd </span>{a}<strong>{b}</strong>{c}</span>
+              <span className="bad"><span className="sr-only">Most agents </span><i className="m m-bad" aria-hidden="true">✗</i>{bad}</span>
+              <span className="good"><span className="sr-only">zerd </span><i className="m m-good" aria-hidden="true">✓</i>{a}<strong>{b}</strong>{c}</span>
               <span className="plus" aria-hidden="true" />
             </button>
             <AnimatePresence initial={false}>
