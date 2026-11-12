@@ -51,6 +51,7 @@ export default async function Home() {
       <section className="shot">
         <div className="wrap shot-grid">
           <div className="shot-text">
+            <p className="eyebrow">A real session</p>
             <h2><span className="h-sans">Not a replay this time.</span> <span className="h-serif">A real session, ending in a verified summary.</span></h2>
           </div>
           <div className="shot-win">
@@ -64,6 +65,7 @@ export default async function Home() {
       <section className="lie-sec">
         <div className="wrap lie-grid">
           <div>
+            <p className="eyebrow">Try it</p>
             <h2><span className="h-sans">Try to make</span> <span className="h-serif">an agent lie.</span></h2>
             <p className="lie-lead">Same answer, two agents. Flip the switch and watch what the lookup does to the path and the test claim.</p>
           </div>
@@ -73,6 +75,7 @@ export default async function Home() {
 
       <section className="wrap ledger">
         <div>
+          <p className="eyebrow">The difference</p>
           <h2><span className="h-sans">What zerd does</span> <span className="h-serif">that most agents don’t.</span></h2>
         </div>
         <Ledger rows={rows} />
@@ -80,8 +83,16 @@ export default async function Home() {
       </section>
 
       <section className="end" id="install">
+        {/* the hero artwork again, cropped to its flower field, so the page ends where it began */}
+        <div className="end-bg" aria-hidden="true">
+          <picture>
+            <source srcSet="/hero/hero.avif" type="image/avif" />
+            <img src="/hero/hero.webp" alt="" width={1672} height={941} loading="lazy" decoding="async" />
+          </picture>
+        </div>
         <div className="wrap end-in">
           <div>
+            <p className="eyebrow">Install</p>
             <h2><span className="h-sans">Try it on</span> <span className="h-serif">a small change.</span></h2>
             <p className="end-lead">One binary, no runtime to set up. Paste this in a terminal.</p>
             <CopyCmd cmd={INSTALL} big />

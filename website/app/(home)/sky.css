@@ -18,9 +18,11 @@ body:has(.sky-root) { background: #04060c; }
 .sky section { position: relative; }
 
 /* headings: the same pairing as the hero, a quiet sans then a bright serif italic */
-.h-sans { font-weight: 400; letter-spacing: -0.04em; line-height: 1; color: var(--ink2); }
+.h-sans { font-weight: 400; letter-spacing: -0.04em; line-height: 1; color: rgba(255, 255, 255, 0.78); }
 .h-serif { font-family: var(--serif); font-style: italic; font-weight: 400; letter-spacing: -0.025em; font-size: 1.08em; line-height: 1; color: var(--ink); }
-.sky h2 { font-size: clamp(36px, 5.2vw, 80px); line-height: 1; text-wrap: balance; }
+.eyebrow { display: flex; align-items: center; gap: 12px; margin: 0 0 clamp(20px, 3vw, 32px); font: 500 12px/1 var(--mono); letter-spacing: 0.18em; text-transform: uppercase; color: var(--violet); }
+.eyebrow::before { content: ""; width: 28px; height: 1px; background: currentColor; opacity: 0.6; }
+.sky h2 { font-size: clamp(34px, 4.8vw, 72px); line-height: 1; text-wrap: balance; }
 
 /* navigation: dark glass pill */
 .sk-nav { position: fixed; z-index: 60; top: 14px; left: 0; right: 0; width: min(1120px, calc(100% - 24px)); margin: 0 auto; border-radius: 18px;
@@ -86,8 +88,11 @@ body:has(.sky-root) { background: #04060c; }
 .lie-switch { display: inline-flex; padding: 4px; gap: 2px; border-radius: 999px; background: var(--card); border: 1px solid var(--line); }
 .lie-switch button { background: none; border: 0; padding: 9px 20px; border-radius: 999px; font: inherit; font-weight: 600; font-size: 15px; color: var(--ink2); cursor: pointer; }
 .lie-switch button[aria-checked="true"] { background: #fff; color: #0a1a33; }
-.lie-answer { margin-top: 18px; padding: clamp(20px, 3vw, 32px); border-radius: 20px; background: var(--card); border: 1px solid var(--line); font-size: clamp(18px, 1.8vw, 22px); line-height: 1.7; color: var(--ink2); }
+.lie-answer { margin-top: 18px; padding: clamp(20px, 3vw, 32px); border-radius: 20px; background: linear-gradient(180deg, rgba(255, 255, 255, 0.07), rgba(255, 255, 255, 0.025)); border: 1px solid var(--line); font-size: clamp(18px, 1.8vw, 22px); line-height: 1.7; color: var(--ink2); }
 .lie-answer p + p { margin-top: 10px; }
+.lie-head { display: flex; align-items: center; gap: 9px; margin-bottom: 16px; padding-bottom: 14px; border-bottom: 1px solid var(--line); font: 500 12px/1 var(--mono); letter-spacing: 0.12em; text-transform: uppercase; color: var(--ink3); }
+.dot { width: 8px; height: 8px; border-radius: 50%; background: var(--bad); }
+.dot.ok { background: var(--ok); }
 .claim-text { text-decoration: line-through transparent; text-decoration-thickness: 2px; color: var(--ink); }
 .lie-answer p:first-child .claim-text { font-family: var(--mono); font-size: 0.86em; }
 .mark { margin-left: 8px; color: var(--ok); font-weight: 800; }
@@ -106,6 +111,8 @@ body:has(.sky-root) { background: #04060c; }
 /* ledger: what most agents do in serif italic, against what zerd does */
 .ledger { padding: clamp(60px, 8vw, 120px) clamp(20px, 4vw, 48px) 24px; }
 .ledger h2 { max-width: 15ch; margin-bottom: clamp(36px, 5vw, 64px); }
+.ledger-head { display: grid; margin-top: 0; grid-template-columns: 1fr 1.25fr 24px; gap: 48px; padding: 0 0 14px; font: 500 12px/1 var(--mono); letter-spacing: 0.16em; text-transform: uppercase; color: var(--ink3); }
+.ledger-head span:nth-child(2) { color: var(--violet); }
 .ledger-list { list-style: none; border-top: 1px solid var(--line); }
 .row { border-bottom: 1px solid var(--line); }
 .row > button { all: unset; box-sizing: border-box; cursor: pointer; width: 100%; display: grid; grid-template-columns: 1fr 1.25fr 24px; gap: 48px; align-items: baseline; padding: 30px 0; }
@@ -114,20 +121,25 @@ body:has(.sky-root) { background: #04060c; }
 .good { font-size: clamp(19px, 2vw, 26px); line-height: 1.3; letter-spacing: -0.015em; color: var(--ink2); }
 .good strong { font-weight: 700; color: #fff; }
 .row > button:hover .bad { color: var(--ink); }
+.row.on { background: linear-gradient(90deg, transparent, rgba(185, 162, 255, 0.05) 60%, transparent); }
 .plus { width: 16px; height: 16px; position: relative; justify-self: end; align-self: center; }
 .plus::before, .plus::after { content: ""; position: absolute; background: var(--ink2); left: 0; right: 0; top: 7px; height: 2px; }
 .plus::after { transform: rotate(90deg); }
 .row.on .plus::after { transform: rotate(0); }
-.how { margin: -6px 0 30px calc((100% - 96px - 24px) * 0.444 + 48px); max-width: 58ch; color: var(--ink2); font-size: 17px; line-height: 1.6; }
+.how-row { display: grid; grid-template-columns: 1fr 1.25fr 24px; gap: 48px; }
+.how { grid-column: 2; margin: -6px 0 30px; padding-left: 1.5em; max-width: 58ch; color: var(--ink2); font-size: 17px; line-height: 1.6; }
 .ledger .rule { margin-top: 44px; font-family: var(--serif); font-style: italic; font-size: clamp(24px, 3vw, 38px); color: var(--ink2); }
-.m { font-family: var(--mono); font-style: normal; font-size: 0.62em; font-weight: 700; margin-right: 0.9em; vertical-align: 0.12em; }
+.bad, .good { display: grid; grid-template-columns: 1.5em 1fr; align-items: baseline; }
+.m { font-family: var(--mono); font-style: normal; font-size: 0.62em; font-weight: 700; }
 .m-bad { color: var(--bad); } .m-good { color: var(--ok); }
-.row .bad, .row .good { padding-left: 1.7em; text-indent: -1.7em; }
-.row .m { display: inline-block; width: 1.7em; margin-right: 0; text-indent: 0; }
 
 /* closing: the install command over a soft violet and amber glow, like the light in the artwork */
-.end { padding: clamp(100px, 13vw, 190px) 0 clamp(100px, 13vw, 190px);
-  background: radial-gradient(70vw 36vw at 50% 78%, rgba(185, 162, 255, 0.2), transparent 70%), radial-gradient(36vw 22vw at 50% 78%, rgba(255, 180, 110, 0.15), transparent 70%); }
+.end { padding: clamp(110px, 14vw, 200px) 0 clamp(120px, 15vw, 220px); overflow: clip; }
+.end-bg { position: absolute; inset: 0; }
+.end-bg picture, .end-bg img { display: block; width: 100%; height: 100%; }
+.end-bg img { object-fit: cover; object-position: 50% 100%; opacity: 0.8; transform: scale(1.3); transform-origin: 15% 100%; }
+.end-bg::after { content: ""; position: absolute; inset: 0;
+  background: linear-gradient(180deg, #04060c 0%, rgba(4, 6, 12, 0.7) 35%, rgba(4, 6, 12, 0.15) 100%), linear-gradient(90deg, rgba(4, 6, 12, 0.9) 0%, rgba(4, 6, 12, 0.45) 45%, rgba(4, 6, 12, 0) 75%), linear-gradient(0deg, #04060c 0%, rgba(4, 6, 12, 0) 18%); }
 .end-in { z-index: 1; }
 .end h2 { font-size: clamp(42px, 7vw, 108px); }
 .end-lead { margin-top: 24px; font-size: 19px; color: var(--ink2); }
@@ -137,7 +149,7 @@ body:has(.sky-root) { background: #04060c; }
 
 /* the install ticket: command on the left, a dashed stub with the copy button on the right */
 .cmd-wrap.big { margin-top: 36px; max-width: 780px; }
-.cmd { position: relative; width: 100%; display: flex; align-items: stretch; max-width: 520px; border-radius: 16px; background: var(--card); border: 1px solid rgba(255, 255, 255, 0.18); color: #fff; }
+.cmd { position: relative; width: 100%; display: flex; align-items: stretch; max-width: 520px; border-radius: 16px; background: rgba(8, 12, 26, 0.7); border: 1px solid rgba(255, 255, 255, 0.2); color: #fff; backdrop-filter: blur(6px); }
 .cmd code { flex: 1; display: flex; align-items: center; gap: 0.6em; font-family: var(--mono); font-size: 14px; overflow-x: auto; white-space: nowrap; min-width: 0; padding: 16px 18px; scrollbar-width: none; }
 .cmd button { flex: none; font: inherit; font-size: 14px; font-weight: 700; color: #fff; background: transparent; border: 0; border-left: 2px dashed rgba(255, 255, 255, 0.3); border-radius: 0 16px 16px 0; padding: 0 22px; cursor: pointer; }
 .cmd button:hover { background: rgba(255, 255, 255, 0.1); }
@@ -162,13 +174,15 @@ body:has(.sky-root) { background: #04060c; }
 
 @media (min-width: 900px) { .lie-grid { grid-template-columns: 0.85fr 1.15fr; gap: 80px; } }
 @media (max-width: 760px) {
+  .ledger-head { display: none; }
   .sk-nav nav a:not(.sk-pill) { display: none; }
   .win-bar { gap: 10px; padding: 0 10px; }
   .win-end .live { display: none; }
   .row > button { grid-template-columns: 1fr 20px; gap: 10px 12px; padding: 24px 0; }
   .row .good { grid-column: 1; }
   .plus { grid-row: 1; grid-column: 2; }
-  .how { margin: -4px 0 24px 0; }
+  .how-row { grid-template-columns: 1fr; }
+  .how { grid-column: 1; margin: -4px 0 24px; }
   .sk-foot-cols { gap: 48px; }
   .cmd.big button { width: 96px; }
 }
