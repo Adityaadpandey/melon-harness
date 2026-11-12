@@ -1,0 +1,83 @@
+/* Landing page only. Tokens come from globals.css. */
+.home { overflow-x: clip; }
+.home em { font-family: var(--serif); font-style: italic; font-weight: 400; color: var(--accent); }
+.home h1, .home h2, .home h3 { margin: 0; font-weight: 600; letter-spacing: -0.03em; }
+
+.label { margin: 0 0 14px; font: 500 11px var(--mono); text-transform: uppercase; letter-spacing: .16em; color: var(--dim); }
+
+/* hero with a soft glow behind it */
+.h-hero {
+  position: relative; text-align: center; padding: 96px 24px 56px; max-width: var(--max); margin: 0 auto;
+}
+.h-hero::before {
+  content: ""; position: absolute; inset: -40px 0 auto; height: 560px; z-index: -1; pointer-events: none;
+  background:
+    radial-gradient(ellipse 50% 60% at 50% 0%, color-mix(in srgb, var(--accent) 20%, transparent), transparent 70%),
+    radial-gradient(ellipse 35% 45% at 80% 20%, color-mix(in srgb, var(--violet) 16%, transparent), transparent 70%);
+}
+.h-tags { display: flex; flex-wrap: wrap; justify-content: center; gap: 8px; margin-bottom: 32px; }
+.tag { font: 500 11px var(--mono); text-transform: uppercase; letter-spacing: .1em; color: var(--muted); border: 1px solid var(--line2); border-radius: 999px; padding: 5px 12px; background: color-mix(in srgb, var(--panel) 70%, transparent); }
+.tag-live { color: var(--accent); border-color: color-mix(in srgb, var(--accent) 45%, var(--line2)); }
+.h-hero h1 { font-size: clamp(38px, 7.2vw, 84px); line-height: 1.03; }
+.h-lead { max-width: 640px; margin: 28px auto 36px; font-size: 18px; color: var(--muted); }
+.h-win { margin: 14px 0 0; font-size: 13px; color: var(--dim); }
+.h-win code { color: var(--muted); }
+.h-actions { display: flex; flex-wrap: wrap; justify-content: center; gap: 12px; margin-top: 32px; }
+.h-btn { text-decoration: none; font-size: 15px; font-weight: 500; padding: 11px 22px; border-radius: 999px; border: 1px solid var(--line2); color: var(--text); transition: border-color .15s, transform .15s; }
+.h-btn:hover { border-color: var(--accent); transform: translateY(-1px); }
+.h-btn.primary { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); }
+
+/* install box */
+.cmdbox { display: flex; align-items: center; gap: 12px; max-width: 520px; margin: 0 auto; padding: 8px 8px 8px 18px; background: var(--panel); border: 1px solid var(--line2); border-radius: 14px; text-align: left; }
+.cmdbox-prompt { color: var(--accent); font: 600 14px var(--mono); }
+.cmdbox code { flex: 1; min-width: 0; overflow-x: auto; white-space: nowrap; font-size: 13.5px; scrollbar-width: none; }
+.cmdbox code::-webkit-scrollbar { display: none; }
+.cmdbox button { cursor: pointer; font: 500 12px var(--mono); color: var(--text); background: var(--bg2); border: 1px solid var(--line2); border-radius: 9px; padding: 8px 14px; transition: border-color .15s; }
+.cmdbox button:hover { border-color: var(--accent); }
+
+/* framed screenshot */
+.h-shot { max-width: 1000px; margin: 24px auto 0; padding: 0 24px; }
+.frame { position: relative; border: 1px solid var(--line2); border-radius: 14px; overflow: hidden; background: var(--panel); box-shadow: 0 30px 90px -30px color-mix(in srgb, var(--accent) 35%, transparent), 0 10px 40px -20px rgba(0, 0, 0, .5); }
+.frame-bar { display: flex; align-items: center; gap: 7px; padding: 11px 14px; border-bottom: 1px solid var(--line); background: var(--bg2); }
+.frame-bar i { width: 11px; height: 11px; border-radius: 50%; background: var(--line2); }
+.frame-bar span { margin-left: 10px; font: 12px var(--mono); color: var(--dim); }
+.frame img { display: block; width: 100%; height: auto; }
+.h-cap { text-align: center; margin: 16px 0 0; font-size: 13px; color: var(--dim); }
+
+/* sections */
+.h-sec { max-width: var(--max); margin: 0 auto; padding: 112px 24px 0; }
+.h-sec h2 { font-size: clamp(28px, 4.4vw, 48px); line-height: 1.1; margin-bottom: 44px; max-width: 14em; }
+.num { font: 500 12px var(--mono); color: var(--accent); letter-spacing: .08em; }
+
+.h-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; }
+.h-card { padding: 28px; background: var(--panel); border: 1px solid var(--line); border-radius: 16px; transition: border-color .2s, transform .2s; }
+.h-card:hover { border-color: color-mix(in srgb, var(--accent) 55%, var(--line)); transform: translateY(-2px); }
+.h-card h3, .h-steps h3 { font-size: 19px; margin: 16px 0 10px; letter-spacing: -0.015em; }
+.h-card p, .h-steps p { margin: 0; color: var(--muted); font-size: 15px; }
+
+.h-steps { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; counter-reset: s; }
+.h-steps li { position: relative; padding: 28px; border-top: 1px solid var(--line2); background: linear-gradient(to bottom, color-mix(in srgb, var(--accent) 7%, transparent), transparent 60%); border-radius: 0 0 16px 16px; }
+.h-steps li:not(:last-child)::after { content: "→"; position: absolute; right: -14px; top: 22px; z-index: 1; color: var(--dim); font-size: 18px; }
+
+.h-strip { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; margin-bottom: 28px; }
+.h-strip span { font: 500 14px var(--mono); padding: 9px 16px; border: 1px solid var(--line); border-radius: 999px; background: var(--panel); color: var(--muted); }
+.h-strip b { width: 1px; height: 22px; background: var(--line2); margin: 0 6px; }
+.h-link { color: var(--accent); text-decoration: none; font-size: 15px; }
+.h-link:hover { text-decoration: underline; }
+
+/* closing band */
+.h-cta { position: relative; max-width: var(--max); margin: 112px auto 0; padding: 80px 24px; text-align: center; border: 1px solid var(--line); border-radius: 24px; background: radial-gradient(ellipse 60% 80% at 50% 0%, color-mix(in srgb, var(--accent) 14%, var(--panel)), var(--panel) 75%); width: calc(100% - 48px); }
+.h-cta h2 { font-size: clamp(28px, 4.6vw, 52px); line-height: 1.1; margin-bottom: 36px; }
+
+@media (max-width: 900px) {
+  .h-grid, .h-steps { grid-template-columns: 1fr 1fr; }
+  .h-steps li:not(:last-child)::after { display: none; }
+}
+@media (max-width: 620px) {
+  .h-hero { padding-top: 64px; }
+  .h-lead { font-size: 16px; }
+  .h-grid, .h-steps { grid-template-columns: 1fr; }
+  .h-sec { padding-top: 80px; }
+  .h-cta { margin-top: 80px; padding: 56px 18px; }
+  .h-strip b { display: none; }
+}
