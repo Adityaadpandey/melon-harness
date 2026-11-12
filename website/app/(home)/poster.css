@@ -22,9 +22,21 @@
 .p-sub { margin: clamp(22px, 3.6vh, 36px) 0 0; max-width: 29em; font-size: clamp(16px, 1.3vw, 19px); line-height: 1.58; color: rgba(255, 255, 255, 0.76); text-wrap: pretty; }
 .p-cta { display: flex; flex-wrap: wrap; gap: 12px 14px; margin-top: clamp(24px, 3.6vh, 36px); }
 
+.p-more { display: inline-block; margin-top: 18px; font-size: 14px; color: rgba(255, 255, 255, 0.7); text-decoration: none; }
+.p-more:hover { color: #fff; }
+
 .p-rail { position: absolute; z-index: 1; left: var(--pad); right: var(--pad); bottom: 0; display: flex; justify-content: space-between; gap: 16px; padding: 18px 0 22px; border-top: 1px solid rgba(255, 255, 255, 0.14); font: 12px/1.4 var(--mono); letter-spacing: 0.02em; color: rgba(255, 255, 255, 0.6); }
 
 .p-after { position: relative; z-index: 1; padding-top: clamp(24px, 4vw, 56px); }
+
+/* what the recording below is about to show, in three beats */
+.proof { list-style: none; margin: 0 0 clamp(40px, 5vw, 72px); padding: 0; display: grid; grid-template-columns: repeat(3, 1fr); border-top: 1px solid rgba(255, 255, 255, 0.14); }
+.proof li { padding: 26px 28px 0 0; }
+.proof li + li { padding-left: 28px; border-left: 1px solid rgba(255, 255, 255, 0.1); }
+.proof span { font: 500 12px/1 var(--mono); letter-spacing: 0.16em; color: #b9a2ff; }
+.proof h3 { margin: 14px 0 8px; font: 500 clamp(19px, 1.7vw, 24px)/1.2 var(--sans); letter-spacing: -0.02em; color: #fff; }
+.proof p { margin: 0; max-width: 28em; font-size: 15px; line-height: 1.55; color: rgba(255, 255, 255, 0.66); }
+@media (max-width: 760px) { .proof { grid-template-columns: 1fr; } .proof li, .proof li + li { padding: 22px 0 0; border-left: 0; } }
 .poster-hero .demo .note { color: rgba(255, 255, 255, 0.55); }
 
 /* Phones: the picture takes the top of the screen, the words sit under it. */
