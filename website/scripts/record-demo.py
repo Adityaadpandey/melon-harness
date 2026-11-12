@@ -9,10 +9,12 @@ import fcntl, json, os, pty, select, signal, struct, sys, termios, time
 COLS, ROWS = 112, 34
 CWD = os.path.expanduser(os.environ.get("DEMO_REPO", "~/zerd-demo/retry-lab"))
 BIN = os.environ.get("ZERD_BIN", "zerd")
-MODEL = os.environ.get("DEMO_MODEL", "claude-haiku-5-5")
+MODEL = os.environ.get("DEMO_MODEL", "MiniMaxAI/MiniMax-M3")
+# the word to wait for in the first screen, so we only type once the interface has drawn
+WAIT = os.environ.get("DEMO_WAIT", MODEL.split("-")[0].split("/")[-1])
 PROMPT = "send_with_retry never waits between tries after a 429. fix it so it backs off and respects retry_after"
 OUT = sys.argv[1]
-MAX_SECONDS = 150
+MAX_SECONDS = 260
 
 pid, fd = pty.fork()
 if pid == 0:
@@ -48,7 +50,7 @@ def pump(wait):
 
 # wait until the interface has really drawn before typing anything
 t0 = time.time()
-while "claude-haiku" not in text and time.time() - t0 < 40:
+while WAIT not in text and time.time() - t0 < 40:
     pump(0.25)
 pump(2.0)
 for ch in PROMPT:  # type it the way a person would
@@ -73,7 +75,7 @@ while alive and time.time() - start < MAX_SECONDS:
             os.write(fd, bytes([13]))
             sent, t_sent = True, time.time()
             print("sent /verify at", round(t_sent - start, 1))
-    elif sent and time.time() - t_sent > 14:
+    elif sent and time.time() - t_sent > 25:
         break
 pump(2.0)
 try:

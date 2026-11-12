@@ -82,7 +82,7 @@ export default function Demo() {
           {failed && <p className="stage-fail">The recording could not load. The same run is described below.</p>}
         </div>
       </AppWindow>
-      <p className="note">A real recording: zerd with claude-haiku-5-5 fixing a bug in a small demo repo, then running its own checks with /verify. Not scripted. Long pauses are shortened.</p>
+      <p className="note">A real recording: zerd with MiniMax M3 fixing a bug in a small demo repo, then running its own checks with /verify. Not scripted. Long pauses are shortened.</p>
     </div>
   );
 }
