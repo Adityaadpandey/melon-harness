@@ -146,7 +146,15 @@ impl Orchestrator {
         Ok(path)
     }
 
-    async fn run_worker(&self, node: &mut Node, request: &str, base: &str) {
+    /// What the tasks this one depends on did, for its prompt: their work is already in its checkout, but without
+    /// being told it would have to rediscover which files changed and why.
+    /// Example: "- api (add the /refund route): changed routes/refund.py, routes/__init__.py"
+    fn done_before(nodes: &[Node], node: &Node) -> String {
+        let rows: Vec<String> = nodes.iter().filter(|n| node.deps.contains(&n.id)).map(|n| format!("- {} ({}): changed {}", n.id, n.goal.lines().next().unwrap_or("").chars().take(120).collect::<String>(), if n.changed.is_empty() { "nothing".into() } else { n.changed.join(", ") })).collect();
+        if rows.is_empty() { String::new() } else { format!("\nAlready done by the tasks yours depends on, and present in your checkout (build on it, do not redo it):\n{}", rows.join("\n")) }
+    }
+
+    async fn run_worker(&self, node: &mut Node, request: &str, base: &str, before: &str) {
         let Ok(_permit) = self.sem.acquire().await else { return };
         let started = Instant::now();
         node.branch = format!("melon/{}/{}", self.run_id, node.id);
@@ -165,7 +173,7 @@ impl Orchestrator {
         cfg.sandbox_write_extra.push(git_dir);
         let owned = if node.files.is_empty() { String::new() } else { format!("\nFiles you own: {}. Do not edit other files.", node.files.join(", ")) };
         let prompt = format!(
-            "You are one worker in a parallel job. Overall request (for context only):\n{request}\n\nYOUR task: {}{owned}\nOther workers handle the rest in separate checkouts; do only your task, keep the change small.",
+            "You are one worker in a parallel job. Overall request (for context only):\n{request}\n\nYOUR task: {}{owned}{before}\nOther workers handle the rest in separate checkouts; do only your task, keep the change small.",
             node.goal
         );
         let key = format!("{}:{}", self.run_id, node.id);
@@ -277,10 +285,26 @@ impl Orchestrator {
                 let (_, base) = git(&self.int_dir, &["rev-parse", "HEAD"]).await;
                 // workers run concurrently, each on its own copy of the node
                 let mut copies: Vec<Node> = runnable.iter().map(|i| nodes[*i].clone()).collect();
+                let before: Vec<String> = copies.iter().map(|n| Self::done_before(&nodes, n)).collect();
                 {
                     let this = &self;
-                    let futs = copies.iter_mut().map(|n| this.run_worker(n, request, &base));
+                    let futs = copies.iter_mut().zip(&before).map(|(n, b)| this.run_worker(n, request, &base, b));
                     futures::future::join_all(futs).await;
+                }
+                // One more try for a worker that failed, told why. Not after a timeout: that would be another 15 minutes.
+                // ponytail: retries run one after another; make them concurrent if several workers often fail together
+                for (n, b) in copies.iter_mut().zip(&before) {
+                    if n.status == "failed" && !n.note.starts_with("timed out") {
+                        let (id, goal, why) = (n.id.clone(), n.goal.clone(), n.note.clone());
+                        n.goal.push_str(&format!("\n\nNOTE: a first attempt at this task failed ({why}). Make the change with your edit tools, do not only describe it, and run the check before you finish."));
+                        n.id = format!("{id}-again");
+                        n.note.clear();
+                        self.run_worker(n, request, &base, b).await;
+                        (n.id, n.goal) = (id, goal);
+                        if n.status == "done" {
+                            n.note = format!("second attempt; the first failed ({why})");
+                        }
+                    }
                 }
                 for (k, i) in runnable.iter().enumerate() {
                     nodes[*i] = copies[k].clone();
@@ -337,7 +361,7 @@ impl Orchestrator {
         node.goal.push_str("\n\nNOTE: an earlier attempt at this task conflicted with changes from another worker that are now in your checkout. Reconcile with them so the ORIGINAL REQUEST is satisfied; do not blindly overwrite.");
         let orig_id = node.id.clone();
         node.id = format!("{orig_id}-retry");
-        self.run_worker(node, request, &base).await;
+        self.run_worker(node, request, &base, "").await;
         node.id = orig_id;
         if node.status == "done" && self.merge(node).await {
             node.status = "resolved".into();

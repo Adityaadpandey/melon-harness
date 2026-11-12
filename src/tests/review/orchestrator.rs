@@ -159,7 +159,8 @@ async fn dependent_task_sees_prerequisite_output() {
         let s2 = s2.clone();
         Box::pin(async move {
             if prompt.contains("T2") {
-                *s2.lock().unwrap() = Some(cwd.join("one.txt").exists());
+                // it is also told what the first one did, so it does not have to rediscover it
+                *s2.lock().unwrap() = Some(cwd.join("one.txt").exists() && prompt.contains("- one (T1): changed one.txt"));
                 std::fs::write(cwd.join("two.txt"), "second").unwrap();
             } else {
                 std::fs::write(cwd.join("one.txt"), "first").unwrap();
@@ -173,6 +174,27 @@ async fn dependent_task_sees_prerequisite_output() {
     assert_eq!(res["status"], "ok", "{res}");
     assert_eq!(*seen.lock().unwrap(), Some(true));
     assert!(!p.join("one.txt").exists()); // apply=false leaves the user's tree alone
+}
+
+#[tokio::test]
+async fn a_failed_worker_gets_one_more_try_and_is_told_why() {
+    let _g = SERIAL.lock().await;
+    let dir = repo();
+    *WORKER_HOOK.lock().unwrap() = Some(Arc::new(move |cwd: PathBuf, prompt: String| {
+        Box::pin(async move {
+            // first time it only talks; told that it failed, it writes the file
+            if !prompt.contains("a first attempt at this task failed") {
+                return Some("failed".to_string());
+            }
+            std::fs::write(cwd.join("new.txt"), "x").unwrap();
+            Some("verified".to_string())
+        })
+    }));
+    let res = Orchestrator::new(config(dir.path()), 4, None).run("r", vec![node("a", "T", &[])], false).await;
+    *WORKER_HOOK.lock().unwrap() = None;
+    let res = res.unwrap();
+    assert_eq!(statuses(&res), vec![("a".into(), "done".into())], "{res}");
+    assert!(res["tasks"][0]["note"].as_str().unwrap().starts_with("second attempt") && res["tasks"][0]["goal"] == "T", "{res}");
 }
 
 #[tokio::test]
