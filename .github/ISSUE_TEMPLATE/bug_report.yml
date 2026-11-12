@@ -1,0 +1,30 @@
+name: Bug report
+description: Something broke or behaved wrongly
+labels: [bug]
+body:
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened
+      description: What you did, what you expected, what you got. Paste the error text if there is one.
+    validations: { required: true }
+  - type: input
+    id: version
+    attributes:
+      label: zerd version
+      placeholder: output of `zerd --version`
+    validations: { required: true }
+  - type: dropdown
+    id: os
+    attributes:
+      label: OS
+      options: [macOS, Linux, Windows]
+    validations: { required: true }
+  - type: input
+    id: model
+    attributes:
+      label: Model / provider
+      placeholder: e.g. claude-sonnet via Anthropic, a local model
+  - type: markdown
+    attributes:
+      value: Please remove API keys and private code from anything you paste.
