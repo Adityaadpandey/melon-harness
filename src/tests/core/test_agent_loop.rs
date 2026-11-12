@@ -144,6 +144,19 @@ async fn a_background_sub_agent_can_be_listed_and_stopped() {
 }
 
 #[tokio::test]
+async fn what_a_sub_agent_spent_lands_in_the_parents_total() {
+    let tmp = tempfile::tempdir().unwrap();
+    let mut agent = scripted(cfg(tmp.path(), json!({})), vec![text("done")]).await;
+    // a sub-agent that read 40k tokens for this parent, 30k of them from cache
+    let spent = TokenUsage { prompt_tokens: 40_000, completion_tokens: 500, total_tokens: 40_500, cached_tokens: 30_000, ..Default::default() };
+    crate::tools::subagents::add_usage(agent.config.key(), &spent);
+    run(&mut agent, "where is PORT read?").await;
+    let total = agent.session.context_manager.lock().unwrap().total_usage.clone();
+    assert!(total.prompt_tokens >= 40_000 && total.cached_tokens >= 30_000, "{:?}", total.to_value());
+    assert!(crate::tools::subagents::take_usage(agent.config.key()).is_none()); // counted once
+}
+
+#[tokio::test]
 async fn resuming_an_agent_that_is_gone_says_so() {
     let tmp = tempfile::tempdir().unwrap();
     let c = cfg(tmp.path(), json!({"pi_mode": false}));

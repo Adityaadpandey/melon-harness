@@ -20,6 +20,17 @@ impl TokenUsage {
         self.cache_write_tokens += o.cache_write_tokens;
     }
 
+    /// What was spent since an earlier reading `o` of the same counter.
+    pub fn since(&self, o: &TokenUsage) -> TokenUsage {
+        TokenUsage {
+            prompt_tokens: self.prompt_tokens - o.prompt_tokens,
+            completion_tokens: self.completion_tokens - o.completion_tokens,
+            total_tokens: self.total_tokens - o.total_tokens,
+            cached_tokens: self.cached_tokens - o.cached_tokens,
+            cache_write_tokens: self.cache_write_tokens - o.cache_write_tokens,
+        }
+    }
+
     pub fn to_value(&self) -> Value {
         json!({"prompt_tokens": self.prompt_tokens, "completion_tokens": self.completion_tokens, "total_tokens": self.total_tokens,
                "cached_tokens": self.cached_tokens, "cache_write_tokens": self.cache_write_tokens})

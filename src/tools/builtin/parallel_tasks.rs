@@ -74,7 +74,11 @@ impl Tool for ParallelTasksTool {
         cfg.auto_review = false;
         let request = nodes.iter().map(|n| n.goal.clone()).collect::<Vec<_>>().join("; ");
         let workers = cfg.max_parallel_agents;
-        let res = match Orchestrator::new(cfg, workers, inv.progress.clone()).run(&request, nodes, apply).await {
+        let orch = Orchestrator::new(cfg, workers, inv.progress.clone());
+        let spent = orch.usage.clone();
+        let res = orch.run(&request, nodes, apply).await;
+        crate::tools::subagents::add_usage(self.config.key(), &spent.lock().unwrap()); // the workers' tokens are this request's tokens
+        let res = match res {
             Ok(r) => r,
             Err(GraphError(e)) => return ToolResult::error(e),
         };

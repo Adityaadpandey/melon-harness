@@ -87,7 +87,7 @@ impl Tool for SubagentTool {
             return ToolResult::error("No goal specified for sub-agent");
         }
         let id = inv.str("resume").filter(|r| !r.is_empty()).map(String::from).unwrap_or_else(|| uuid::Uuid::new_v4().to_string()[..8].to_string());
-        let job = Job { def: self.definition.clone(), parent: self.config.get(), goal, resume: inv.str("resume").map_or(false, |r| !r.is_empty()), id: id.clone(), progress: inv.progress.clone(), call_id: inv.call_id.clone(), cwd: inv.cwd.clone() };
+        let job = Job { def: self.definition.clone(), parent: self.config.get(), goal, resume: inv.str("resume").map_or(false, |r| !r.is_empty()), owner: self.config.key(), id: id.clone(), progress: inv.progress.clone(), call_id: inv.call_id.clone(), cwd: inv.cwd.clone() };
         if inv.params["background"].as_bool().unwrap_or(false) {
             let (owner, name) = (self.config.key(), self.definition.name.clone());
             let (goal, bid) = (job.goal.clone(), id.clone());
@@ -119,6 +119,8 @@ struct Job {
     parent: Arc<Config>,
     goal: String,
     resume: bool,
+    /// The parent's config key: whose total this run's tokens are added to.
+    owner: usize,
     id: String,
     progress: Option<ProgressFn>,
     call_id: String,
@@ -156,6 +158,22 @@ pub fn stop(owner: usize, id: &str) -> bool {
     r.task.abort();
     b.done.push((owner, r.id, r.name, "Stopped by the user before it finished. It has no report; do not start it again unless asked.".into()));
     true
+}
+
+/// Tokens spent by sub-agents and parallel workers, waiting to be added to their parent's total. Each one keeps its
+/// own counter, so without this a request that delegated most of its reading looked almost free in /cost.
+fn child_usage() -> &'static Mutex<HashMap<usize, crate::client::response::TokenUsage>> {
+    static U: std::sync::OnceLock<Mutex<HashMap<usize, crate::client::response::TokenUsage>>> = std::sync::OnceLock::new();
+    U.get_or_init(Default::default)
+}
+
+pub fn add_usage(owner: usize, u: &crate::client::response::TokenUsage) {
+    child_usage().lock().unwrap().entry(owner).or_default().add(u);
+}
+
+/// What this parent's sub-agents spent since the last call.
+pub fn take_usage(owner: usize) -> Option<crate::client::response::TokenUsage> {
+    child_usage().lock().unwrap().remove(&owner)
 }
 
 fn board() -> &'static Mutex<Board> {
@@ -209,7 +227,7 @@ fn kept() -> &'static Mutex<Vec<(String, Agent)>> {
 }
 
 async fn run_job(job: Job) -> ToolResult {
-    let Job { def, parent, goal, resume, id, progress, call_id, cwd } = job;
+    let Job { def, parent, goal, resume, owner, id, progress, call_id, cwd } = job;
     let mut cfg = (*parent).clone();
     cfg.max_turns = def.max_turns;
     cfg.max_seconds = soft_budget(def.timeout_seconds);
@@ -260,6 +278,8 @@ async fn run_job(job: Job) -> ToolResult {
             Some(a) => a,
             None => Agent::new(cfg, None).await,
         };
+        // a resumed agent's counter already holds its earlier runs, which the parent has been charged for
+        let before = agent.session.context_manager.lock().unwrap().total_usage.clone();
         let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel::<AgentEvent>();
         {
             let run = agent.run(&prompt, tx);
@@ -302,6 +322,8 @@ async fn run_job(job: Job) -> ToolResult {
                 }
             }
         }
+        // ponytail: a run cut by the hard timeout never gets here, so its tokens go uncounted; the soft budget makes that rare
+        add_usage(owner, &agent.session.context_manager.lock().unwrap().total_usage.since(&before));
         agent
     };
     // a timeout cuts a hung model call or tool too; checking the clock between events could not

@@ -110,6 +110,8 @@ pub struct Orchestrator {
     progress: Option<ProgressFn>,
     overlaps: BTreeMap<String, Vec<String>>,
     combined_checks: Vec<Value>,
+    /// Tokens the workers spent, summed, for whoever started the run to add to its own total.
+    pub usage: Arc<std::sync::Mutex<crate::client::response::TokenUsage>>,
 }
 
 impl Orchestrator {
@@ -129,6 +131,7 @@ impl Orchestrator {
             progress,
             overlaps: BTreeMap::new(),
             combined_checks: vec![],
+            usage: Default::default(),
         }
     }
 
@@ -206,6 +209,7 @@ impl Orchestrator {
                     handle(ev, &mut last_text, &mut task_status);
                 }
             }
+            self.usage.lock().unwrap().add(&agent.session.context_manager.lock().unwrap().total_usage);
             agent.close().await;
             task_status
         };
