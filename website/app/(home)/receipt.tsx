@@ -5,17 +5,15 @@ import { Cloud } from "./clouds";
 
 // The thing zerd hands you instead of "Done!": a receipt for what it actually checked.
 // It prints out of a cloud on load, sways like it is hanging, leans toward the pointer,
-// and a stamp lands once it has finished printing. Numbers match the first replay scenario.
-const LINES: [mark: "ok" | "bad" | "plain", text: string, note?: string][] = [
-  ["plain", "checks on 3 changed files"],
-  ["ok", "Biome check", "passed"],
-  ["ok", "TypeScript check", "passed"],
-  ["plain", "review by a second model"],
-  ["ok", "1 finding", "dropped"],
-  ["plain", "every path in the answer"],
-  ["ok", "RouteProgress.tsx:42", "found"],
-  ["ok", "layout.tsx:17", "found"],
-  ["bad", "session.rs:88", "not found, removed"],
+// and a stamp lands once it has finished printing. The lines come from the real recording in the
+// window below it: the file it changed, the pytest result and what its own answer said it did not check.
+const LINES: [mark: "ok" | "bad" | "skip" | "plain", text: string, note?: string][] = [
+  ["plain", "checks on 1 changed file"],
+  ["ok", "pytest test_client.py", "3 passed"],
+  ["plain", "what changed"],
+  ["ok", "retry_lab/client.py", "+6 −3"],
+  ["plain", "said, but not checked"],
+  ["skip", "the rest of the suite", "not run"],
 ];
 
 export default function Receipt() {
@@ -39,7 +37,7 @@ export default function Receipt() {
   }, [still, px, py]);
 
   return (
-    <div className="receipt-slot" aria-label="A zerd receipt: three files checked, two checks passed, one invented path removed" role="img">
+    <div className="receipt-slot" aria-label="A zerd receipt: one file changed, three tests passed, and one thing it says it did not check" role="img">
       <motion.div className="receipt-tilt" style={still ? undefined : { rotateX: rotX, rotateY: rotY }}>
         <div className="receipt-sway">
           {/* the paper comes out from under this cloud */}
@@ -48,24 +46,24 @@ export default function Receipt() {
             <div className="receipt-feed">
               <div className="receipt-paper">
                 <p className="r-brand">zerd</p>
-                <p className="r-ask">fix the redirect loop</p>
+                <p className="r-ask">fix send_with_retry backoff</p>
                 <hr />
                 {LINES.map(([k, a, b]) => (
                   <p key={a} className={`r-line r-${k}`}>
-                    {k !== "plain" && <i>{k === "ok" ? "✓" : "✗"}</i>}
+                    {k !== "plain" && <i>{k === "ok" ? "✓" : k === "bad" ? "✗" : "–"}</i>}
                     <span>{a}</span>
                     {b && <em>{b}</em>}
                   </p>
                 ))}
                 <hr />
-                <p className="r-total"><span>verified</span> 3 files · 2 checks ok</p>
-                <p className="r-small">worked for 11s · 0.3k tokens</p>
+                <p className="r-total"><span>checked</span> 1 file · 1 check ok</p>
+                <p className="r-small">worked for 16s · 1.9k tokens</p>
                 <div className="r-bars" />
               </div>
             </div>
           </div>
           <motion.div className="receipt-stamp" initial={still ? false : { opacity: 0, scale: 2.4, rotate: -22 }} animate={{ opacity: 1, scale: 1, rotate: -9 }} transition={{ delay: still ? 0 : 5.3, type: "spring", stiffness: 420, damping: 18 }}>
-            verified
+            checked
           </motion.div>
         </div>
       </motion.div>
