@@ -1,5 +1,6 @@
 "use client";
 import { useEffect, useRef, useState } from "react";
+import AppWindow from "./window";
 
 // One line of the replay. k picks the colour, id lets a later event replace an earlier line
 // (a "running" line turning into "passed").
@@ -183,30 +184,32 @@ export default function Demo() {
   };
 
   const shown = lines(scn.ev, step);
+  const tabs = (
+    <div className="tabs" role="tablist" aria-label="Choose a scenario" onKeyDown={onKey}>
+      {SCENARIOS.map((s, i) => (
+        <button key={s.tab} role="tab" id={`demo-tab-${i}`} aria-selected={i === si} aria-controls="demo-panel" tabIndex={i === si ? 0 : -1} onClick={() => pick(i)}>
+          {s.tab}
+        </button>
+      ))}
+    </div>
+  );
+  const controls = (
+    <>
+      <span className="live"><i className={active ? "on" : ""} aria-hidden="true" />{active ? "replaying" : done ? "finished" : "paused"}</span>
+      <button type="button" onClick={() => setPlaying(!playing)} disabled={reduced} aria-pressed={!playing}>{playing ? "Pause" : "Play"}</button>
+      <button type="button" onClick={replay} disabled={reduced}>Replay</button>
+    </>
+  );
   return (
     <div className="demo" ref={root}>
-      <div className="tabs" role="tablist" aria-label="Choose a scenario" onKeyDown={onKey}>
-        {SCENARIOS.map((s, i) => (
-          <button key={s.tab} role="tab" id={`demo-tab-${i}`} aria-selected={i === si} aria-controls="demo-panel" tabIndex={i === si ? 0 : -1} onClick={() => pick(i)}>
-            {s.tab}
-          </button>
-        ))}
-      </div>
-      <div className="win-term" role="tabpanel" id="demo-panel" aria-labelledby={`demo-tab-${si}`}>
-        <div className="bar">
-          <span className="dots" aria-hidden="true"><i /><i /><i /></span>
-          <span className="live"><i className={active ? "on" : ""} aria-hidden="true" />{active ? "replaying" : done ? "finished" : "paused"}</span>
-          <span className="spacer" />
-          <button type="button" onClick={() => setPlaying(!playing)} disabled={reduced} aria-pressed={!playing}>{playing ? "Pause" : "Play"}</button>
-          <button type="button" onClick={replay} disabled={reduced}>Replay</button>
-        </div>
-        <div className="body" ref={body} role="region" aria-label={scn.label} aria-live="off" tabIndex={0}>
+      <AppWindow bar={tabs} end={controls}>
+        <div className="body" id="demo-panel" role="tabpanel" aria-labelledby={`demo-tab-${si}`} ref={body} aria-label={scn.label} tabIndex={0}>
           <div className="tl"><span className="t-blue">zerd</span> <span className="t-dim">&gt;</span> {scn.prompt.slice(0, typed)}{(typed < scn.prompt.length || done) && <span className="caret" aria-hidden="true" />}</div>
           {shown.map((e, i) => <Line e={e} key={e.id ?? i} />)}
           {!done && typed >= scn.prompt.length && <div className="tl"><span className="caret" aria-hidden="true" /></div>}
         </div>
-      </div>
-      <p className="note">Replay of a scripted session. It follows what zerd really does; it is not a live run.</p>
+      </AppWindow>
+      <p className="note">A replay of a scripted session. It follows what zerd really does; it is not a live run.</p>
     </div>
   );
 }
