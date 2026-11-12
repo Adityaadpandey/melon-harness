@@ -65,6 +65,8 @@ body:has(.sky-root) { background: #04060c; }
 .live i.on { background: var(--ok); }
 .stage { background: #0b0e13; min-height: 320px; }
 .stage .ap-wrapper, .stage .ap-player { background: #0b0e13 !important; }
+/* the player draws an 11px black frame around the terminal by default; paint it the window colour so it reads as padding */
+.stage .ap-term { border-color: #0b0e13 !important; }
 .stage-fail { padding: 28px; color: #9aa3b2; font-size: 14px; }
 .asciinema-theme-zerd { --term-color-foreground: #d9dde5; --term-color-background: #0b0e13; }
 .t-ok { color: var(--ok); } .t-bad { color: var(--bad); } .t-blue { color: #8da2ff; } .t-dim { color: #7d8594; } .t-warn { color: var(--warn); }
