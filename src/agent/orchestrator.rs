@@ -158,6 +158,7 @@ impl Orchestrator {
         let git_dir = crate::util::paths::resolve(&self.repo.join(".git")).to_string_lossy().to_string(); // a worktree's git metadata lives in the main repo's .git
         let mut cfg = self.config.clone();
         cfg.cwd = wt.clone();
+        cfg.max_seconds = crate::tools::subagents::soft_budget(WORKER_TIMEOUT as f64); // so it reports before it is cut
         cfg.sandbox_write_extra.push(git_dir);
         let owned = if node.files.is_empty() { String::new() } else { format!("\nFiles you own: {}. Do not edit other files.", node.files.join(", ")) };
         let prompt = format!(

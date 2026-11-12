@@ -1,5 +1,5 @@
 //! Ported from tests/test_agent_files.py: Claude Code style agent files become sub-agent definitions.
-use crate::tools::subagents::{default_definitions, parse_agent_file, READONLY_TOOLS};
+use crate::tools::subagents::{default_definitions, parse_agent_file, soft_budget, READONLY_TOOLS};
 
 const FILE: &str = "---
 name: db-reviewer
@@ -40,8 +40,12 @@ fn repo_agents_join_the_built_ins() {
 fn planner_and_investigator_cannot_edit() {
     let tmp = tempfile::tempdir().unwrap();
     for d in default_definitions(&super::cfg(tmp.path(), serde_json::json!({}))) {
-        if d.name == "planner" || d.name == "codebase_investigator" {
-            for t in d.allowed_tools.unwrap() {
+        if d.name == "planner" || d.name == "codebase_investigator" || d.name == "code_reviewer" {
+            let tools = d.allowed_tools.unwrap();
+            // a reviewer that cannot see the diff or ask who calls a function can only guess
+            assert!(d.name != "code_reviewer" || (tools.contains(&"git".to_string()) && tools.contains(&"graph".to_string())));
+            assert!(soft_budget(d.timeout_seconds) < d.timeout_seconds); // it must answer before it is cut off
+            for t in tools {
                 assert!(READONLY_TOOLS.contains(&t.as_str()), "{} may use {t}", d.name);
             }
         }

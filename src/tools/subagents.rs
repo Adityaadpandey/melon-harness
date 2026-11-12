@@ -103,6 +103,12 @@ impl Tool for SubagentTool {
     }
 }
 
+/// The time a sub-agent may work before it must stop and answer from what it has. It sits below the hard timeout so
+/// that last answer still fits: a 600s agent wraps up at 510s instead of being cut at 600s with nothing to show.
+pub fn soft_budget(hard_timeout: f64) -> f64 {
+    (hard_timeout - 90.0).max(hard_timeout * 0.5)
+}
+
 /// Everything one sub-agent run needs, owned, so it can also run as a background task.
 struct Job {
     def: SubagentDefinition,
@@ -172,6 +178,7 @@ async fn run_job(job: Job) -> ToolResult {
     let Job { def, parent, goal, resume, id, progress, call_id, cwd } = job;
     let mut cfg = (*parent).clone();
     cfg.max_turns = def.max_turns;
+    cfg.max_seconds = soft_budget(def.timeout_seconds);
     cfg.model_role = def.role.clone();
     cfg.auto_review = false;
     cfg.subagents = vec![]; // no recursive delegation
@@ -356,10 +363,10 @@ fn planner() -> SubagentDefinition {
 fn code_reviewer() -> SubagentDefinition {
     def(
         "code_reviewer",
-        "Reviews code changes and provides feedback on quality, bugs, and improvements",
-        "You are a code review specialist.\nYour job is to review code and provide constructive feedback.\nLook for bugs, code smells, security issues, and improvement opportunities.\nUse read_file, list_dir and grep to examine the code.\nDo NOT modify any files.",
-        Some(&["read_file", "grep", "list_dir"]),
-        10,
+        "Read-only reviewer for a diff, a commit or named files: reports verified bugs with file:line and a fix. Tell it what changed (\"the uncommitted diff\", a commit, or the files)",
+        "You are a code reviewer. READ-ONLY: you cannot edit anything; your output is the review.\nStart from what changed: the git tool's `scope` then `patch` (or `show` for a commit), then read the changed functions in full. For every function whose signature or behaviour changed, ask the graph who uses it (`graph callers NAME`) and open the callers that could break; that is where most real bugs hide.\nReport only defects you confirmed by reading the code, worst first, as `severity file:line  what is wrong -> fix`. Leave out style, naming and anything you could not confirm. If you found nothing, say so in one line and name what you checked.",
+        Some(&["read_file", "grep", "glob", "list_dir", "outline", "graph", "git"]),
+        15,
         300.0,
         "default",
     )
