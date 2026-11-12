@@ -8,7 +8,7 @@ import rehypeSlug from "rehype-slug";
 import rehypeAutolink from "rehype-autolink-headings";
 import rehypeShiki from "@shikijs/rehype";
 import { remarkAlert } from "remark-github-blockquote-alert";
-import { pages } from "@/lib/docs";
+import { pages, ordered, groupOf, readingMinutes } from "@/lib/docs";
 import { headingsOf } from "@/lib/headings";
 import CopyButton from "../CopyButton";
 import Toc from "../Toc";
@@ -53,21 +53,26 @@ const components: Components = {
 
 export default async function DocPage({ params }: { params: Promise<{ slug: string }> }) {
   const { slug } = await params;
-  const i = pages.findIndex((p) => p.slug === slug);
+  const i = ordered.findIndex((p) => p.slug === slug);
   if (i < 0) notFound();
-  const { title, body } = pages[i];
-  const prev = pages[i - 1];
-  const next = pages[i + 1];
+  const { title, body } = ordered[i];
+  const prev = ordered[i - 1];
+  const next = ordered[i + 1];
   return (
     <div className="dgrid">
       <article className="prose">
-        <div className="eyebrow">Docs / {String(i + 1).padStart(2, "0")}</div>
-        <h1>{title}</h1>
+        <header className="ahead">
+          <div className="crumb">
+            <Link href="/docs">{groupOf(slug)}</Link>
+            <span>{readingMinutes(body)} min read</span>
+          </div>
+          <h1>{title}</h1>
+        </header>
         <Markdown remarkPlugins={[remarkGfm, remarkAlert]}
           rehypePlugins={[
             rehypeSlug,
             [rehypeAutolink, { behavior: "append", properties: { className: "anchor", ariaLabel: "Link to this section" }, content: { type: "text", value: "#" } }],
-            [rehypeShiki, { themes: { light: "github-light", dark: "github-dark" }, defaultColor: false, fallbackLanguage: "text", addLanguageClass: true }],
+            [rehypeShiki, { theme: "github-dark-default", fallbackLanguage: "text", addLanguageClass: true }],
           ]} components={components}>{body}</Markdown>
         <nav className="pager">
           {prev ? (
