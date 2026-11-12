@@ -1,0 +1,87 @@
+/* Fumadocs, re-coloured to zerd: paper, ink, one cobalt. Square-ish corners, no gradients, no glow. */
+@import "tailwindcss";
+@import "fumadocs-ui/css/neutral.css";
+@import "fumadocs-ui/css/preset.css";
+
+:root {
+  --color-fd-background: #f1f2ee;
+  --color-fd-foreground: #14171c;
+  --color-fd-muted: #e7e9e3;
+  --color-fd-muted-foreground: #4a505c;
+  --color-fd-popover: #f7f8f5;
+  --color-fd-popover-foreground: #14171c;
+  --color-fd-card: #ebece7;
+  --color-fd-card-foreground: #14171c;
+  --color-fd-border: #d4d7ce;
+  --color-fd-primary: #2241e0;
+  --color-fd-primary-foreground: #ffffff;
+  --color-fd-secondary: #e7e9e3;
+  --color-fd-secondary-foreground: #14171c;
+  --color-fd-accent: #dfe5ff;
+  --color-fd-accent-foreground: #14171c;
+  --color-fd-ring: #2241e0;
+  --color-fd-overlay: rgb(20 23 28 / 0.25);
+  --radius: 5px;
+}
+.dark {
+  --color-fd-background: #0f1217;
+  --color-fd-foreground: #eceef2;
+  --color-fd-muted: #161a21;
+  --color-fd-muted-foreground: #a3a9b6;
+  --color-fd-popover: #12161c;
+  --color-fd-popover-foreground: #eceef2;
+  --color-fd-card: #12161c;
+  --color-fd-card-foreground: #eceef2;
+  --color-fd-border: #252a34;
+  --color-fd-primary: #8da2ff;
+  --color-fd-primary-foreground: #0f1217;
+  --color-fd-secondary: #161a21;
+  --color-fd-secondary-foreground: #eceef2;
+  --color-fd-accent: #1c2440;
+  --color-fd-accent-foreground: #eceef2;
+  --color-fd-ring: #8da2ff;
+  --color-fd-overlay: rgb(0 0 0 / 0.5);
+}
+
+/* the site base (globals.css) follows the docs theme toggle, not only the system setting */
+html:not(.dark) { --paper: #f1f2ee; --paper2: #e7e9e3; --ink: #14171c; --ink2: #4a505c; --ink3: #7b8190; --rule: #d4d7ce; --cobalt: #2241e0; }
+html.dark { --paper: #0f1217; --paper2: #161a21; --ink: #eceef2; --ink2: #a3a9b6; --ink3: #6f7686; --rule: #252a34; --cobalt: #8da2ff; }
+
+body { font-family: var(--font-sans), system-ui, sans-serif; font-size: 16px; }
+code, pre, kbd { font-family: var(--font-mono), ui-monospace, Menlo, monospace; }
+.logo { font-size: 20px; }
+
+/* square-ish corners everywhere */
+#nd-docs-layout *, #nd-nav, [role="dialog"], [data-radix-popper-content-wrapper] * { border-radius: min(var(--radius), 6px); }
+.rounded-xl, .rounded-lg, .rounded-md, .rounded-2xl { border-radius: 5px !important; }
+
+.prose { --tw-prose-body: var(--color-fd-foreground); }
+.prose h1, .prose h2, .prose h3 { letter-spacing: -0.02em; font-weight: 700; }
+.prose a:not([data-card]) { color: var(--color-fd-primary); text-underline-offset: 3px; }
+figure.shiki, pre { box-shadow: none !important; }
+
+/* code blocks stay dark in both themes, like the terminal panes on the landing page */
+figure.shiki { background: #0e1116 !important; border: 1px solid #252a34; }
+figure.shiki, figure.shiki * { --color-fd-muted-foreground: #7d8594; --color-fd-secondary: #171b22; }
+figure.shiki pre, figure.shiki code { color: #d9dde5; }
+:not(pre) > code { background: var(--color-fd-muted); border: 1px solid var(--color-fd-border); border-radius: 4px; }
+
+/* mermaid */
+.mermaid-box { margin: 1.5rem 0; padding: 16px; overflow-x: auto; border: 1px solid var(--color-fd-border); border-radius: 5px; background: var(--color-fd-card); }
+.mermaid-box svg { margin: 0 auto; max-width: 100%; height: auto; }
+.mermaid-fallback { overflow-x: auto; padding: 14px; border: 1px solid var(--color-fd-border); border-radius: 5px; }
+
+/* docs index */
+.docs-group { margin-top: 2.25rem; }
+.docs-group h2 { margin: 0 0 12px; font-size: 1.1rem; }
+.docs-cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 12px; }
+.docs-card { display: flex; flex-direction: column; gap: 4px; padding: 14px 16px; border: 1px solid var(--color-fd-border); border-radius: 5px; background: var(--color-fd-card); text-decoration: none !important; color: inherit !important; }
+.docs-card:hover { border-color: var(--color-fd-primary); }
+.docs-card strong { font-weight: 700; }
+.docs-card span { font-size: 0.9rem; color: var(--color-fd-muted-foreground); }
+
+/* shiki ships light and dark token colours as variables; the blocks are always dark, so always use the dark ones */
+figure.shiki span, figure.shiki code span { color: var(--shiki-dark) !important; font-style: var(--shiki-dark-font-style, normal); }
+
+/* sidebar group labels read as small headings */
+#nd-sidebar p.inline-flex { font-weight: 700; font-size: 0.8rem; letter-spacing: 0.06em; text-transform: uppercase; color: var(--color-fd-muted-foreground); }
