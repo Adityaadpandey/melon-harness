@@ -1,17 +1,17 @@
 import Link from "next/link";
 import Logo from "./logo";
 
-// Dark glass bar pinned to the top. No scroll listener, no entrance animation.
 export default function Nav({ repo }: { repo: string }) {
   return (
-    <header className="sk-nav">
-      <div className="sk-nav-in">
+    <header className="nav">
+      <div className="nav-in">
         <Logo />
         <nav aria-label="Main">
+          <a href="#bugs">Findings</a>
+          <a href="#versus">Versus Claude Code</a>
           <Link href="/docs/try-it-in-two-minutes">Docs</Link>
-          <Link href="/docs/models-and-routing">Models</Link>
-          <a href={`https://github.com/${repo}/releases`}>Releases</a>
-          <a className="sk-pill" href="#install">Install</a>
+          <a href={`https://github.com/${repo}`}>GitHub</a>
+          <a className="nav-install" href="#install">Install</a>
         </nav>
       </div>
     </header>
