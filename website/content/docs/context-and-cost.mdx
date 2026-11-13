@@ -3,24 +3,32 @@ title: "Context and cost"
 description: "How zerd finds code without reading everything, avoids paying twice for tokens, and keeps its own work estimates honest."
 ---
 
+This page explains where zerd saves tokens and how it keeps a run from going over budget. You will learn how to inspect what the model sees and how to read the `Rounds:` line at the end of a run.
+
 ## Finding code without reading everything
 
-Cheapest evidence first:
+zerd looks at the cheapest evidence first:
 
 1. `search`: BM25-ranked files, camelCase-aware, boosted by files that fixed similar requests before
 2. `outline`: symbols with line ranges
 3. `read_file(symbol=...)`: one function, not the whole file
 4. `grep`
 
-For structure there is a **live symbol graph** built with tree-sitter for TS/JS, Python, Rust, Go, Java, C#, PHP and Ruby. It answers `callers`, `callees`, `impact`, `trace` and `path`. It reads the working tree, so it never goes stale, and an edit that changes a signature comes back with the places that use it.
+For structure there is a **live symbol graph** built with tree-sitter for TS/JS, Python, Rust, Go, Java, C#, PHP and Ruby. It answers `callers`, `callees`, `impact`, `trace` and `path`.
 
-See what the model would see:
+<Callout>
+The graph reads the working tree, so it never goes stale. An edit that changes a signature comes back with the places that use it.
+</Callout>
+
+To see what the model would see, ask the graph yourself:
 
 ```bash
 zerd graph callers parse_invoice
 ```
 
 ## Not paying twice for the same tokens
+
+Six habits keep repeat work cheap:
 
 - `read_file` remembers which lines the model has seen and returns **only new lines, or a diff** when the file changed.
 - The same read-only lookup with nothing written since is answered in one line instead of repeating the output.
@@ -33,7 +41,15 @@ zerd graph callers parse_invoice
 
 ## When the context fills up
 
-Compaction asks the same model, on the exact prefix it just sent, so the provider serves the summary **from cache**. Recent turns stay word for word, the files being worked on are restored from disk, and the replaced messages are saved to `transcripts/` so nothing is lost. Three compactions in a row that refill immediately trip a breaker that prunes instead.
+Compaction asks the same model, on the exact prefix it just sent, so the provider serves the summary **from cache**. Along the way:
+
+- Recent turns stay word for word.
+- The files being worked on are restored from disk.
+- The replaced messages are saved to `transcripts/`, so nothing is lost.
+
+<Callout>
+Three compactions in a row that refill immediately trip a breaker, and zerd prunes instead.
+</Callout>
 
 <Mermaid chart={`flowchart LR
     T["Tool result"] --> CAP{"Over the<br/>output cap?"}
@@ -52,7 +68,9 @@ Compaction asks the same model, on the exact prefix it just sent, so the provide
 
 ## Knowing how much work a task should take
 
-Before each request the model names how many tool rounds it needs. A round is one turn, however many calls it holds, so reading five files at once costs what reading one does. When the request ends, zerd scores the guess and prints it:
+Before each request the model names how many tool rounds it needs. A round is one turn, however many calls it holds, so reading five files at once costs what reading one does.
+
+When the request ends, zerd scores the guess and prints it:
 
 ```text
 Rounds: 0 used, 12 estimated, +5 points (within the target)
@@ -68,4 +86,14 @@ That one is a question answered from what was already in context. No tools were 
 
 Scores are kept in `calibration.jsonl`. The last ten results are shown to the model the next time it makes a guess ("when you ran over it was by 1.8x on average: lean higher"). There are no weights to train. The model gets feedback on its own record, so its estimates drift toward honest and the stop only catches runaways.
 
-A loop, a repeated action, or an edit that keeps being rewritten triggers a nudge, then escalates to the strong model, then stops instead of burning the budget. Out of time or tokens, one last tool-free call turns what it learned into an answer, and any checks still run against the tree it left.
+### When a run goes wrong
+
+A loop, a repeated action, or an edit that keeps being rewritten goes through three steps:
+
+1. A nudge.
+2. Escalation to the strong model.
+3. A stop, instead of burning the budget.
+
+<Callout>
+Out of time or tokens, one last tool-free call turns what zerd learned into an answer, and any checks still run against the tree it left.
+</Callout>
