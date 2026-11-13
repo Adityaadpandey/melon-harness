@@ -137,8 +137,8 @@
 
 /* footer: a dark card with rounded feet, then a giant wordmark cropped by the bottom of the page */
 .foot-lp { margin-top: clamp(64px, 9vw, 120px); }
-.foot-card { position: relative; z-index: 2; background: #000; border: 1px solid var(--line); border-top: 0; border-radius: 0 0 clamp(28px, 4vw, 48px) clamp(28px, 4vw, 48px); box-shadow: 0 40px 80px -10px rgba(0, 0, 0, 0.9); padding-top: clamp(40px, 6vw, 72px); }
-.foot-cta { display: flex; justify-content: center; margin-bottom: clamp(48px, 8vw, 110px); }
+.foot-card { position: relative; z-index: 2; background: #000; border: 1px solid var(--line); border-top: 0; border-radius: 0 0 clamp(28px, 4vw, 48px) clamp(28px, 4vw, 48px); box-shadow: 0 40px 80px -10px rgba(0, 0, 0, 0.9); padding-top: clamp(32px, 4.5vw, 56px); }
+.foot-cta { display: flex; justify-content: center; margin-bottom: clamp(28px, 4.5vw, 64px); }
 .lp .foot-pill { display: inline-flex; align-items: center; padding: 14px 34px; border-radius: 999px; background: #f5f5f5; color: #000; font-weight: 600; font-size: 16px; text-decoration: none; transition: background 0.15s, transform 0.15s; }
 .lp .foot-pill:hover { background: var(--accent); transform: translateY(-1px); }
 .foot-row { max-width: 1200px; margin: 0 auto; padding: 28px clamp(20px, 4vw, 40px) 34px; border-top: 1px solid var(--line); display: grid; grid-template-columns: 1fr auto 1fr; align-items: center; gap: 24px; }
@@ -150,7 +150,7 @@
 .foot-right a:hover { color: var(--text); }
 .foot-right a:last-child { color: var(--text); font-weight: 600; }
 .foot-word { position: relative; z-index: 1; margin-top: calc(clamp(40px, 6vw, 96px) * -1); height: auto; overflow: hidden; display: flex; justify-content: center; align-items: flex-start; user-select: none; }
-.foot-word span { display: block; font: 800 clamp(200px, 44vw, 700px)/0.9 var(--f); letter-spacing: -0.085em; padding: calc(clamp(40px, 6vw, 96px) + clamp(16px, 2.4vw, 40px)) 0 clamp(28px, 5vw, 80px); white-space: nowrap;
+.foot-word span { display: block; font: 800 clamp(200px, 44vw, 700px)/0.8 var(--f); letter-spacing: -0.085em; padding: clamp(36px, 5vw, 80px) 0 clamp(8px, 1.4vw, 22px); white-space: nowrap;
   background: linear-gradient(90deg, #ffd60a 0%, #ffe45c 28%, #fffbe6 55%, #ffffff 70%, #ffffff 100%); -webkit-background-clip: text; background-clip: text; color: transparent; }
 
 @media (max-width: 860px) {
