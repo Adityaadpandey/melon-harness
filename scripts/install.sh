@@ -19,4 +19,12 @@ want="$(cut -d' ' -f1 "$tmp/m.sha256")"
 got="$( (sha256sum "$tmp/m.tar.gz" 2>/dev/null || shasum -a 256 "$tmp/m.tar.gz") | cut -d' ' -f1)"
 [ "$want" = "$got" ] || { echo "checksum mismatch, not installing" >&2; exit 1; }
 tar -xz -C "$dir" -f "$tmp/m.tar.gz" zerd
-echo "installed $dir/zerd (make sure $dir is on your PATH)"
+echo "installed $dir/zerd"
+case ":$PATH:" in
+  *":$dir:"*) ;;
+  *) echo "  $dir isn't on your PATH yet. Add this to your shell profile:  export PATH=\"$dir:\$PATH\"" ;;
+esac
+command -v git >/dev/null 2>&1 || echo "  note: zerd needs git; install it first"
+echo
+echo "Next: cd into a repo and run  zerd   (first launch walks you through connecting a model)"
+echo "      zerd doctor   checks that everything is set up"

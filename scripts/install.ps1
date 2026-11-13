@@ -25,3 +25,5 @@ if (($user -split ';') -notcontains $dir) {
 }
 Write-Host "installed $dir\zerd.exe"
 if (-not (Get-Command git -ErrorAction SilentlyContinue)) { Write-Host 'note: zerd needs Git for Windows (https://git-scm.com/download/win); it also provides the bash zerd runs commands in' }
+Write-Host ''
+Write-Host 'Next: open a new terminal, cd into a repo and run  zerd  (first launch walks you through connecting a model; zerd doctor checks the setup)'
