@@ -70,10 +70,15 @@ ln -sf "$PWD/target/release/zerd" ~/.local/bin/zerd       # put it on your PATH 
 stub in `System32`, which runs in a Linux VM and can't see your Windows paths). Without it zerd falls back to PowerShell, and
 commands a model wrote for bash will often fail. See [Windows notes](#windows-notes).
 
-Give it a key. Either a `.env` with `API_KEY=...` (in the folder you run it from, or in zerd's data folder so it works from
-anywhere) or, if you already use the Codex CLI, nothing at all: `-m codex/<model>` reuses that login. To use OpenAI, Anthropic,
-Gemini, Groq, OpenRouter, Ollama or another provider directly, start `zerd` and type `/connect` (see
-[Models and routing](#models-and-routing)). The default model is `MiniMaxAI/MiniMax-M3`; change it with `-m <model>` or `/model`.
+Then run `zerd` in any repo. The first launch walks you through setup in about a minute: pick where models come from (a
+ChatGPT/Codex login, an Anthropic, OpenAI, OpenRouter or Gemini key, a local Ollama or LM Studio, or the Command Code
+gateway), paste the key (hidden, saved with owner-only permissions), watch it get checked against the provider, pick a default
+model, and choose how much zerd should ask before acting. Run `zerd setup` to redo it, or `/connect` inside a session to add
+another provider. Prefer files? A `.env` with `API_KEY=...` in the folder you run it from, or in zerd's data folder, works too.
+
+If something misbehaves, `zerd doctor` checks the model credentials, a live call to the provider, git, the sandbox, your
+terminal width and the data folder, and prints the fix next to each problem. The default model is `MiniMaxAI/MiniMax-M3` on the
+gateway; change it with `-m <model>` or `/model`.
 
 ```bash
 cd any/project && zerd                                     # interactive, full-screen
