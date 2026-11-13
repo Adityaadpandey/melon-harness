@@ -3,7 +3,7 @@ title: "Verification"
 description: "How zerd picks checks, knows whose failure it is, and catches breakage your tests can't see."
 ---
 
-"Done" is a claim that has to be backed up. This page covers the code that backs it up.
+"Done" is a claim that has to be backed up. This page covers the checks behind it, so you know what a `verified` status actually means.
 
 ## Checks on the files that changed
 
@@ -18,9 +18,13 @@ After edits, zerd picks checks for **only the changed files**, never a whole bui
 
 When a check fails, zerd **swaps in the pre-run copy of your files, runs the same check again, and puts the agent's files back.**
 
-An error that was already there is reported as "was already failing before your change; leaving it alone", and the agent is not sent to "fix" what it didn't break. A run with a pre-existing failure ends `unverified`, not `verified`.
+If the same error shows up on the clean copy, zerd reports "was already failing before your change; leaving it alone". The agent is not sent to "fix" what it didn't break, and the run ends `unverified`, not `verified`.
 
-Failures that are the agent's go back as a repair request, up to 2 rounds, then escalate to the strong model.
+If the failure is new, it goes back to the agent as a repair request, up to 2 rounds, then escalates to the strong model.
+
+<Callout>
+A failure that was there before you started never counts against the agent, and it never lets a run claim `verified` either.
+</Callout>
 
 <Mermaid chart={`flowchart TB
     E["Agent edited files"] --> S["Snapshot diff: what THIS run changed<br/>not edits you already had in flight"]
@@ -36,9 +40,7 @@ Failures that are the agent's go back as a repair request, up to 2 rounds, then 
 
 ## The signature guard
 
-Checks prove the code runs. They can't see the caller outside this repo.
-
-The guard compares each changed Python and JS/TS file with `HEAD` and flags:
+Checks prove the code runs. They can't see a caller outside this repo. So the guard compares each changed Python and JS/TS file with `HEAD` and flags:
 
 - a dropped parameter
 - a newly required parameter
@@ -46,11 +48,11 @@ The guard compares each changed Python and JS/TS file with `HEAD` and flags:
 - a removed `*args` or `**kwargs`
 - a function that is no longer exported
 
-The agent is sent back once to keep old calls working. It exists because of a real miss in [round 1 of the benchmarks](/docs/benchmarks).
+For example, if `unique_by()` stops accepting `seen`, the agent is sent back once to keep old calls working. The guard exists because of a real miss in [round 1 of the benchmarks](/docs/benchmarks).
 
 ## Every edit is checked as it lands
 
-An edit result comes back with the problems *that edit introduced* attached. Old and new text are both checked, and anything already there is ignored.
+Each edit result comes back with the problems *that edit introduced* attached. Old and new text are both checked, and anything already there is ignored. The checks are:
 
 - Python syntax and `ruff`
 - JSON and TOML parsing
@@ -60,10 +62,17 @@ An edit result comes back with the problems *that edit introduced* attached. Old
 
 ## It will not edit what it hasn't read
 
-Editing an existing file the agent hasn't read this session, or that changed on disk since, is refused. A small file comes back inside the refusal so the retry needs no extra round.
+An edit is refused if the file:
+
+- exists but the agent hasn't read it this session, or
+- changed on disk since the agent read it.
+
+A small file comes back inside the refusal, so the retry needs no extra round.
 
 If you edit a file in your editor mid-run, the agent is told and re-reads rather than overwriting you.
 
 ## A hallucination check that isn't a model
 
 Every `path` and `path:line` in the final answer is looked up in the real tree. An invented file, or a line past the end of one, goes back for one correction. Whatever is left is shown as a warning. It is a few dozen lines of code, not a model.
+
+This is the `citations: 4 checked, 0 unverified` part of the final status line.
