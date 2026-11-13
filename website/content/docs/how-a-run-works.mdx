@@ -3,9 +3,7 @@ title: "How a run works"
 description: "What happens between your request and the final status, and the five ways a run can end."
 ---
 
-When you ask for a change, the model does not get the last word. The harness around it picks the model, runs the checks, and decides whether the work is good enough to call finished.
-
-Here is one run, put together to show the flow. Each status line is a message zerd really prints. The last two lines are a summary, not the exact format.
+The harness around the model picks which model to use, runs the checks, and decides whether the work counts as finished. This example run is put together to show the flow. Each status line is a message zerd prints, and the last two lines are a summary rather than the exact format.
 
 ```text
 > change unique_by() to take a key function and drop the seen= argument
@@ -24,11 +22,9 @@ Here is one run, put together to show the flow. Each status line is a message ze
   Rounds: 9 used, 10 estimated, +10 points (within the target)
 ```
 
-<Callout>
-Every line above is a decision made by code, not by the model: which checks to run, whether a failure is new or was already there, whether a public signature broke, and whether the review has to go again.
-</Callout>
+Code makes every decision in that run: which checks to run, whether a failure is new or was already there, whether a public signature broke, and whether the review goes again.
 
-## The path every request takes
+## The path of a request
 
 <Mermaid chart={`flowchart LR
     A([Your request]) --> B{"Classify<br/>no model call"}
@@ -52,18 +48,16 @@ Every line above is a decision made by code, not by the model: which checks to r
     L -. loop detected .-> S
     R1 -. still failing .-> S`} />
 
-The same flow in plain words:
-
-1. **Classify.** Rules pick a model size for the request, with no model call, and say why.
-2. **Work.** The agent loop reads, edits and runs tools.
-3. **Check.** If files changed, checks run on those files only. New failures go back for repair, up to 2 rounds.
-4. **Guard.** A broken public signature sends the agent back once.
-5. **Review.** An independent review of the diff runs if you asked for it or turned on `auto_review`.
-6. **Cite.** Every file and line in the answer is looked up on disk.
+1. Classify. Rules pick a model size for the request without a model call, and say why.
+2. Work. The agent loop reads, edits and runs tools.
+3. Check. If files changed, checks run on those files only. New failures go back for repair, up to 2 rounds.
+4. Guard. A broken public signature sends the agent back once.
+5. Review. An independent review of the diff runs if you asked for it or turned on `auto_review`.
+6. Cite. Every file and line in the answer is looked up on disk.
 
 ## The five endings
 
-Every run ends in exactly one of these states, so you always know where you stand.
+Every run ends in exactly one of these states.
 
 | Status | Meaning |
 |---|---|
@@ -73,7 +67,7 @@ Every run ends in exactly one of these states, so you always know where you stan
 | `failed` | An API error, a loop, or the deadline. |
 | `done_no_changes` | Nothing was edited, for example you asked a question. |
 
-Each request is a task with a fixed lifecycle. The code checks every move, so a run can't jump from `failed` to `verified`, and every move is written to a trace you can read later.
+Each request is a task with a fixed lifecycle. The code checks every transition, so a run can't jump from `failed` to `verified`, and every transition is written to a trace you can read later.
 
 <Mermaid chart={`stateDiagram-v2
     [*] --> running
@@ -95,7 +89,7 @@ Each request is a task with a fixed lifecycle. The code checks every move, so a 
 
 ## How the pieces fit
 
-Two rules hold the design together: everything the model can do goes through one door (the tool registry), and everything the harness decides is traced.
+Everything the model can do goes through one door, the tool registry, and everything the harness decides is traced.
 
 <Mermaid chart={`flowchart TB
     subgraph UI["Front end"]
