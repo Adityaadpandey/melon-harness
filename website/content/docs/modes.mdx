@@ -1,11 +1,9 @@
 ---
 title: "Pi mode and full mode"
-description: "zerd starts in a lean mode called pi mode. This page lists exactly what it changes, and how to get the full harness."
+description: "zerd starts in pi mode, a lean setup with fewer tools and a shorter prompt. Full mode turns the rest back on."
 ---
 
-zerd runs in one of two modes. After this page you will know which one you are in, what the other adds, and how to switch.
-
-**Pi mode is the default.** It gives the model a small tool set and a short prompt, which suits strong models and keeps every request cheap. **Full mode** adds the harness's extra tools and safeguards.
+zerd starts in pi mode: a small tool set and a short prompt, which keeps each request cheap and suits strong models. Full mode adds the rest of the harness's tools and safeguards. Cheaper and open models tend to do better there, so if you run one, try `--no-pi`.
 
 ## Switching
 
@@ -14,10 +12,6 @@ zerd runs in one of two modes. After this page you will know which one you are i
 | Try full mode for one run | `zerd --no-pi` |
 | Use full mode for good | `pi_mode = false` in `config.toml` |
 | Force pi mode on | `--pi` |
-
-<Callout title="Why two modes">
-A small tool set is faster and cheaper per request, and strong models need little help. Cheaper and open models benefit more from the full harness. If you run one of those, try `--no-pi`.
-</Callout>
 
 ## What changes
 
@@ -35,9 +29,9 @@ A small tool set is faster and cheaper per request, and strong models need littl
 
 MCP tools you configured always stay available in pi mode.
 
-## What does not change
+## What stays the same
 
-These work the same in both modes:
+These behave the same in both modes:
 
 - Running checks on changed files, repair rounds, and knowing whether a failure was already there
 - The signature guard and read-before-edit
@@ -50,14 +44,14 @@ These work the same in both modes:
 
 ## Turning on one thing in pi mode
 
-Pi mode only fills in keys you haven't set. Say you want the citation check but nothing else. Set it yourself:
+Pi mode only fills in keys you haven't set. If you want the citation check and nothing else, set it yourself:
 
 ```toml
 check_references = true
 ```
 
-The same goes for `auto_scout`, `enable_parallel_tasks`, `tool_output_max_chars` and `allowed_tools`. An explicit value always wins over the pi default.
+The same goes for `auto_scout`, `enable_parallel_tasks`, `tool_output_max_chars` and `allowed_tools`. A value you set wins over the pi default.
 
-## Which pages this affects
+## Full mode labels on other pages
 
-Other pages mark a feature **full mode** when it needs `--no-pi` (or its key set by hand) to be active. Anything unmarked works in both modes.
+Other pages label a feature "full mode" when it needs `--no-pi` (or its key set by hand). Anything unlabeled works in both modes.
