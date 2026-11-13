@@ -1,0 +1,121 @@
+---
+title: "Files and environment"
+description: "Every folder and file zerd reads or writes, and every environment variable it looks at."
+---
+
+## Folders
+
+| Folder | Default location | Holds |
+|---|---|---|
+| Data folder | macOS `~/Library/Application Support/zerd`, Linux `~/.local/share/zerd`, Windows `%APPDATA%\zerd` | Everything zerd remembers between runs, listed below |
+| Config folder | macOS `~/Library/Application Support/zerd`, Linux `~/.config/zerd`, Windows `%APPDATA%\zerd` | The user `config.toml` and user-wide `tools/` |
+| `.zerd/` in a repo | The working directory | Project config, project tools, permission rules and prompt overrides |
+| `.zerd/` in your home | `~/.zerd` | User-wide commands, prompts, skills, agents, permission rules and prompt overrides |
+| Harness folder | Found next to the binary, or `ZERD_HOME` | `profiles/` and `skills/` that ship with zerd, plus an optional `.env` |
+
+`ZERD_DATA_DIR` replaces the data folder location on every system. On macOS and Windows the data and config folders are the same directory unless you set it.
+
+## Inside the data folder
+
+| Path | What it is | Created when |
+|---|---|---|
+| `.env` | Keys you pasted into `zerd setup` or `/connect`, one `NAME=value` per line | You save a key. Owner-only permissions on macOS and Linux |
+| `sessions/<id>.json` | One saved session per run. `--resume`, `--continue` and `/sessions` read these | A session is saved |
+| `checkpoints/<id>.json` | Checkpoints of a session | A checkpoint is taken |
+| `traces/<id>.jsonl` | Event trace for a session. Your `API_KEY` value is scrubbed from it | Every run, unless `trace` is turned off in config |
+| `results/<session id>/` | Large tool output kept out of the conversation and fetched later | A tool result is archived |
+| `transcripts/<id>.jsonl` | The full conversation as it was before a compaction | The context is compacted. The summary points at this file |
+| `notes/<hash>.md` | Task notes for one workspace, kept so a long job survives compaction and `/resume` | A long job records notes |
+| `memory/<hash>.json` | Entries from the memory tool, one file per workspace | The model saves a memory entry |
+| `learned/<hash>.json` | Lessons and edit history for one repo | You correct zerd, or run `/learn` |
+| `review_memory/<hash>.json` | Findings earlier reviews already ruled out, per repo | A review finishes |
+| `graph/<hash>.json` | Code graph cache, one per workspace | The repo is indexed |
+| `trusted_projects.json` | Projects whose `.zerd/config.toml` you trusted, with a digest of the file | You pass `--trust` |
+| `calibration.jsonl` | Estimated and actual round counts of finished requests | A request finishes |
+| `last_model` | The model you last chose | You pick a model |
+| `models-<provider>.json` | The model list fetched for a provider | `/connect` lists a provider's models |
+| `input_history` | Prompts you typed, for recall in the prompt box | You send a prompt |
+| `layout` | Which panels of the full-screen layout are showing | You change `/layout` |
+
+The `<hash>` names come from a hash of the repo's absolute path, so each repo gets its own file. `sessions/` and `checkpoints/` are created with owner-only permissions on macOS and Linux.
+
+<Callout type="warn">
+The data folder holds your keys in `.env` and the full text of your conversations in `sessions/` and `transcripts/`. Do not sync it to a shared drive or commit it.
+</Callout>
+
+## Inside a repo's `.zerd/`
+
+| Path | What it is |
+|---|---|
+| `config.toml` | Project config. Hooks, verify commands and approval need `--trust` |
+| `graph.toml` | Folders to ignore, area descriptions and symbol notes for the [code graph](/docs/code-graph). Safe to commit |
+| `permissions.json` | Allow and deny rules for this repo. See [Permissions](/docs/permissions) |
+| `tools/*.toml` | Project tools that run a shell command. See [Extending](/docs/extending) |
+| `commands/` | Prompt files that become slash commands |
+| `skills/` | Skills for this repo. See [Skills and agents](/docs/skills-and-agents) |
+| `agents/` | Sub-agent definitions for this repo |
+| `SYSTEM.md` | Replaces zerd's system prompt |
+| `APPEND_SYSTEM.md` | Added after the system prompt |
+
+The same names work in `~/.zerd/` for every project, except `config.toml`, `graph.toml` and `tools/`, which only the repo's `.zerd/` reads (user-wide tools live in the config folder). `~/.zerd/` also reads `prompts/`. If both a user and a repo `SYSTEM.md` exist, the repo's wins. Every `APPEND_SYSTEM.md` found is applied.
+
+## Instruction files
+
+zerd reads `AGENTS.md`, `CLAUDE.md` and `AGENT.MD` from the working directory up to the repo root, plus `~/.claude/CLAUDE.md`. Lines like `@docs/rules.md` pull in another file, up to three levels deep. A file that is very large is shown to the model as an outline instead of in full.
+
+zerd also writes to one of these. A lesson from `/learn` or a correction is added to the repo's `AGENTS.md` under `## Learned by zerd`, and `/forget` removes it. Scripted runs never write it. More in [Memory and undo](/docs/memory-and-undo).
+
+## Which config wins
+
+The user config lives in the config folder, the project config in `.zerd/config.toml`. The order is in [Configuration](/docs/configuration).
+
+## Environment variables
+
+### Provider keys
+
+Set these in your shell or save them with `/connect`. The provider table is in [Models and routing](/docs/models).
+
+| Variable | Used for |
+|---|---|
+| `OPENAI_API_KEY` | `openai` |
+| `ANTHROPIC_API_KEY` | `anthropic` |
+| `GEMINI_API_KEY` | `gemini` |
+| `OPENROUTER_API_KEY` | `openrouter` |
+| `GROQ_API_KEY` | `groq` |
+| `DEEPSEEK_API_KEY` | `deepseek` |
+| `MISTRAL_API_KEY` | `mistral` |
+| `XAI_API_KEY` | `xai` |
+| `TOGETHER_API_KEY` | `together` |
+| `FIREWORKS_API_KEY` | `fireworks` |
+| `CEREBRAS_API_KEY` | `cerebras` |
+| `MOONSHOT_API_KEY` | `moonshot` |
+| `ZAI_API_KEY` | `zai` |
+| `API_KEY` | The gateway, for any model id with no provider prefix |
+| `BASE_URL` | Gateway address. Default `https://api.commandcode.ai/provider/v1` |
+| The name in `api_key_env` | A provider you define in `config.toml`, such as `WORK_LLM_KEY` |
+| `CODEX_HOME` | Folder holding the Codex login (`auth.json`) used by `codex/` models. Default `~/.codex` |
+
+`ollama` and `lmstudio` need no key.
+
+zerd loads `.env` from the harness folder, then from the data folder, at every start. A variable already set in your shell is never overridden by either file. The `.env` of the repo you are working in is never read.
+
+### Locations
+
+| Variable | What it does | Default |
+|---|---|---|
+| `ZERD_DATA_DIR` | Moves the data folder | The per-system path above |
+| `ZERD_HOME` | The harness folder with `profiles/` and `skills/` | Found by looking up from the binary |
+| `HOME` | Base for `~/.zerd` and the macOS folders | The account's home directory |
+
+### Behavior
+
+| Variable | What it does | Default |
+|---|---|---|
+| `ZERD_NO_SETUP` | Any value stops the first-run setup from starting when no model is usable | Unset |
+| `ZERD_PLAIN` | Any value uses the plain scrolling layout instead of full screen | Unset |
+| `NO_COLOR` | Any value turns off color | Unset |
+| `TERM` | `dumb` turns off color | From the terminal |
+| `SHELL` | Shell zerd reports to the model | `/bin/zsh` on macOS, `/bin/bash` elsewhere |
+| `ZERD_ARG_<NAME>` | Set by zerd for a project tool, one per argument, for example `ZERD_ARG_WHO` | Set per call |
+
+Commands the agent runs get your environment with secret-looking variables removed (names matching patterns such as `*KEY*` and `*TOKEN*`). The patterns and any variables to add are under `shell_environment` in config. See [Safety](/docs/safety).
