@@ -252,6 +252,31 @@ merchant-controlled tenant ids, one shared secret, one shared admin token and un
 The result still points at the thing zerd is built for: **verification against reality beats confident reasoning.** The agent
 that ran the code against real services found the bugs that only exist there.
 
+#### Why this difference matters
+
+Production software rarely fails on the happy path. It fails because two workers run the same operation, a database commits
+while the queue call fails, a process dies between two state changes, a retry is scheduled wrong, a dependency goes down, a
+payment event arrives out of order, or an operation succeeds and its acknowledgment never reaches the queue. Code that reads
+correctly and passes in-memory tests can still do every one of those wrong. Only running it against the real database, the real
+queue and a real killed process shows which. A feature isn't done because the code exists. It's done when its behaviour has been
+verified.
+
+#### The verdict
+
+**In this round zerd came out ahead, and the deciding factor was execution, not code volume or how well it explained itself.**
+It investigated deeper against real infrastructure, reproduced each defect before fixing it, made fixes that mattered for
+reliability (a persistence bug, a lost update, a retry delayed by hours, a stalled outbox), reran the tests after each one, and
+reported the risks it left open. Claude Code reasoned well about the service and found real problems, including one zerd missed,
+but its validation stayed at the service layer.
+
+- **For newer developers,** an agent that investigates first and proves each claim shows why code that compiles isn't the same
+  as code that is ready, and surfaces failure modes they wouldn't think to ask about.
+- **For experienced developers,** the value is leverage: something that can dig into an unfamiliar backend, challenge an
+  assumption, make a multi-layer change and hand back evidence. It matters most for databases, queues, payments and integrations.
+
+This was one project and one run each, so it's evidence of what zerd's approach gets you, not an industry ranking. A
+production-readiness claim would need the open risks above closed and an independent review of the final code.
+
 ### Round 1: 11 tasks, head to head
 
 Same 11 tasks (bug fix, multi-file feature, hard debugging, a refactor that must keep callers working, test generation, crash
