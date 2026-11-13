@@ -17,7 +17,7 @@ export default async function HomeLayout({ children }: { children: React.ReactNo
       {children}
       <footer className="foot-lp">
         <div className="foot-card">
-          <div className="foot-cta"><Link className="foot-pill" href="/docs/try-it-in-two-minutes">Try zerd on a small change</Link></div>
+          <div className="foot-cta"><Link className="foot-pill" href="/docs/install">Try zerd on a small change</Link></div>
           <div className="foot-row">
             <div className="foot-left">
               <a href={`https://github.com/${REPO}`} aria-label="zerd on GitHub">
@@ -31,7 +31,7 @@ export default async function HomeLayout({ children }: { children: React.ReactNo
               <a href={`https://github.com/${REPO}/releases`}>Releases</a>
               <Link href="/docs/license">License</Link>
               <a href="/llms.txt">llms.txt</a>
-              <Link href="/docs/what-makes-it-different">Why zerd</Link>
+              <Link href="/docs/what-zerd-does-that-others-leave-to-the-model">Why zerd</Link>
             </nav>
           </div>
         </div>

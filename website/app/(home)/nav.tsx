@@ -10,7 +10,7 @@ export default function Nav({ repo }: { repo: string }) {
         <nav aria-label="Main">
           <a href="#how">How it works</a>
           <a href="#proof">Proof</a>
-          <Link href="/docs/try-it-in-two-minutes">Docs</Link>
+          <Link href="/docs/install">Docs</Link>
           <a href={`https://github.com/${repo}`}>GitHub</a>
         </nav>
         <a className="nav-install" href="#install">Install</a>

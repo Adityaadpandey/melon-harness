@@ -52,7 +52,7 @@ export default async function Home() {
           <p className="lead">Other agents say “done.” zerd shows what it tested, has a second AI review the real changes, and flags anything it couldn’t verify.</p>
           <CopyCmd cmd={INSTALL} />
           <p className="hero-links">
-            <Link href="/docs/try-it-in-two-minutes">Try it in two minutes</Link>
+            <Link href="/docs/install">Try it in two minutes</Link>
             <a href="#proof">See it beat a mock test</a>
           </p>
           <p className="hero-fine">Free and open source · macOS, Linux, Windows · Claude, GPT, DeepSeek or local models</p>
@@ -106,8 +106,8 @@ export default async function Home() {
         <CopyCmd cmd={INSTALL} />
         <p className="hero-fine">Windows: <code>irm https://zerd.si/install.ps1 | iex</code></p>
         <p className="hero-links">
-          <Link href="/docs/try-it-in-two-minutes">Get started</Link>
-          <Link href="/docs/what-makes-it-different">Why zerd</Link>
+          <Link href="/docs/install">Get started</Link>
+          <Link href="/docs/what-zerd-does-that-others-leave-to-the-model">Why zerd</Link>
           {rel && <span>v{rel.version}</span>}
         </p>
       </section>

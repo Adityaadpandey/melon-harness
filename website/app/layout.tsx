@@ -31,7 +31,7 @@ const schema = {
       "@type": "SoftwareApplication", "@id": `${SITE}/#app`, name: NAME, url: SITE, description: DESCRIPTION,
       applicationCategory: "DeveloperApplication", operatingSystem: "macOS, Linux, Windows",
       offers: { "@type": "Offer", price: "0", priceCurrency: "USD" },
-      codeRepository: `https://github.com/${REPO}`, downloadUrl: `${SITE}/docs/try-it-in-two-minutes`,
+      codeRepository: `https://github.com/${REPO}`, downloadUrl: `${SITE}/docs/install`,
     },
   ],
 };
