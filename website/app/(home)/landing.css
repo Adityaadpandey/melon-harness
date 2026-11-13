@@ -34,11 +34,10 @@
 /* darken the left for the words, melt the foot into the page */
 .hero-img::after { content: ""; position: absolute; inset: 0; pointer-events: none;
   background: linear-gradient(90deg, rgba(0, 0, 0, 0.92) 0%, rgba(0, 0, 0, 0.8) 38%, rgba(0, 0, 0, 0.35) 56%, rgba(0, 0, 0, 0) 72%), linear-gradient(0deg, #000 0%, rgba(0, 0, 0, 0.6) 12%, rgba(0, 0, 0, 0) 38%); }
-.hero-copy, .hero .rl, .hero-rail { z-index: 1; }
+.hero-copy, .hero-rail { z-index: 1; }
 .hero-copy { position: absolute; left: var(--pad); top: 50%; transform: translateY(-50%); width: min(620px, 50vw); }
 .hero h1 { font-size: clamp(40px, 4.6vw, 68px); line-height: 1.01; letter-spacing: -0.04em; font-weight: 500; margin: 0 0 24px; text-wrap: balance; }
 .hero-rail { position: absolute; left: var(--pad); right: var(--pad); bottom: 0; display: flex; justify-content: space-between; margin: 0; padding: 16px 0 20px; border-top: 1px solid var(--line); font: 12px/1.4 var(--m); color: var(--dim); }
-.hero .rl { position: absolute; right: var(--pad); bottom: 150px; width: min(400px, 34vw); }
 
 .after { padding-top: 24px;
   background:
@@ -61,32 +60,6 @@
 .cmd code span { color: var(--ok); }
 .cmd button { flex: none; font: inherit; font-size: 14px; font-weight: 600; color: var(--bg); background: var(--text); border: 0; border-radius: 6px; padding: 8px 14px; cursor: pointer; }
 .cmd button:hover { background: var(--ok); }
-
-/* the run log */
-.rl { margin: 0; background: var(--panel); backdrop-filter: blur(16px) saturate(1.2); border: 1px solid var(--line); border-radius: 12px; overflow: hidden; font-family: var(--m); }
-.rl-head { display: flex; justify-content: space-between; gap: 12px; flex-wrap: wrap; padding: 12px 16px; border-bottom: 1px solid var(--line); font-size: 12.5px; color: var(--dim); }
-.rl-env { color: var(--ok); }
-.rl-body { list-style: none; margin: 0; padding: 6px 0; }
-.rl-row { display: grid; grid-template-columns: 46px 1fr; column-gap: 10px; padding: 7px 16px; font-size: 13px; line-height: 1.45; }
-.rl-row + .rl-row { border-top: 1px solid color-mix(in srgb, var(--line) 60%, transparent); }
-.rl-badge { position: relative; font-size: 11px; font-weight: 700; padding-top: 2px; }
-.rl-badge b { position: absolute; left: 0; top: 2px; }
-.rl-badge .ok { color: var(--ok); }
-.rl-badge .bad { color: var(--bad); opacity: 0; }
-.rl-what { color: var(--text); }
-.rl-why { color: var(--dim); }
-.rl-foot { margin: 0; padding: 10px 16px; border-top: 1px solid var(--line); font-size: 12px; color: var(--warn); font-family: var(--f); }
-.rl-foot b { font-weight: 700; }
-/* one pass on load: each row shows FAIL, then flips to PASS */
-@media (prefers-reduced-motion: no-preference) {
-  .rl-row { animation: rl-in 0.01s backwards; animation-delay: calc(var(--i) * 0.55s); }
-  .rl-badge .ok { animation: rl-ok 0.01s backwards; animation-delay: calc(var(--i) * 0.55s + 0.9s); }
-  .rl-badge .bad { animation: rl-bad 0.9s backwards; animation-delay: calc(var(--i) * 0.55s); }
-  @keyframes rl-in { from { opacity: 0; } }
-  @keyframes rl-ok { from { opacity: 0; } }
-  @keyframes rl-bad { 0%, 99% { opacity: 1; } 100% { opacity: 0; } }
-}
-
 /* sections */
 .sec { padding-top: clamp(48px, 7vw, 88px); padding-bottom: clamp(24px, 3vw, 40px); }
 .sec-head { max-width: 46em; margin-bottom: 32px; }
@@ -167,7 +140,6 @@
   .hero-img img { object-position: 60% 50%; }
   .hero-img::after { background: linear-gradient(0deg, #000 0%, rgba(0, 0, 0, 0) 45%), linear-gradient(180deg, rgba(0, 0, 0, 0.5) 0%, rgba(0, 0, 0, 0) 20%); }
   .hero-copy { position: relative; left: auto; top: auto; transform: none; width: auto; padding-top: max(46svh, 300px); }
-  .hero .rl { position: relative; right: auto; bottom: auto; width: auto; margin-top: 32px; }
   .hero-rail { position: relative; left: auto; right: auto; margin-top: 24px; }
 }
 @media (max-width: 700px) {
@@ -179,7 +151,7 @@
 }
 
 /* ---- Linear: crisp lit borders, a light that follows the cursor, headings that fade down ---- */
-.rl, .bugs, .vs, .cmd { box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.07), 0 24px 60px -30px rgba(0, 0, 0, 0.8); }
+.bugs, .vs, .cmd { box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.07), 0 24px 60px -30px rgba(0, 0, 0, 0.8); }
 .glow { position: relative; }
 .glow::after { content: ""; position: absolute; inset: 0; border-radius: inherit; pointer-events: none; opacity: 0; transition: opacity 0.3s;
   background: radial-gradient(360px circle at var(--mx, 50%) var(--my, 50%), rgba(255, 214, 10, 0.13), transparent 65%); }
@@ -202,8 +174,8 @@
 /* ---- Apple: scroll-driven motion. Browsers without scroll timelines just get the still page. ---- */
 @media (prefers-reduced-motion: no-preference) {
   /* one staggered entrance for the hero, once */
-  .hero h1, .hero .lead, .hero .cmd, .hero .hero-links, .hero .gains, .hero .rl { animation: rise 0.9s cubic-bezier(0.2, 0.7, 0.2, 1) backwards; }
-  .hero .lead { animation-delay: 0.12s; } .hero .cmd { animation-delay: 0.24s; } .hero .hero-links { animation-delay: 0.32s; } .hero .gains { animation-delay: 0.42s; } .hero .rl { animation-delay: 0.3s; }
+  .hero h1, .hero .lead, .hero .cmd, .hero .hero-links, .hero .gains { animation: rise 0.9s cubic-bezier(0.2, 0.7, 0.2, 1) backwards; }
+  .hero .lead { animation-delay: 0.12s; } .hero .cmd { animation-delay: 0.24s; } .hero .hero-links { animation-delay: 0.32s; } .hero .gains { animation-delay: 0.42s; }
   @keyframes rise { from { opacity: 0; translate: 0 22px; filter: blur(8px); } }
 
   @supports (animation-timeline: scroll()) {
@@ -211,7 +183,7 @@
     .hero-img img { animation: drift linear both; animation-timeline: scroll(root); animation-range: 0 110svh; }
     @keyframes drift { to { transform: scale(1.16); filter: brightness(0.5) saturate(0.9); } }
     /* the hero copy and the log lift away */
-    .hero-copy, .hero .rl { animation: lift linear both; animation-timeline: scroll(root); animation-range: 0 70svh; }
+    .hero-copy { animation: lift linear both; animation-timeline: scroll(root); animation-range: 0 70svh; }
     @keyframes lift { to { opacity: 0; translate: 0 -48px; } }
     /* each step lights up while it crosses the middle of the screen, and its dot fills */
     .story-steps li { animation: focus linear both; animation-timeline: view(); animation-range: entry 10% exit 90%; }

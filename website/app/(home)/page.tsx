@@ -3,7 +3,6 @@ import { latestRelease } from "@/lib/latest";
 import { JsonLd } from "@/lib/jsonld";
 import CopyCmd from "./copy-cmd";
 import Demo from "./demo";
-import RunLog from "./runlog";
 
 const INSTALL = "curl -fsSL https://zerd.si/install.sh | sh";
 
@@ -57,7 +56,6 @@ export default async function Home() {
           </p>
           <p className="hero-fine">Free to run · macOS, Linux, Windows · Claude, GPT, DeepSeek or local models</p>
         </div>
-        <RunLog />
       </section>
 
       <div className="after">
