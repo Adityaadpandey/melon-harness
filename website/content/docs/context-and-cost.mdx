@@ -1,26 +1,20 @@
 ---
 title: "Context and cost"
-description: "How zerd finds code without reading everything, avoids paying twice for tokens, and keeps its own work estimates honest."
+description: "How zerd finds code without reading everything, avoids paying twice for tokens, and estimates how many rounds a task needs."
 ---
-
-This page explains where zerd saves tokens and how it keeps a run from going over budget. You will learn how to inspect what the model sees and how to read the `Rounds:` line at the end of a run.
 
 ## Finding code without reading everything
 
-zerd looks at the cheapest evidence first:
+zerd starts with the cheapest evidence:
 
 1. `search`: BM25-ranked files, camelCase-aware, boosted by files that fixed similar requests before
 2. `outline`: symbols with line ranges
 3. `read_file(symbol=...)`: one function, not the whole file
 4. `grep`
 
-For structure there is a **live symbol graph** built with tree-sitter for TS/JS, Python, Rust, Go, Java, C#, PHP and Ruby. It answers `callers`, `callees`, `impact`, `trace` and `path`.
+For structure there is a live symbol graph, built with tree-sitter for TS/JS, Python, Rust, Go, Java, C#, PHP and Ruby. It answers `callers`, `callees`, `impact`, `trace` and `path`. It reads the working tree, so it never goes stale, and an edit that changes a signature comes back with the places that use it.
 
-<Callout>
-The graph reads the working tree, so it never goes stale. An edit that changes a signature comes back with the places that use it.
-</Callout>
-
-To see what the model would see, ask the graph yourself:
+You can ask the graph the same questions the model does:
 
 ```bash
 zerd graph callers parse_invoice
@@ -28,12 +22,12 @@ zerd graph callers parse_invoice
 
 ## Not paying twice for the same tokens
 
-Six habits keep repeat work cheap:
+Repeat work is kept cheap in six ways:
 
-- `read_file` remembers which lines the model has seen and returns **only new lines, or a diff** when the file changed.
+- `read_file` remembers which lines the model has seen and returns only new lines, or a diff when the file changed.
 - The same read-only lookup with nothing written since is answered in one line instead of repeating the output.
 - Big tool output is capped and archived (as `r7`, say), and the model can pull any range back with `recall_result`.
-- **Read-only calls start running while the model is still writing the rest of its reply.**
+- Read-only calls start running while the model is still writing the rest of its reply.
 - Folder rules (`apps/web/AGENTS.md`) attach on the first touch of that folder, and again after a prune clears them.
 - With more than 15 MCP tools, only names are sent until the model asks for the ones it needs (`tool_search`).
 
@@ -41,15 +35,13 @@ Six habits keep repeat work cheap:
 
 ## When the context fills up
 
-Compaction asks the same model, on the exact prefix it just sent, so the provider serves the summary **from cache**. Along the way:
+Compaction asks the same model, on the exact prefix it just sent, so the provider serves the summary from cache. Along the way:
 
 - Recent turns stay word for word.
 - The files being worked on are restored from disk.
 - The replaced messages are saved to `transcripts/`, so nothing is lost.
 
-<Callout>
-Three compactions in a row that refill immediately trip a breaker, and zerd prunes instead.
-</Callout>
+If three compactions in a row refill immediately, a breaker trips and zerd prunes instead.
 
 <Mermaid chart={`flowchart LR
     T["Tool result"] --> CAP{"Over the<br/>output cap?"}
@@ -76,7 +68,7 @@ When the request ends, zerd scores the guess and prints it:
 Rounds: 0 used, 12 estimated, +5 points (within the target)
 ```
 
-That one is a question answered from what was already in context. No tools were needed, so the 12-round guess was padded and earned the smaller reward.
+That run was a question answered from what was already in context. No tools were needed, so the 12-round guess was padded and earned the smaller reward.
 
 | Result | Score |
 |---|---|
@@ -84,7 +76,7 @@ That one is a question answered from what was already in context. No tools were 
 | Overshooting | minus a point per tenth over, down to `-15` |
 | Cut off by the hard stop (3x the guess, never below 25 rounds) | `-25`, the worst, because the job isn't done |
 
-Scores are kept in `calibration.jsonl`. The last ten results are shown to the model the next time it makes a guess ("when you ran over it was by 1.8x on average: lean higher"). There are no weights to train. The model gets feedback on its own record, so its estimates drift toward honest and the stop only catches runaways.
+Scores are kept in `calibration.jsonl`. The last ten results are shown to the model the next time it makes a guess ("when you ran over it was by 1.8x on average: lean higher"). Nothing is trained. The model sees its own record, and the hard stop is left to catch runaways.
 
 ### When a run goes wrong
 
@@ -94,6 +86,4 @@ A loop, a repeated action, or an edit that keeps being rewritten goes through th
 2. Escalation to the strong model.
 3. A stop, instead of burning the budget.
 
-<Callout>
-Out of time or tokens, one last tool-free call turns what zerd learned into an answer, and any checks still run against the tree it left.
-</Callout>
+If zerd runs out of time or tokens, one last tool-free call turns what it learned into an answer, and any checks still run against the tree it left.
