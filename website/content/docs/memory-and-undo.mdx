@@ -1,21 +1,19 @@
 ---
 title: "Memory and undo"
-description: "How zerd learns from your corrections without being told, and how to undo anything it did."
+description: "How zerd picks up your preferences from corrections, and how to undo what it changed."
 ---
-
-This page covers two things: how zerd picks up your preferences as you work, and how to roll back what it changed. You will be able to see, edit and remove what it learned, and undo a request with one command.
 
 ## Memory
 
-Memory is what *you* said and what *verified* runs changed. **It happens on its own in an interactive session.** You don't run a command or write a rule.
+In an interactive session, zerd learns from what you say and from runs that verified. You don't run a command or write a rule.
 
-After each message you send, zerd asks a model in the background, so your reply isn't held up. The model reads your new message next to the request and answer it follows. It writes one rule if you:
+After each message you send, zerd asks a model in the background, so your reply isn't held up. The model reads your new message next to the request and answer it follows, and writes one rule if you:
 
 - redirected it ("no, not that", "I meant the header")
 - confirmed an approach ("yes, exactly like that")
 - stated a preference ("always use pnpm")
 
-A new unrelated task, a question or a thank-you is ignored.
+A new unrelated task, a question or a thank-you gets no rule.
 
 When it learns something, you see:
 
@@ -37,22 +35,20 @@ The rule lands in your own `AGENTS.md` under `## Learned by zerd`. You can read 
     V["A verified run:<br/>request words to files changed"] --> EH["Edit history"]
     EH --> SR["search ranks files that fixed<br/>similar requests higher"]`} />
 
-### You stay in control
+### Managing lessons
 
 - `/learn <rule>` adds one by hand.
 - `/forget N` removes one, from `AGENTS.md` too.
 - Duplicates and notes under four words are dropped.
 - Rejecting an action with a reason ("not like that, use the helper in `utils/`") becomes a lesson immediately.
 
-<Callout title="Scripted runs don't learn">
-`zerd "..."`, `--json` and `--rpc` never write lessons, so CI and benchmarks can't change your repo.
-</Callout>
+Scripted runs (`zerd "..."`, `--json` and `--rpc`) never write lessons, so CI and benchmarks can't change your repo.
 
-### Only verified work is remembered
+### Edit history
 
-A run that ends `verified` records its request words and the files it changed. Next time, `search` ranks files that fixed similar requests higher. A run that failed teaches the edit history nothing.
+A run that ends `verified` records its request words and the files it changed. Next time, `search` ranks files that fixed similar requests higher. A failed run adds nothing to it.
 
-### Learn from the past
+### Importing old sessions
 
 ```bash
 zerd learn-import --repo .
