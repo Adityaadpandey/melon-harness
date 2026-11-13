@@ -1,0 +1,97 @@
+---
+title: "Slash commands"
+description: "Every command you can type inside an interactive zerd session, grouped by what it does."
+---
+
+Type `/help` in a session to see the same list. Tab completes command names, and `/command` with an unknown name falls through to your own prompt templates and skills (see the end of this page).
+
+## Session
+
+| Command | What it does | Example |
+|---|---|---|
+| `/help` | Lists commands and input shortcuts | |
+| `/clear` | Clears the conversation and the screen | |
+| `/save` | Saves this session | |
+| `/sessions` | Lists saved sessions, marking the ones from this folder | |
+| `/resume [id]` | Resumes a saved session. With no id it takes the latest one for this folder | `/resume` |
+| `/checkpoint` | Creates a checkpoint and prints its id | |
+| `/restore <id>` | Restores a checkpoint into the session | `/restore` followed by the id from `/checkpoint` |
+| `/exit` | Quits. `/quit` does the same | |
+
+## Model and cost
+
+| Command | What it does | Example |
+|---|---|---|
+| `/model [id]` | Shows the current model, or switches to a known one. Unknown ids get a "did you mean" list. Tab completes ids | `/model` |
+| `/connect <provider>` | Connects a model API directly: asks for the key, saves it and lists its models | `/connect groq` |
+| `/effort [low\|medium\|high\|auto]` | Sets how hard the model thinks. Only Codex models use it | `/effort high` |
+| `/cost` | Calls, input and output tokens, cache hit rate, cache misses and estimated cost | |
+| `/stats` | Session statistics | |
+| `/context` | How full the context window is: system prompt, summary and messages by role | |
+| `/compact` | Summarizes older messages now to free context | |
+
+Costs and compaction are covered in [Context and cost](/docs/context-and-cost). Models are in [Models](/docs/models).
+
+## Approvals and permissions
+
+| Command | What it does | Example |
+|---|---|---|
+| `/approval [mode]` | Shows or sets the approval mode: `on-request`, `on-failure`, `auto`, `auto-edit`, `never`, `yolo`, `plan` | `/approval auto-edit` |
+| `/plan` | Toggles plan mode. zerd reads and searches but changes nothing, then presents a plan. Run it again to go back to the previous mode | |
+| `/permissions` | Lists allow, deny and ask rules. `/permissions <allow\|deny\|ask> <rule>` adds one and `/permissions remove <rule>` drops one | `/permissions deny Read(.env*)` |
+
+Rules are saved in `.zerd/permissions.json`. Deny wins over ask, and ask over allow. See [Safety](/docs/safety) and [Permissions](/docs/permissions).
+
+## Checks, undo and learning
+
+| Command | What it does | Example |
+|---|---|---|
+| `/verify` | Runs the checks (tests, lint, types) on the files the last request changed | |
+| `/diff [full]` | Shows `git diff --stat` for the working tree, or the whole patch with `full` | `/diff full` |
+| `/undo` | Puts back the files the last request changed, after you confirm. New files it created are removed | |
+| `/rewind [n]` | Lists the requests that changed files. With a number, puts files back to how they were before request `n` (1 is the latest) | `/rewind 2` |
+| `/challenge <idea>` | A second model argues against your idea or plan | `/challenge move auth into middleware` |
+| `/learn <rule>` | Teaches zerd a rule for this repo. It is saved to `AGENTS.md` and applies from the next session | `/learn run cargo fmt before committing` |
+| `/lessons` | Lists what zerd has learned here, numbered | |
+| `/forget <n>` | Removes a lesson by its number from `/lessons` | `/forget 2` |
+
+See [Memory and undo](/docs/memory-and-undo), [Verification](/docs/verification) and [Reviews](/docs/reviews).
+
+## Tools, agents and background work
+
+| Command | What it does | Example |
+|---|---|---|
+| `/tools` | Lists the tools available in this session | |
+| `/skills` | Lists project playbooks, marking the always-on ones | |
+| `/agents` | Lists sub-agents, including running background ones. `/agents stop <id>` stops one | `/agents stop 3` |
+| `/mcp` | Status of MCP servers and how many tools each has | |
+| `/hooks` | Lists the configured hooks | |
+| `/jobs` | Lists background commands. `/jobs <id>` shows output and `/jobs kill <id>` stops one | `/jobs kill 1` |
+
+See [Tools](/docs/tools), [Skills and agents](/docs/skills-and-agents) and [Extending](/docs/extending).
+
+## Display
+
+| Command | What it does | Example |
+|---|---|---|
+| `/verbose` | Switches between quiet output (the default) and full tool output | |
+| `/expand [n]` | Shows the full output of the last tool call, or `/expand 2` for the one before | `/expand 2` |
+| `/layout` | Shows or hides parts of the full-screen layout: `side`, `agents`, `read`, `written`, `commands`, `hints`. `/layout reset` restores everything | `/layout read off` |
+| `/copy [all]` | Copies the last reply to the clipboard, or the whole conversation with `all` | `/copy all` |
+| `/config` | Shows model, temperature, approval mode, working directory, max turns and whether hooks are on | |
+
+F3 flips the side panel.
+
+## Input shortcuts
+
+| Input | What it does |
+|---|---|
+| `@path` | Attaches a file. Tab completes |
+| `!cmd` | Runs a shell command and shows the output to the model |
+| `!!cmd` | Runs a shell command privately |
+| Ctrl+J | Inserts a newline |
+| Ctrl+C | Interrupts the agent |
+
+## Your own commands
+
+Any other `/name` is looked up in your prompt templates (`.zerd/commands`, `.claude/commands`) and then in your skills. A template expands with the words you type after it. A skill is loaded for that request, so `/code-review the auth change` runs that playbook on those words. With no words, zerd applies the skill to the project. If nothing matches, you get `Unknown command`. See [Extending](/docs/extending).
