@@ -3,8 +3,6 @@ title: "CLI reference"
 description: "Every flag and subcommand of the zerd command, with exit codes and examples."
 ---
 
-This page lists every flag and subcommand of the `zerd` command, so you can script it or find the one option you half remember.
-
 ```text
 zerd [OPTIONS] [PROMPT]
 ```
@@ -42,16 +40,14 @@ zerd "fix the failing test"            # one shot, then exit
 
 A run is scripted when you pass a prompt, `--json` or `--rpc`. Then:
 
-- There is nobody to ask, so the default approval becomes `auto-edit`. Commands still need `--approval auto`.
+- With nobody to ask, the default approval becomes `auto-edit`. Commands still need `--approval auto`.
 - Checks run automatically after edits, with repair rounds.
 - The challenger is off unless you pass `--challenge`.
 - Learning from corrections is off, so CI never writes into your repo.
 - A missing API key is an error instead of a warning.
 - The "last model" is neither read nor saved.
 
-<Callout title="Exit codes">
-The exit code is `1` when the run ends `failed` or `verification_failed`, or when it could not run at all. Otherwise it is `0`. Use this to fail a CI build.
-</Callout>
+The exit code is `1` when the run ends `failed` or `verification_failed`, or when it could not run at all. Otherwise it is `0`, so CI can fail the build on it.
 
 ## Subcommands
 
@@ -79,9 +75,7 @@ With no action, `zerd graph` indexes the repo and asks a few questions about fol
 
 Mines your old Claude Code sessions for rules and edit history.
 
-<Callout>
-This is a **dry run unless you pass `--apply`**, so it is safe to try first.
-</Callout>
+Without `--apply` it is a dry run, so you can try it first.
 
 See [Memory and undo](/docs/memory-and-undo).
 
