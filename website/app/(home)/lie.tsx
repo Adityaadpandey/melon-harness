@@ -12,6 +12,7 @@ export default function Lie() {
       </div>
 
       <div className="lie-answer" aria-live="polite">
+        <span className={on ? "stamp stamp-green" : "stamp stamp-red"} key={on ? "y" : "n"} aria-hidden="true">{on ? "checked" : "unchecked"}</span>
         <div className="lie-head"><i className={on ? "dot ok" : "dot"} />{on ? "zerd: checked before answering" : "most agents: nothing checked"}</div>
         <p>
           Fixed the redirect loop. The refresh ran twice in{" "}
