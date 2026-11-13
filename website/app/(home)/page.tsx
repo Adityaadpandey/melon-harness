@@ -13,7 +13,7 @@ const rows = [
   ["Say “done”.", "Runs the checks on the changed files, then has a different model read the real diff.", "The answer says what was reviewed, how many commits, and every fallback taken."],
   ["Show every review finding.", "A verifier tries to refute each finding first. High-severity ones are reproduced in a sandbox or capped.", "A finding the verifier refuted, or you called wrong, is remembered for two weeks and shown to the next review."],
   ["Invent a file or a line number.", "Looks up every path:line in the answer against your tree.", "An always-on rule says to claim only what a tool showed."],
-  ["Re-send the whole file every turn.", "Sends only the new lines, or a diff since the last copy the model saw.", "Incremental reads."],
+  ["Re-send the whole file every turn.", "Sends only the new lines, or a diff since the last copy the model saw.", ""],
   ["Ask the prompt to behave.", "Enforces it in code: confined file tools, a shell path scan, and an OS sandbox on macOS.", "File tools resolve the path first, the shell scan refuses outside paths before running, and sandbox-exec backs both up."],
   ["Stop when the quota runs out.", "Fails over to the next provider and tells you.", "The failing provider is blocked for the session. Your own model is the last resort."],
   ["Forget your corrections.", "Writes them as lessons in your own AGENTS.md.", "They sit under “Learned by zerd” so you can review and commit them. /forget N removes one."],
@@ -35,6 +35,18 @@ export default async function Home() {
     <main className="z-main">
       <JsonLd data={{ "@context": "https://schema.org", "@type": "FAQPage", mainEntity: FAQ.map(([q, a]) => ({ "@type": "Question", name: q, acceptedAnswer: { "@type": "Answer", text: a } })) }} />
       <Hero />
+      <section className="z-sec">
+        <div className="z-wrap z-split">
+          <div>
+            <h2>Every &ldquo;done&rdquo; is a claim.</h2>
+            <p className="z-lead">A coding agent talks in claims. Fixed. Tests pass. The bug was on line 88. You can&rsquo;t tell which are true without redoing the work, and that was the work you handed over.</p>
+            <p className="z-lead">zerd checks each claim before you see it: tests it actually ran, a diff a second model actually read, paths that actually exist. Whatever it couldn&rsquo;t check, it says so.</p>
+            <p className="z-hint">Flip the switch to see the same answer before and after.</p>
+          </div>
+          <Lie />
+        </div>
+      </section>
+
       <Round />
 
       <section className="z-sec">
@@ -45,24 +57,16 @@ export default async function Home() {
         </div>
       </section>
 
-      <section className="z-sec">
-        <div className="z-wrap z-split">
-          <div>
-            <h2>Try to make an agent lie.</h2>
-            <p className="z-lead">Same final answer from two agents. Flip the switch and watch what zerd does to the file path and to the claim that tests passed.</p>
-          </div>
-          <Lie />
-        </div>
-      </section>
 
       <section className="z-sec">
         <div className="z-wrap">
-          <h2>What zerd does that most agents don&rsquo;t.</h2>
+          <h2>Eight things it does that most agents leave to the prompt.</h2>
+          <div className="z-rows-head" aria-hidden="true"><span>Most agents</span><span>zerd</span></div>
           <dl className="z-rows">
             {rows.map(([bad, good, how]) => (
               <div className="z-row" key={bad}>
-                <dt><span>Most agents</span>{bad}</dt>
-                <dd><span>zerd</span>{good}<small>{how}</small></dd>
+                <dt><span className="sr-only">Most agents: </span>{bad}</dt>
+                <dd><span className="sr-only">zerd: </span>{good}{how && <small>{how}</small>}</dd>
               </div>
             ))}
           </dl>
