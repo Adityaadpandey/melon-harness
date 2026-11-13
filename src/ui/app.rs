@@ -117,7 +117,7 @@ fn pick_key(count: usize) -> usize {
     choice
 }
 
-fn read_secret_line(prompt: &str) -> String {
+pub(crate) fn read_secret_line(prompt: &str) -> String {
     use crossterm::event::{read, Event, KeyCode, KeyEventKind};
     uprint!("{prompt}");
     let _ = std::io::stdout().flush();

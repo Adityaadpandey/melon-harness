@@ -6,6 +6,7 @@ mod context;
 mod hooks;
 mod prompts;
 mod safety;
+mod setup;
 mod tools;
 mod ui;
 mod util;
@@ -79,6 +80,10 @@ struct Args {
     approval: Option<String>,
 }
 
+fn scripted_early(a: &Args) -> bool {
+    a.prompt.is_some() || a.json_mode || a.rpc_mode
+}
+
 fn warn(msg: &str) {
     eprintln!("{}", paint(msg, AMBER));
 }
@@ -109,6 +114,12 @@ fn main() {
             std::process::exit(0);
         }
         std::process::exit(util::graphcfg::main(raw.into_iter().skip(2).collect()));
+    }
+    if matches!(raw.get(1).map(String::as_str), Some("setup" | "doctor")) {
+        let rt = tokio::runtime::Builder::new_multi_thread().enable_all().build().expect("runtime");
+        let cfg = load_config(None, &LoadOptions { trust_project: false, pi_mode: None }).unwrap_or_else(|e| fail(&format!("Configuration Error: {e}")));
+        let code = if raw[1] == "setup" { if rt.block_on(setup::setup(&cfg, false)) { 0 } else { 1 } } else { rt.block_on(setup::doctor(&cfg)) };
+        std::process::exit(code);
     }
     if raw.get(1).map(String::as_str) == Some("insights") {
         std::process::exit(util::insights::main(raw.into_iter().skip(2).collect()));
@@ -155,6 +166,12 @@ async fn run(args: Args) -> i32 {
         match std::fs::canonicalize(d) {
             Ok(p) => config.allowed_dirs.push(p.to_string_lossy().to_string()),
             Err(_) => fail(&format!("--add-dir: {} is not a directory", d.display())),
+        }
+    }
+    // First launch with nothing to call: walk through setup instead of starting a session that can only fail.
+    if tty && !scripted_early(&args) && config.missing_key(None).is_some() && load_last_model().is_none() && std::env::var_os("ZERD_NO_SETUP").is_none() {
+        if setup::setup(&config, true).await {
+            config = load_config(args.cwd.as_deref(), &LoadOptions { trust_project: args.trust_project, pi_mode }).unwrap_or(config);
         }
     }
     // Interactive only: start on the model used last time. One-shot runs (benchmarks) keep the configured routing and
