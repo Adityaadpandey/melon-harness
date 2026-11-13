@@ -8,8 +8,8 @@ export default function Nav({ repo }: { repo: string }) {
       <div className="nav-pill">
         <Logo />
         <nav aria-label="Main">
-          <a href="#bugs">Findings</a>
-          <a href="#versus">Compare</a>
+          <a href="#how">How it works</a>
+          <a href="#proof">Proof</a>
           <Link href="/docs/try-it-in-two-minutes">Docs</Link>
           <a href={`https://github.com/${repo}`}>GitHub</a>
         </nav>
