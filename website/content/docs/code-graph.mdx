@@ -1,0 +1,94 @@
+---
+title: "Code graph"
+description: "The symbol and import graph zerd builds from your working tree, and the graph tool that reads it."
+---
+
+```bash
+zerd graph callers parse_invoice
+```
+
+That prints what the model would see if it asked the `graph` tool the same thing. The graph answers "where is this defined", "who calls it" and "what imports this file" without the model grepping through the repo.
+
+## When it starts
+
+In an interactive terminal session, if the repo has 15 or more source files, zerd prints `indexing the code graph in the background` and starts building the symbol graph while the prompt comes up. Source files are counted from `git ls-files` (tracked, plus untracked files that are not ignored), limited to the supported extensions, minus [noise](#what-is-left-out) and anything you ignored.
+
+A session also warms the graph when it starts, so the first graph question finds it ready. The `graph` tool is only offered to the model in repos of 15 or more source files (or when a `graphify-out/graph.json` snapshot exists).
+
+## What it indexes
+
+Two graphs, both read straight from the working tree with no external tool.
+
+| Graph | Built from | Languages |
+|---|---|---|
+| Symbol graph | tree-sitter parsing of each file: definitions and calls | `ts tsx js jsx mjs cjs py rs go java cs php rb`, so TS/JS, Python, Rust, Go, Java, C#, PHP and Ruby |
+| Import graph | import statements, including `tsconfig`/`jsconfig` `paths` aliases such as `@/components/Nav` | `py ts tsx js jsx mjs cjs` |
+
+Calls are matched by name, not by type. `foo()` links to every `foo` it could mean: one in the same file, one in a file that imports it, or, for languages where imports are not tracked yet, any `foo` in the repo. Treat a hit as a pointer and confirm it in the source. Common standard-library method names such as `len` or `push` are not linked at all.
+
+Each file is parsed once and re-parsed only when its size or modification time changes, so asking again after an edit costs one file. Files over 1 MB are skipped.
+
+## The graph tool
+
+The model calls `graph` with an `action`, usually a `name`, and for some actions `to`, `direction` or `depth`.
+
+| Action | Answers |
+|---|---|
+| `find` | where a symbol is defined |
+| `symbol` | the source of one function, class or method |
+| `callers`, `callees` | who uses a function, what it calls (one hop) |
+| `trace` | several hops of callers (`direction=up`, the default) or callees (`down`), `depth` 1 to 4, default 2 |
+| `path` | the shortest chain of calls from `name` to `to` |
+| `impact` | files that depend on a symbol or file |
+| `importers`, `imports` | which files import a file, what a file imports |
+| `blast` | everything that depends on a file, nearest first |
+| `tests` | tests that import, or are named after, a file |
+| `note` | pins a fact to a symbol (see [notes](#notes)) |
+
+`neighbors`, `community` and `stats` only work when a `graphify-out/graph.json` snapshot is present. Qualify a name when it is ambiguous: `Router.handle` or `symgraph::load`.
+
+The same actions work from the shell, which is a quick way to see what the model sees:
+
+```bash
+zerd graph trace parse_invoice down 3
+zerd graph importers src/auth/session.ts
+zerd graph tests src/billing/invoice.py
+```
+
+## Where it gets used
+
+- Search. Sub-agents such as `codebase_investigator` and `code_reviewer` have `graph` in their tool list, and the reviewer prompt tells it to run `graph callers NAME` for every function whose signature changed.
+- Signature checks. After the agent edits Python or JS/TS files, zerd compares each changed file against `HEAD`. If a public signature changed in a way callers outside the diff may rely on, and your request did not ask for it, the agent is told once to keep old calls working. See [verification](/docs/verification).
+- Test selection. The import graph is how `pytest` finds the tests that import a changed module, as described in [verification](/docs/verification).
+
+## What is left out
+
+`node_modules`, `vendor`, `dist`, `.next`, `.nuxt`, `__generated__`, `coverage`, `target`, `__pycache__`, `.venv` and `venv` folders are always dropped, along with `.min.js`, `.bundle.js`, `.d.ts`, `.generated.ts`, `.pb.go`, `_pb2.py` and `_pb2_grpc.py` files.
+
+The first time zerd indexes a repo with no `.zerd/graph.toml`, it asks a few questions while the build runs: hide a folder that looks like examples or test data, keep a folder nothing imports, and a one-line description of each big area. Answer `q` to stop. Your answers go in `.zerd/graph.toml`, which you can commit:
+
+```toml
+ignore = ["examples/", "legacy/", "*.stories.tsx"]   # a folder (trailing /) or a glob
+keep   = ["src/plugins/"]                            # looks unused, loaded by name
+
+[areas]
+"src/billing" = "Stripe webhooks and invoice PDFs"
+```
+
+Run `zerd graph` with no action to be asked again. Folders you already decided are not repeated.
+
+## Notes
+
+`graph` with `action=note` writes a one or two sentence fact about a function into `.zerd/graph.toml`. The note is shown whenever that symbol comes up. A fingerprint of the function body is stored with it, so if the code changes later the note is still shown but marked as possibly out of date. Empty text removes it.
+
+## Where it is stored
+
+Parsed files are cached in a `graph` folder inside zerd's data directory, one JSON file per workspace named by a hash of its path. On macOS that is `~/Library/Application Support/zerd/graph/`. Set `ZERD_DATA_DIR` to move it. An unreadable or old-format cache is ignored and rebuilt.
+
+## Rebuild or disable
+
+To rebuild, delete the repo's file in that `graph` folder and start zerd again. To keep a folder out of the graph, add it to `ignore` in `.zerd/graph.toml`.
+
+There is no switch that turns the graph off. In a repo with fewer than 15 source files it is not started and the tool is not offered. In [pi mode](/docs/modes) the model gets a reduced tool set that still includes `graph`.
+
+More on how this keeps token use down is in [context and cost](/docs/context-and-cost).
