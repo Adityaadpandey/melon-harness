@@ -149,8 +149,13 @@
 .foot-right a { color: var(--dim); text-decoration: none; transition: color 0.15s; }
 .foot-right a:hover { color: var(--text); }
 .foot-right a:last-child { color: var(--text); font-weight: 600; }
-.foot-word { position: relative; z-index: 1; margin-top: calc(clamp(40px, 6vw, 96px) * -1); height: auto; overflow: hidden; display: flex; justify-content: center; align-items: flex-start; user-select: none; }
-.foot-word span { display: block; font: 800 clamp(200px, 44vw, 700px)/0.8 var(--f); letter-spacing: -0.085em; padding: clamp(36px, 5vw, 80px) 0 clamp(8px, 1.4vw, 22px); white-space: nowrap;
+/* The wordmark is fixed to the bottom of the screen, behind everything. The page (and the card) are opaque and sit on top,
+   so scrolling to the end lifts the page off it. The footer's bottom padding is the room that scrolling uncovers. */
+.lp { --wh: clamp(150px, 36vw, 580px); }
+.lp > main { background: #000; z-index: 1; }
+.foot-lp { position: static; z-index: auto; padding-bottom: var(--wh); }
+.foot-word { position: fixed; left: 0; right: 0; bottom: 0; height: var(--wh); z-index: 0; overflow: hidden; display: flex; justify-content: center; align-items: flex-end; user-select: none; pointer-events: none; }
+.foot-word span { display: block; font: 800 clamp(200px, 44vw, 700px)/0.8 var(--f); letter-spacing: -0.085em; padding: 0 0 clamp(8px, 1.4vw, 22px); white-space: nowrap;
   background: linear-gradient(90deg, #ffd60a 0%, #ffe45c 28%, #fffbe6 55%, #ffffff 70%, #ffffff 100%); -webkit-background-clip: text; background-clip: text; color: transparent; }
 
 @media (max-width: 860px) {
@@ -216,11 +221,3 @@
   }
 }
 @media (max-width: 860px) { .story { grid-template-columns: minmax(0, 1fr); } .story-side { position: static; } }
-
-/* footer reveal: the wordmark rises out of the bottom edge as the end of the page scrolls into view */
-@media (prefers-reduced-motion: no-preference) {
-  @supports (animation-timeline: view()) {
-    .foot-word span { animation: word-rise linear both; animation-timeline: view(); animation-range: entry 0% entry 100%; }
-    @keyframes word-rise { from { translate: 0 78%; opacity: 0.35; } to { translate: 0 0; opacity: 1; } }
-  }
-}
