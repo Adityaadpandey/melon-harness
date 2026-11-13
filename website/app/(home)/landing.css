@@ -216,3 +216,11 @@
   }
 }
 @media (max-width: 860px) { .story { grid-template-columns: minmax(0, 1fr); } .story-side { position: static; } }
+
+/* footer reveal: the wordmark rises out of the bottom edge as the end of the page scrolls into view */
+@media (prefers-reduced-motion: no-preference) {
+  @supports (animation-timeline: view()) {
+    .foot-word span { animation: word-rise linear both; animation-timeline: view(); animation-range: entry 0% entry 100%; }
+    @keyframes word-rise { from { translate: 0 78%; opacity: 0.35; } to { translate: 0 0; opacity: 1; } }
+  }
+}
