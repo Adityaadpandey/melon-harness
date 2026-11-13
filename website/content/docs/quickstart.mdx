@@ -1,9 +1,11 @@
 ---
 title: "Quickstart"
-description: "Install zerd, run it in a repo, and make your first change in about two minutes."
+description: "Install zerd, connect a model, and make your first checked change in about two minutes."
 ---
 
-zerd is one native binary. There is no Python or Node to set up next to it.
+zerd is a coding agent that lives in your terminal. It edits your code, checks its own work, and tells you honestly how the run ended. It is one native binary, so there is no Python or Node to set up first.
+
+By the end of this page you will have installed it, made one change, and undone it.
 
 <Steps>
 <Step>
@@ -15,36 +17,52 @@ curl -fsSL https://zerd.si/install.sh | sh          # macOS and Linux
 irm https://zerd.si/install.ps1 | iex               # Windows 10/11, PowerShell
 ```
 
-On Windows, install [Git for Windows](https://git-scm.com/download/win) first. zerd runs shell commands in its bash, because models write bash. More in [Windows](/docs/windows).
+<Callout>
+On Windows, install [Git for Windows](https://git-scm.com/download/win) first. More in [Windows](/docs/windows).
+</Callout>
 
 </Step>
 <Step>
 
-### Start it in any repo
+### Start it in a repo
 
 ```bash
 cd your-project
 zerd
 ```
 
-The first launch walks you through setup in about a minute. You pick where models come from (a ChatGPT/Codex login, an Anthropic, OpenAI, OpenRouter or Gemini key, a local Ollama or LM Studio, or the gateway), paste a key, watch it get checked against the provider, and pick a model.
+The first time, there is no model to talk to yet, so setup starts on its own. It walks you through four things:
+
+1. Where your models come from, and saving the key.
+2. A live test call, so you know the key really works.
+3. Which model to use.
+4. How often zerd should ask before it acts.
+
+Run it again whenever you like with `zerd setup`.
+
+Your models can come from any of these:
+
+- a ChatGPT/Codex login (model ids start with `codex/`)
+- a key for Anthropic, OpenAI, Gemini, OpenRouter, Groq, DeepSeek, Mistral, xAI, Together, Fireworks, Cerebras, Moonshot or Z.ai
+- a local Ollama or LM Studio, which needs no key
+- the Command Code gateway, using `API_KEY`
 
 </Step>
 <Step>
 
-### Make a small change
-
-Ask for something you can check by eye, for example:
+### Ask for something you can check by eye
 
 ```text
 > rename the helper parse_date to parse_iso_date and update its callers
 ```
 
-When it finishes, read the last line. It is never a bare "done". It tells you what ran and what held:
+Read the last line when it finishes. zerd never ends with a bare "done". It always says what was checked:
 
 ```text
 status: verified   checks: 1 passed   review: clean   citations: 4 checked, 0 unverified
 ```
+
+The five possible statuses are explained in [How a run works](/docs/how-a-run-works).
 
 </Step>
 <Step>
@@ -55,23 +73,50 @@ status: verified   checks: 1 passed   review: clean   citations: 4 checked, 0 un
 > /undo
 ```
 
-zerd restores what the last request changed and removes the files it created. Your git state is untouched.
+zerd puts back what the last request changed and removes the files it created. Your git history and staging area are left alone, so this is safe to try.
 
 </Step>
 </Steps>
 
-## If something looks wrong
+## What zerd creates
 
-Run `zerd doctor`. It checks your credentials, makes a live provider call, and looks at git, the sandbox and your terminal. It prints the fix next to each problem.
+The first interactive run in a git repo writes a `.zerd/config.toml` if there isn't one. Every line in it is commented out, so it changes nothing until you edit it.
+
+It lists which model does which job: `fast`, `strong`, `explore`, `summarize`, `review`, `advisor` and `challenge`. To change one, delete the leading `# ` and put in the model you want.
+
+In a repo with 15 or more source files it also starts building the [code graph](/docs/code-graph) in the background.
+
+## Pick a model
+
+```bash
+zerd -m anthropic:claude-sonnet-5-5       # provider:model goes straight to that provider (ANTHROPIC_API_KEY)
+zerd -m groq:llama-3.3-70b                # same idea, uses GROQ_API_KEY
+zerd -m ollama:qwen3:8b                   # local, only the first colon splits
+zerd -m codex/gpt-5.6-luna                # ChatGPT/Codex login
+zerd -m MiniMaxAI/MiniMax-M3              # no known prefix: goes through the gateway (API_KEY)
+```
+
+Inside a session, `/model` shows the current model and `/model <id>` switches to another (Tab completes ids). A new session starts on the model you used last time. More in [Models and routing](/docs/models).
 
 ## First things to try
 
 | Type this | What happens |
 |---|---|
 | `review my changes` | A second agent reviews your working tree and a verifier tries to disprove each finding. See [Reviews](/docs/reviews). |
-| `/cost` | Shows where tokens went and why a cache miss happened. |
+| `/verify` | Runs the tests, lint and type checks on the files the last request changed. |
+| `/cost` | Shows tokens, cache hit rate and estimated cost. |
 | `/undo` | Puts back what the last request changed. |
-| `/help` | Lists every slash command. |
+| `@src/app.ts explain this` | Attaches a file to your message. Tab completes paths. |
+| `/help` | Lists every command. |
+
+## One shot, for scripts and CI
+
+```bash
+zerd -m anthropic:claude-haiku-5-5 --approval auto "fix the failing test in tests/test_paging.py"
+zerd --continue          # pick up the last session in this folder
+```
+
+Checks run automatically after edits, with repair rounds, and nothing is learned into your repo. The exit code is 1 if the run ended `failed` or `verification_failed`, so CI can fail the build on it. More in the [CLI reference](/docs/cli).
 
 ## Build from source
 
@@ -80,16 +125,6 @@ git clone https://github.com/Adityaadpandey/zerd.si && cd zerd.si
 cargo build --release                  # target/release/zerd
 ```
 
-## One shot, for scripts and CI
+## If something looks wrong
 
-```bash
-zerd -m claude-haiku-5-5 --approval auto "fix the failing test in tests/test_paging.py"
-zerd --continue          # pick up the last session in this folder
-```
-
-In this mode the checks run automatically after edits, with repair rounds. See [Everyday use](/docs/everyday-use) for how interactive and scripted runs differ.
-
-## Next
-
-- [How a run works](/docs/how-a-run-works): what happens between your request and the final status.
-- [Everyday use](/docs/everyday-use): the UI, steering, resuming and parallel agents.
+Run `zerd doctor`. It checks your credentials with a live provider call, then looks at git, the sandbox, your terminal and the data folder. Each problem it finds comes with the fix beside it. More in [Troubleshooting](/docs/troubleshooting).

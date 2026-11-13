@@ -3,7 +3,9 @@ title: "How a run works"
 description: "What happens between your request and the final status, and the five ways a run can end."
 ---
 
-You ask for a change. What you see is the harness working, not a model narrating. This is one run, put together to show the flow. Each status line is a message zerd really prints, and the last two lines are a summary, not the exact format:
+When you ask for a change, the model does not get the last word. The harness around it picks the model, runs the checks, and decides whether the work is good enough to call finished.
+
+Here is one run, put together to show the flow. Each status line is a message zerd really prints. The last two lines are a summary, not the exact format.
 
 ```text
 > change unique_by() to take a key function and drop the seen= argument
@@ -22,7 +24,9 @@ You ask for a change. What you see is the harness working, not a model narrating
   Rounds: 9 used, 10 estimated, +10 points (within the target)
 ```
 
-Every line there is a decision made by code, not by the model: which checks to run, whether a failure is the agent's or was already there, whether a public signature broke, whether the review has to go again.
+<Callout>
+Every line above is a decision made by code, not by the model: which checks to run, whether a failure is new or was already there, whether a public signature broke, and whether the review has to go again.
+</Callout>
 
 ## The path every request takes
 
@@ -48,7 +52,7 @@ Every line there is a decision made by code, not by the model: which checks to r
     L -. loop detected .-> S
     R1 -. still failing .-> S`} />
 
-In words:
+The same flow in plain words:
 
 1. **Classify.** Rules pick a model size for the request, with no model call, and say why.
 2. **Work.** The agent loop reads, edits and runs tools.
@@ -59,7 +63,7 @@ In words:
 
 ## The five endings
 
-A run always ends in exactly one of these states. Never a bare "done".
+Every run ends in exactly one of these states, so you always know where you stand.
 
 | Status | Meaning |
 |---|---|
@@ -69,7 +73,7 @@ A run always ends in exactly one of these states. Never a bare "done".
 | `failed` | An API error, a loop, or the deadline. |
 | `done_no_changes` | Nothing was edited, for example you asked a question. |
 
-Each request is a task with an explicit lifecycle. Transitions are validated in code, so a run can't jump from `failed` to `verified`, and every move is written to a trace.
+Each request is a task with a fixed lifecycle. The code checks every move, so a run can't jump from `failed` to `verified`, and every move is written to a trace you can read later.
 
 <Mermaid chart={`stateDiagram-v2
     [*] --> running
@@ -89,9 +93,9 @@ Each request is a task with an explicit lifecycle. Transitions are validated in 
     done_no_changes --> [*]
     failed --> [*]`} />
 
-## One rule behind the layers
+## How the pieces fit
 
-Everything the model can do goes through one door, and everything the harness decides is traced.
+Two rules hold the design together: everything the model can do goes through one door (the tool registry), and everything the harness decides is traced.
 
 <Mermaid chart={`flowchart TB
     subgraph UI["Front end"]
