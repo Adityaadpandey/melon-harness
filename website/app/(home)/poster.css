@@ -1,0 +1,51 @@
+/* Hero. The artwork sits on the right, the words on the left over a dark scrim so they never fight
+   the picture. Nothing here moves. */
+/* (hero section is just a dark container now) */
+.poster-hero { position: relative; background: #04060c; color: #fff; overflow: clip; padding-bottom: clamp(60px, 8vw, 120px); }
+
+.poster { position: relative; height: 100svh; min-height: 640px; max-height: 1000px; --pad: clamp(24px, 6vw, 96px); }
+.p-img { position: absolute; inset: 0; }
+.p-img picture, .p-img img { display: block; width: 100%; height: 100%; }
+.p-img img { object-fit: cover; object-position: 62% 50%; }
+/* three gradients: darken the left for the text, fade the foot into the page, soften the top under the nav */
+.p-img::after { content: ""; position: absolute; inset: 0; pointer-events: none;
+  background:
+    linear-gradient(90deg, rgba(3, 5, 12, 0.9) 0%, rgba(3, 5, 12, 0.72) 30%, rgba(3, 5, 12, 0) 60%),
+    linear-gradient(0deg, #04060c 0%, rgba(4, 6, 12, 0) 24%),
+    linear-gradient(180deg, rgba(3, 5, 12, 0.6) 0%, rgba(3, 5, 12, 0) 18%); }
+
+.p-top { position: absolute; z-index: 1; left: var(--pad); top: 50%; transform: translateY(-52%); width: min(640px, 52vw); }
+.p-eyebrow { margin: 0 0 clamp(18px, 3vh, 28px); font: 500 12px/1 var(--mono); letter-spacing: 0.18em; text-transform: uppercase; color: rgba(255, 255, 255, 0.62); }
+.p-h1 { margin: 0; font: 400 clamp(38px, 4.9vw, 78px)/1.02 var(--sans); letter-spacing: -0.04em; color: #fff; text-wrap: balance; }
+.p-h1 .l1 { display: block; color: rgba(255, 255, 255, 0.68); }
+.p-h1 .l2 { display: block; margin-top: 0.06em; font-family: var(--serif); font-style: italic; letter-spacing: -0.025em; font-size: 1.08em; }
+.p-sub { margin: clamp(22px, 3.6vh, 36px) 0 0; max-width: 29em; font-size: clamp(16px, 1.3vw, 19px); line-height: 1.58; color: rgba(255, 255, 255, 0.76); text-wrap: pretty; }
+.p-cta { display: flex; flex-wrap: wrap; gap: 12px 14px; margin-top: clamp(24px, 3.6vh, 36px); }
+
+.p-more { display: inline-block; margin-top: 18px; font-size: 14px; color: rgba(255, 255, 255, 0.7); text-decoration: none; }
+.p-more:hover { color: #fff; }
+
+.p-rail { position: absolute; z-index: 1; left: var(--pad); right: var(--pad); bottom: 0; display: flex; justify-content: space-between; gap: 16px; padding: 18px 0 22px; border-top: 1px solid rgba(255, 255, 255, 0.14); font: 12px/1.4 var(--mono); letter-spacing: 0.02em; color: rgba(255, 255, 255, 0.6); }
+
+.p-after { position: relative; z-index: 1; padding-top: clamp(24px, 4vw, 56px); }
+
+/* what the recording below is about to show, in three beats */
+.proof { list-style: none; margin: 0 0 clamp(40px, 5vw, 72px); padding: 0; display: grid; grid-template-columns: repeat(3, 1fr); border-top: 1px solid rgba(255, 255, 255, 0.14); }
+.proof li { padding: 26px 28px 0 0; }
+.proof li + li { padding-left: 28px; border-left: 1px solid rgba(255, 255, 255, 0.1); }
+.proof span { font: 500 12px/1 var(--mono); letter-spacing: 0.16em; color: #b9a2ff; }
+.proof h3 { margin: 14px 0 8px; font: 500 clamp(19px, 1.7vw, 24px)/1.2 var(--sans); letter-spacing: -0.02em; color: #fff; }
+.proof p { margin: 0; max-width: 28em; font-size: 15px; line-height: 1.55; color: rgba(255, 255, 255, 0.66); }
+@media (max-width: 760px) { .proof { grid-template-columns: 1fr; } .proof li, .proof li + li { padding: 22px 0 0; border-left: 0; } }
+.poster-hero .demo .note { color: rgba(255, 255, 255, 0.55); }
+
+/* Phones: the picture takes the top of the screen, the words sit under it. */
+@media (max-width: 860px) {
+  .poster { height: auto; min-height: 0; max-height: none; --pad: 20px; }
+  .p-img { height: 64svh; min-height: 420px; bottom: auto; }
+  .p-img img { object-position: 60% 50%; }
+  .p-img::after { background: linear-gradient(0deg, #04060c 0%, rgba(4, 6, 12, 0) 45%), linear-gradient(180deg, rgba(3, 5, 12, 0.6) 0%, rgba(3, 5, 12, 0) 20%); }
+  .p-top { position: relative; left: auto; top: auto; transform: none; width: auto; padding: max(52svh, 370px) var(--pad) 0; }
+  .p-rail { position: relative; left: auto; right: auto; margin: 36px var(--pad) 0; }
+  .p-rail span:last-child { display: none; }
+}

@@ -1,5 +1,5 @@
 import type { Metadata } from "next";
-import { Bricolage_Grotesque, Instrument_Serif, JetBrains_Mono, Martian_Mono } from "next/font/google";
+import { Bricolage_Grotesque, Instrument_Serif, JetBrains_Mono } from "next/font/google";
 import { Provider } from "@/components/provider";
 import { JsonLd } from "@/lib/jsonld";
 import { DESCRIPTION, NAME, SITE, TAGLINE } from "@/lib/site";
@@ -9,8 +9,6 @@ import "./globals.css";
 const sans = Bricolage_Grotesque({ subsets: ["latin"], variable: "--font-sans" });
 const serif = Instrument_Serif({ subsets: ["latin"], weight: "400", style: ["italic", "normal"], variable: "--font-serif" });
 const mono = JetBrains_Mono({ subsets: ["latin"], variable: "--font-mono" });
-// Wide, a little odd, and only used for the landing page headlines.
-const display = Martian_Mono({ subsets: ["latin"], variable: "--font-display" });
 
 export const metadata: Metadata = {
   metadataBase: new URL(SITE),
@@ -40,7 +38,7 @@ const schema = {
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="en" className={`${sans.variable} ${serif.variable} ${mono.variable} ${display.variable}`} suppressHydrationWarning>
+    <html lang="en" className={`${sans.variable} ${serif.variable} ${mono.variable}`} suppressHydrationWarning>
       <body>
         <JsonLd data={schema} />
         <Provider>{children}</Provider>
