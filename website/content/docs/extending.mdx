@@ -1,0 +1,42 @@
+---
+title: "Extending zerd"
+description: "MCP servers, hooks, slash commands, project tools, prompts and repo profiles."
+---
+
+## MCP
+
+stdio and streamable HTTP servers, gated by project trust.
+
+## Hooks
+
+Hooks run your own commands at points in a run:
+
+`before_agent`, `after_agent`, `before_tool`, `after_tool`, `on_error`, `pre_compact`, `post_compact`, `session_start`, `stop` and `subagent_stop`.
+
+- A `before_tool` hook can veto a call.
+- A `stop` hook that exits with code 2 sends its stderr back and keeps the agent working.
+- Whatever a `before_agent` hook prints is handed to the model with your request.
+
+## Slash commands
+
+Markdown files in `.claude/commands` and `.zerd/commands` become commands. They take `$1`, `$@` and `${1:-default}`.
+
+## Project tools
+
+Each `.zerd/tools/*.toml` becomes a tool that runs a shell command. Arguments arrive as JSON on stdin and as `ZERD_ARG_<NAME>`.
+
+## Prompt
+
+`.zerd/APPEND_SYSTEM.md` adds to zerd's prompt. `SYSTEM.md` replaces it.
+
+## Repo profiles
+
+`profiles/<name>.toml` carries per-project instructions, forbidden paths and commands, and verify rules. `profiles/tunyt.toml` is a worked example.
+
+<Callout type="warn" title="Trust">
+A cloned repo's config can't turn on hooks, MCP servers or verify commands until you trust that exact file. See [Safety](/docs/safety).
+</Callout>
+
+## All slash commands
+
+`/help /clear /compact /context /cost /model /effort /approval /permissions /plan /challenge /verify /diff /agents /hooks /skills /config /stats /tools /mcp /connect /save /sessions /resume /checkpoint /restore /undo /rewind /jobs /copy /learn /forget /layout /exit`

@@ -1,7 +1,9 @@
 node_modules/
 .next/
 next-env.d.ts
-# copied from the repo root by scripts/sync-docs.mjs
-content/
+# copied from the repo root by scripts/sync-docs.mjs (the docs pages in content/docs are hand-written and tracked)
+content/install.*
 public/docs/assets/
 *.tsbuildinfo
+.source/
+content/docs.json

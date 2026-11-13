@@ -1,0 +1,69 @@
+---
+title: "Verification"
+description: "How zerd picks checks, knows whose failure it is, and catches breakage your tests can't see."
+---
+
+"Done" is a claim that has to be backed up. This page covers the code that backs it up.
+
+## Checks on the files that changed
+
+After edits, zerd picks checks for **only the changed files**, never a whole build:
+
+- `pytest` for the tests that import the changed module, found through an import graph
+- `go vet`, `cargo check`, `eslint`, `promtool`
+- `docker compose config` for infra YAML
+- your own `verify_commands` and per-path `[[verify_rules]]`
+
+## Whose failure is it?
+
+When a check fails, zerd **swaps in the pre-run copy of your files, runs the same check again, and puts the agent's files back.**
+
+An error that was already there is reported as "was already failing before your change; leaving it alone", and the agent is not sent to "fix" what it didn't break. A run with a pre-existing failure ends `unverified`, not `verified`.
+
+Failures that are the agent's go back as a repair request, up to 2 rounds, then escalate to the strong model.
+
+<Mermaid chart={`flowchart TB
+    E["Agent edited files"] --> S["Snapshot diff: what THIS run changed<br/>not edits you already had in flight"]
+    S --> P["Pick checks for only those files"]
+    P --> RUN["Run checks"]
+    RUN -->|all pass| OK(["verified"])
+    RUN -->|some fail| BASE["Swap in the pre-run copy of the files,<br/>run the failing checks again,<br/>put the agent's files back"]
+    BASE --> Q{"Same errors on the<br/>clean tree?"}
+    Q -->|"yes, and they don't name a changed file"| OLD["Already broken before you started<br/>leave it alone, say so, end unverified"]
+    Q -->|no| NEW["The run broke it"]
+    NEW --> REP["Repair request with the real output<br/>do not weaken a test to pass"]
+    REP --> RUN`} />
+
+## The signature guard
+
+Checks prove the code runs. They can't see the caller outside this repo.
+
+The guard compares each changed Python and JS/TS file with `HEAD` and flags:
+
+- a dropped parameter
+- a newly required parameter
+- reordered positionals
+- a removed `*args` or `**kwargs`
+- a function that is no longer exported
+
+The agent is sent back once to keep old calls working. It exists because of a real miss in [round 1 of the benchmarks](/docs/benchmarks).
+
+## Every edit is checked as it lands
+
+An edit result comes back with the problems *that edit introduced* attached. Old and new text are both checked, and anything already there is ignored.
+
+- Python syntax and `ruff`
+- JSON and TOML parsing
+- `node --check`
+- `gofmt`
+- TypeScript: **your project's own `tsserver`, kept running**, so real type errors show up in the same turn, under a second after the first call
+
+## It will not edit what it hasn't read
+
+Editing an existing file the agent hasn't read this session, or that changed on disk since, is refused. A small file comes back inside the refusal so the retry needs no extra round.
+
+If you edit a file in your editor mid-run, the agent is told and re-reads rather than overwriting you.
+
+## A hallucination check that isn't a model
+
+Every `path` and `path:line` in the final answer is looked up in the real tree. An invented file, or a line past the end of one, goes back for one correction. Whatever is left is shown as a warning. It is a few dozen lines of code, not a model.

@@ -1,0 +1,20 @@
+---
+title: "Limits"
+description: "Where zerd is not there yet, said plainly."
+---
+
+A tool that checks its work is still software. zerd is more useful when it says what it didn't verify, and the same goes for these docs.
+
+- **The OS sandbox is macOS only.** Linux and Windows get the confined tools and the shell path check, not the kernel layer.
+- **No image input** (pasting a screenshot) and no IDE extension.
+- **Signature checks cover Python and JS/TS.** Python outlines use an indentation-based reader, not a real parser. Diagnostics come from `tsserver` for TypeScript and quick checkers elsewhere, not a general language server.
+- **Token counts are estimated** (bytes divided by 4), not counted exactly.
+- **The benchmarks are small.** One project and one run each in round 2, and 11 tasks in round 1, measured on the earlier Python version. They show where verification pays off, not a ranking. The design is tuned on one real repo, so treat defaults as measured there.
+
+## Tests
+
+```bash
+cargo test        # about 550 tests, no network, no real model, around 20 seconds
+```
+
+Every test uses a scripted model (`src/tests/fakes.rs`) and a throwaway data folder, so no API credits are spent and nothing touches your real sessions or keys. It is about 28k lines of Rust plus 8.6k lines of tests.

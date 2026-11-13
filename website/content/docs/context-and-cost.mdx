@@ -1,0 +1,71 @@
+---
+title: "Context and cost"
+description: "How zerd finds code without reading everything, avoids paying twice for tokens, and keeps its own work estimates honest."
+---
+
+## Finding code without reading everything
+
+Cheapest evidence first:
+
+1. `search`: BM25-ranked files, camelCase-aware, boosted by files that fixed similar requests before
+2. `outline`: symbols with line ranges
+3. `read_file(symbol=...)`: one function, not the whole file
+4. `grep`
+
+For structure there is a **live symbol graph** built with tree-sitter for TS/JS, Python, Rust, Go, Java, C#, PHP and Ruby. It answers `callers`, `callees`, `impact`, `trace` and `path`. It reads the working tree, so it never goes stale, and an edit that changes a signature comes back with the places that use it.
+
+See what the model would see:
+
+```bash
+zerd graph callers parse_invoice
+```
+
+## Not paying twice for the same tokens
+
+- `read_file` remembers which lines the model has seen and returns **only new lines, or a diff** when the file changed.
+- The same read-only lookup with nothing written since is answered in one line instead of repeating the output.
+- Big tool output is capped and archived (as `r7`, say), and the model can pull any range back with `recall_result`.
+- **Read-only calls start running while the model is still writing the rest of its reply.**
+- Folder rules (`apps/web/AGENTS.md`) attach on the first touch of that folder, and again after a prune clears them.
+- With more than 15 MCP tools, only names are sent until the model asks for the ones it needs (`tool_search`).
+
+`/cost` shows where tokens went, weighted by how many later calls re-sent each result, and tells you why a cache miss happened.
+
+## When the context fills up
+
+Compaction asks the same model, on the exact prefix it just sent, so the provider serves the summary **from cache**. Recent turns stay word for word, the files being worked on are restored from disk, and the replaced messages are saved to `transcripts/` so nothing is lost. Three compactions in a row that refill immediately trip a breaker that prunes instead.
+
+<Mermaid chart={`flowchart LR
+    T["Tool result"] --> CAP{"Over the<br/>output cap?"}
+    CAP -->|yes| ARC[("Archive r7")]
+    ARC -->|"head, tail and an id"| CTX
+    CAP -->|no| CTX["In context"]
+    CTX --> PR{"Prompt past 180k<br/>or 75% of window?"}
+    PR -->|yes| CL["Clear old results<br/>keep a hint of what was cleared"]
+    CL --> ARC
+    PR -->|no| CO
+    CL --> CO{"Past 200k?"}
+    CO -->|yes| FOLD["Summary from the same model on the same<br/>prefix, so the provider serves it from cache"]
+    FOLD --> KEEP["Newest 40k tokens verbatim<br/>files in play restored from disk<br/>replaced turns saved to transcripts/"]
+    KEEP --> CTX
+    ARC -. "recall_result r7" .-> CTX`} />
+
+## Knowing how much work a task should take
+
+Before each request the model names how many tool rounds it needs. A round is one turn, however many calls it holds, so reading five files at once costs what reading one does. When the request ends, zerd scores the guess and prints it:
+
+```text
+Rounds: 0 used, 12 estimated, +5 points (within the target)
+```
+
+That one is a question answered from what was already in context. No tools were needed, so the 12-round guess was padded and earned the smaller reward.
+
+| Result | Score |
+|---|---|
+| A tight guess that lands on target | `+10` |
+| Overshooting | minus a point per tenth over, down to `-15` |
+| Cut off by the hard stop (3x the guess, never below 25 rounds) | `-25`, the worst, because the job isn't done |
+
+Scores are kept in `calibration.jsonl`. The last ten results are shown to the model the next time it makes a guess ("when you ran over it was by 1.8x on average: lean higher"). There are no weights to train. The model gets feedback on its own record, so its estimates drift toward honest and the stop only catches runaways.
+
+A loop, a repeated action, or an edit that keeps being rewritten triggers a nudge, then escalates to the strong model, then stops instead of burning the budget. Out of time or tokens, one last tool-free call turns what it learned into an answer, and any checks still run against the tree it left.

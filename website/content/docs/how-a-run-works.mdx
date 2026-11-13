@@ -1,0 +1,145 @@
+---
+title: "How a run works"
+description: "What happens between your request and the final status, and the five ways a run can end."
+---
+
+You ask for a change. What you see is the harness working, not a model narrating. This is one run, put together to show the flow. Each status line is a message zerd really prints, and the last two lines are a summary, not the exact format:
+
+```text
+> change unique_by() to take a key function and drop the seen= argument
+
+  Routing to the strong model (read by the fast model): claude-opus-5-5
+  Verifying: python3 -m pytest -q -x tests/test_unique.py
+  Verification failed (python3 -m pytest ...); repair attempt 1/2
+  Verifying: python3 -m pytest -q -x tests/test_unique.py
+  The change breaks 1 public signature(s) (utils.py: unique_by() no longer accepts `seen`); asking to keep old calls working
+  Verifying: python3 -m pytest -q -x tests/test_unique.py
+  Independent review of the diff...
+  Reviewer found issues; sending them back for a fix
+  Independent review of the diff...
+
+  status: verified   checks: 1 passed   review: clean   citations: 4 checked, 0 unverified
+  Rounds: 9 used, 10 estimated, +10 points (within the target)
+```
+
+Every line there is a decision made by code, not by the model: which checks to run, whether a failure is the agent's or was already there, whether a public signature broke, whether the review has to go again.
+
+## The path every request takes
+
+<Mermaid chart={`flowchart LR
+    A([Your request]) --> B{"Classify<br/>no model call"}
+    B -->|small| F[fast model]
+    B -->|ordinary| D[default model]
+    B -->|hard| S[strong model]
+    F & D & S --> L["Agent loop<br/>stream, run tools, repair"]
+    L -->|only reads| ANS
+    L -->|edits files| V{"Checks on the<br/>changed files"}
+    V -->|fail, new| R1["Repair round<br/>max 2"]
+    R1 --> V
+    V -->|fail, already broken| NOTE["Leave it, report it,<br/>end as unverified"]
+    V -->|pass| SG{"Signature<br/>guard"}
+    SG -->|public API broke| R1
+    SG -->|ok| RV{"Independent review<br/>if enabled or asked"}
+    RV -->|findings| R2["One fix,<br/>review again"]
+    R2 --> G
+    RV -->|clean| G["Citation check<br/>paths and lines on disk"]
+    NOTE --> G
+    G --> ANS([Answer + honest status])
+    L -. loop detected .-> S
+    R1 -. still failing .-> S`} />
+
+In words:
+
+1. **Classify.** Rules pick a model size for the request, with no model call, and say why.
+2. **Work.** The agent loop reads, edits and runs tools.
+3. **Check.** If files changed, checks run on those files only. New failures go back for repair, up to 2 rounds.
+4. **Guard.** A broken public signature sends the agent back once.
+5. **Review.** An independent review of the diff runs if you asked for it or turned on `auto_review`.
+6. **Cite.** Every file and line in the answer is looked up on disk.
+
+## The five endings
+
+A run always ends in exactly one of these states. Never a bare "done".
+
+| Status | Meaning |
+|---|---|
+| `verified` | Files changed and the checks passed. |
+| `unverified` | No checks exist for this change, or a check was already failing before the run. |
+| `verification_failed` | Checks still fail after the repair rounds. |
+| `failed` | An API error, a loop, or the deadline. |
+| `done_no_changes` | Nothing was edited, for example you asked a question. |
+
+Each request is a task with an explicit lifecycle. Transitions are validated in code, so a run can't jump from `failed` to `verified`, and every move is written to a trace.
+
+<Mermaid chart={`stateDiagram-v2
+    [*] --> running
+    running --> verifying: files changed
+    running --> done_no_changes: nothing edited
+    running --> unverified: no checks exist
+    running --> failed: API error, loop, deadline
+    verifying --> verified: checks pass
+    verifying --> repairing: checks or review failed
+    verifying --> unverified: a check was already failing
+    verifying --> verification_failed: still failing after repairs
+    repairing --> verifying: fix applied
+    repairing --> failed
+    verified --> [*]
+    unverified --> [*]
+    verification_failed --> [*]
+    done_no_changes --> [*]
+    failed --> [*]`} />
+
+## One rule behind the layers
+
+Everything the model can do goes through one door, and everything the harness decides is traced.
+
+<Mermaid chart={`flowchart TB
+    subgraph UI["Front end"]
+        TUI["Full-screen terminal UI"]
+        CLI["One-shot, --json, --rpc"]
+    end
+    subgraph CORE["Agent core"]
+        LOOP["Agent loop"]
+        TASK["Task state machine"]
+        VER["Verify + signature guard"]
+        REV["Review pipeline"]
+        GRD["Grounding: citation check"]
+        LRN["Learning + ledger"]
+    end
+    subgraph CTX["Context"]
+        MGR["Prune, compact, restore"]
+        ARC[("Result archive")]
+        GRAPH["Symbol + import graph"]
+    end
+    subgraph TOOLS["Tools"]
+        REG["Registry: the single door"]
+        BI["read, edit, search, git, shell, advisor"]
+        MCP["MCP servers, project tools"]
+    end
+    subgraph SAFE["Safety"]
+        GD["Guard rules"] --> WS["Workspace confinement"] --> AP["Approval"] --> SB["OS sandbox"]
+    end
+    subgraph LLM["Client"]
+        RT["Routing + failover"] --> AD["Provider adapters"]
+    end
+    MEM[("Per-repo memory")]
+    TR[("Trace JSONL")]
+    UI --> LOOP
+    LOOP <--> TASK
+    LOOP --> REG --> GD
+    REG --> BI
+    REG --> MCP
+    BI --> GRAPH
+    LOOP <--> MGR <--> ARC
+    LOOP --> RT
+    LOOP --> VER --> REV --> GRD
+    MEM -.feeds.-> LOOP
+    LRN -.writes.-> MEM
+    CORE -.-> TR
+    LLM -.-> TR`} />
+
+## Go deeper
+
+- [Verification](/docs/verification): how checks are picked and how zerd knows whose failure it is.
+- [Reviews](/docs/reviews): the review and fix pipelines.
+- [Safety](/docs/safety): the layers every tool call passes through.

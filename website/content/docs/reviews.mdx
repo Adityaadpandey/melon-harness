@@ -1,0 +1,50 @@
+---
+title: "Reviews and fixes"
+description: "How zerd reviews a diff, tries to disprove its own findings, and fixes what is left."
+---
+
+Say "review my changes", "review my last 3 commits" or "review PR #42" and zerd runs a real pipeline, not one prompt.
+
+## The review pipeline
+
+A cheap triage picks what could plausibly break. Reviewers then read the diff through lenses: behaviour, approach, failures, project rules, git history, security, and a dedicated **producer-to-consumer contracts** reviewer. A gap pass asks what nobody checked. Then:
+
+1. Each finding goes to a **verifier whose default is to refute it**. Six run at a time, and each must name the exact line it read.
+2. A confirmed HIGH goes to a **repro agent** that tries to make the defect happen in a sandboxed copy of the change. If it can't, the finding is capped at MEDIUM and shows what was tried.
+3. Each claim gets a confidence score. Below the cutoff it is dropped. Refuted claims are remembered per repo for two weeks.
+
+The write-up says what was reviewed, every fallback taken (the PR base, a failed fetch), and what the reviewers *didn't* check.
+
+<Mermaid chart={`flowchart TB
+    Q["'review PR #42'"] --> T["Resolve the target<br/>working tree, commits, branch or PR<br/>PR diffed against its real base"]
+    T --> D["Build the diff<br/>skip lockfiles, images, maps"]
+    D --> TR["Triage: what could plausibly break?"]
+    TR --> RV["Reviewers, one lens each<br/>+ contracts: producer to consumer<br/>+ security if auth, data or money is touched"]
+    RV --> GAP["Gap pass: what did nobody check?"]
+    GAP --> VF["Verifier tries to refute each claim<br/>6 at a time, must cite the line it read"]
+    VF -->|REJECTED| DROP["Dropped<br/>remembered for 2 weeks"]
+    VF -->|"confirmed HIGH"| RP["Repro agent: make it happen<br/>in a sandboxed copy"]
+    RP -->|happened| SHOW
+    RP -->|could not| CAP["Capped at MEDIUM<br/>what was tried is shown"]
+    CAP --> SHOW
+    VF -->|"confirmed or plausible"| SHOW["Write-up: scope, what the change does,<br/>findings by severity, what was not checked"]
+    SHOW --> OFFER["Offer to fix"]`} />
+
+## Fixing what it found
+
+Say "fix 2 and 3". The fix run starts from the facts the review proved. It must consult the **advisor** before its first edit, and it ends with a fresh verifier in a scratch worktree that never saw the author's reasoning.
+
+<Mermaid chart={`flowchart LR
+    F["'fix 2 and 3'"] --> BR["Brief per finding<br/>where, why it breaks"]
+    BR --> A1["advisor(): required<br/>before the first edit"]
+    A1 --> ED["Root-cause fix<br/>+ regression test"]
+    ED --> A2["advisor(): again<br/>before finishing"]
+    A2 --> FV["Fresh verifier in a scratch worktree<br/>never saw the author's reasoning<br/>checks the test fails without the fix"]
+    FV -->|PASS| DONE([Done])
+    FV -->|FAIL| ED`} />
+
+## The challenger
+
+For risky requests ("should we...", a migration, "replace X with Y"), a read-only **challenger** on a *different model family* argues against the plan before anything is built. Each objection is tagged `verified` (with a real `file:line`), `plausible` or `guess`. An objection that cites a file that doesn't exist is dropped, never shown.
+
+It is on in interactive sessions and off in scripted ones. `--challenge` turns it on there.

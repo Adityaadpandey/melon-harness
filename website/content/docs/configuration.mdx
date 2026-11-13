@@ -1,0 +1,54 @@
+---
+title: "Configuration"
+description: "Where config, keys and data live, which layer wins, and the flags you will actually use."
+---
+
+Later layers win: flags, then the project's `.zerd/config.toml`, then the user config, then defaults.
+
+## Where things live
+
+| What | Where |
+|---|---|
+| Keys | environment variables or zerd's own `.env` (`/connect <provider>` saves one) |
+| User config | `~/Library/Application Support/zerd/config.toml` (Linux `~/.local/share/zerd`, Windows `%APPDATA%\zerd`) |
+| Project config | `.zerd/config.toml` (sensitive keys need `--trust`) |
+| Data | sessions, traces, transcripts, lessons and review memory in the user folder. `ZERD_DATA_DIR` moves it |
+| Instructions | `AGENTS.md` / `CLAUDE.md` in the repo and `~/.claude/CLAUDE.md`, with `@imports` followed |
+
+## An example
+
+```toml
+[routing]
+default   = ["claude-sonnet-5-5", "deepseek/deepseek-v4-pro"]
+fast      = ["deepseek/deepseek-v4.1-flash"]
+strong    = ["claude-opus-5-5"]
+review    = ["gpt-5.6-sol"]
+advisor   = ["deepseek/deepseek-v4-pro"]
+
+[providers.work]                       # any OpenAI- or Anthropic-format server
+base_url    = "https://llm.internal.example.com/v1"
+api_key_env = "WORK_LLM_KEY"
+protocol    = "anthropic"              # default "openai"
+```
+
+Each role is a fallback chain, tried in order. See [Models and routing](/docs/models).
+
+## Flags
+
+| Flag | What it does |
+|---|---|
+| `-m`, `--model` | Model id. Overrides config |
+| `--approval` | Approval policy. Overrides config |
+| `--effort low\|medium\|high` | Reasoning effort (Codex models) |
+| `--trust` | Trust this project's `.zerd/config.toml` (hooks, verify commands, approval) |
+| `--add-dir` | Extra directory the agent may use besides the working directory. Repeatable |
+| `-c`, `--cwd` | Working directory |
+| `--challenge` | Have a second model argue against risky requests first. Always on interactively |
+| `--pi`, `--no-pi` | Turn Pi mode on or off for this run. Overrides `pi_mode` in config |
+| `--resume <id>` | Continue a saved session by id. `/sessions` lists them |
+| `--continue` | Continue the newest saved session that ran in this folder |
+| `--parallel` | Let a planner split the request into parallel workers |
+| `--graph tasks.json` | Task graph JSON. Implies `--parallel` |
+| `--json` | Print agent events as JSON lines. Needs a prompt |
+| `--rpc` | Read JSON commands on stdin, write events on stdout |
+| `--report file` | Write run metrics JSON |

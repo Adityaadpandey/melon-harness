@@ -1,0 +1,95 @@
+---
+title: "Quickstart"
+description: "Install zerd, run it in a repo, and make your first change in about two minutes."
+---
+
+zerd is one native binary. There is no Python or Node to set up next to it.
+
+<Steps>
+<Step>
+
+### Install
+
+```bash
+curl -fsSL https://zerd.si/install.sh | sh          # macOS and Linux
+irm https://zerd.si/install.ps1 | iex               # Windows 10/11, PowerShell
+```
+
+On Windows, install [Git for Windows](https://git-scm.com/download/win) first. zerd runs shell commands in its bash, because models write bash. More in [Windows](/docs/windows).
+
+</Step>
+<Step>
+
+### Start it in any repo
+
+```bash
+cd your-project
+zerd
+```
+
+The first launch walks you through setup in about a minute. You pick where models come from (a ChatGPT/Codex login, an Anthropic, OpenAI, OpenRouter or Gemini key, a local Ollama or LM Studio, or the gateway), paste a key, watch it get checked against the provider, and pick a model.
+
+</Step>
+<Step>
+
+### Make a small change
+
+Ask for something you can check by eye, for example:
+
+```text
+> rename the helper parse_date to parse_iso_date and update its callers
+```
+
+When it finishes, read the last line. It is never a bare "done". It tells you what ran and what held:
+
+```text
+status: verified   checks: 1 passed   review: clean   citations: 4 checked, 0 unverified
+```
+
+</Step>
+<Step>
+
+### Undo it if you don't like it
+
+```text
+> /undo
+```
+
+zerd restores what the last request changed and removes the files it created. Your git state is untouched.
+
+</Step>
+</Steps>
+
+## If something looks wrong
+
+Run `zerd doctor`. It checks your credentials, makes a live provider call, and looks at git, the sandbox and your terminal. It prints the fix next to each problem.
+
+## First things to try
+
+| Type this | What happens |
+|---|---|
+| `review my changes` | A second agent reviews your working tree and a verifier tries to disprove each finding. See [Reviews](/docs/reviews). |
+| `/cost` | Shows where tokens went and why a cache miss happened. |
+| `/undo` | Puts back what the last request changed. |
+| `/help` | Lists every slash command. |
+
+## Build from source
+
+```bash
+git clone https://github.com/Adityaadpandey/zerd.si && cd zerd.si
+cargo build --release                  # target/release/zerd
+```
+
+## One shot, for scripts and CI
+
+```bash
+zerd -m claude-haiku-5-5 --approval auto "fix the failing test in tests/test_paging.py"
+zerd --continue          # pick up the last session in this folder
+```
+
+In this mode the checks run automatically after edits, with repair rounds. See [Everyday use](/docs/everyday-use) for how interactive and scripted runs differ.
+
+## Next
+
+- [How a run works](/docs/how-a-run-works): what happens between your request and the final status.
+- [Everyday use](/docs/everyday-use): the UI, steering, resuming and parallel agents.

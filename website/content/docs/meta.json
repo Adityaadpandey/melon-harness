@@ -1,0 +1,24 @@
+{
+  "pages": [
+    "---Start here---",
+    "quickstart",
+    "how-a-run-works",
+    "---Guides---",
+    "everyday-use",
+    "models",
+    "safety",
+    "reviews",
+    "memory-and-undo",
+    "---Under the hood---",
+    "verification",
+    "context-and-cost",
+    "---Reference---",
+    "configuration",
+    "extending",
+    "windows",
+    "---Evidence---",
+    "benchmarks",
+    "limits",
+    "license"
+  ]
+}

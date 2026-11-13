@@ -1,0 +1,38 @@
+---
+title: "Safety"
+description: "The rules the model can't talk its way past: confined files, scanned shell commands, an OS sandbox, and trusted-only project config."
+---
+
+These rules sit in the tool registry that every call passes through, for the main agent, sub-agents and parallel workers alike. The model can't talk its way past them because they are code, not a line in a prompt.
+
+## Three layers
+
+1. **File tools** resolve the path first. `..` and symlinks that lead out of the workspace are refused.
+2. **Shell commands** are scanned for paths in your home, `/etc`, other users' folders or `..` escapes, and refused before they run. History-destroying git commands are blocked.
+3. **OS sandbox** (macOS `sandbox-exec`, on by default). A command can't write outside the workspace, temp and package caches, or read `~/.ssh`, `~/.aws`, `~/.gnupg`, keychains, or the workspace's own `.env`, however the command reaches it.
+
+<Mermaid chart={`flowchart LR
+    C["Tool call"] --> R1["Tool-name and argument repair"]
+    R1 --> R2["Schema validation"]
+    R2 --> G1["Guard: protected paths,<br/>forbidden commands, repo rules"]
+    G1 --> G2["Workspace confinement<br/>.. and symlinks resolved first"]
+    G2 --> H["before_tool hooks<br/>can veto"]
+    H --> AP{"Deny, allow or<br/>ask rules, approval mode"}
+    AP -->|"you approve a diff"| X
+    AP -->|refused| NO(["Refused: the model is told<br/>not to find another way"])
+    X["Shell scan, then<br/>macOS sandbox-exec"] --> RUN(["Runs"])`} />
+
+## On top of that
+
+- `.env*`, `*.pem`, `*.key` and SSH keys are protected by default.
+- Permission rules use Claude Code's notation, for example `Bash(git diff:*)` and `Edit(src/**)`.
+- `web_fetch` refuses localhost, private ranges and cloud metadata at *every* redirect hop.
+- **A cloned repo can't turn on code execution.** Its `.zerd/config.toml` cannot enable `hooks`, `mcp_servers`, `verify_commands`, `approval` and similar until you trust that exact file, and editing the file revokes the trust.
+
+## Approvals
+
+Approvals show a diff, and what you approve is exactly what gets written. For the modes, see [Everyday use](/docs/everyday-use).
+
+<Callout type="warn" title="Platform differences">
+The OS sandbox is macOS only. Linux and Windows get the confined file tools and the shell path scan, not the kernel layer. See [Windows](/docs/windows) and [Limits](/docs/limits).
+</Callout>

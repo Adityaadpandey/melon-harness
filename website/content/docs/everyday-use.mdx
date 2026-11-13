@@ -1,0 +1,55 @@
+---
+title: "Everyday use"
+description: "The full-screen UI, steering a run, resuming, parallel agents, skills, and how interactive and scripted runs differ."
+---
+
+## The interface
+
+- **Transcript and side panel.** A scrollable transcript, plus a panel listing files read and written (with lines added and removed), commands, todos and agents.
+- **Diffs you can trust.** Approvals show a syntax-highlighted diff, and what you approve is exactly what gets written.
+- **One-key questions.** When zerd needs a decision, `ask_user` gives you choices you pick with one key instead of prose with lettered options.
+
+## Steering a run
+
+**Ctrl+C interrupts the agent, not the app.** Anything you type while it works steers the next step, and pauses the running checks so your note is handled now instead of after a slow typecheck.
+
+**Everything resumes.** Each turn autosaves. `zerd --continue` picks up where you left off, redrawn, with cost and trace.
+
+## Approval modes
+
+The modes are `on-request`, `auto-edit`, `auto`, `plan`, `never`, `on-failure` and `yolo`. Shift+Tab cycles `on-request`, `auto-edit`, `auto` and `plan`, and never lands on `yolo` by accident. Set any of them with `/approval` or `--approval`.
+
+- `on-request` is the default for interactive sessions.
+- `plan` is read-only and ends in a plan.
+- Scripted runs (one-shot, `--json`, `--rpc`) use `auto-edit` unless you pass `--approval`.
+
+## Parallel agents
+
+Read-only sub-agents run concurrently, and in the background with follow-ups. `parallel_tasks` fans write-capable workers out into separate git worktrees, merges them in dependency order, and flags real conflicts instead of guessing.
+
+<Callout title="When it pays off">
+Only for genuinely independent work, such as three unrelated modules. For one tangled change, a single agent is faster.
+</Callout>
+
+## Skills
+
+19 short playbooks attach by keyword with no model call: `debugging`, `security`, `refactor`, `review-pr` and more. Three are always on: `ponytail` (do the least that fully works), `grounded` and `house-rules`.
+
+## Interactive versus scripted
+
+zerd behaves a little differently when you talk to it and when a script does, because a script has nobody to ask.
+
+| | Interactive | One-shot, `--json`, `--rpc` |
+|---|---|---|
+| Checks on changed files | when you run `/verify` | **automatically** after edits, with repair rounds |
+| Independent diff review | when you ask ("review my changes"). Set `auto_review = true` to review every change | same |
+| Challenger on risky requests | on | off (`--challenge` turns it on) |
+| Learning from corrections | on | off |
+| Approvals | `on-request` | `auto-edit` unless you pass `--approval` |
+| Signature guard, read-before-edit, citation check, per-edit diagnostics, loop detection | always on | always on |
+
+## Automation
+
+- `--json` prints events as JSON lines.
+- `--rpc` takes JSON commands on stdin, for editors.
+- `--report file` writes run metrics.

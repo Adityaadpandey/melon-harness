@@ -1,0 +1,76 @@
+---
+title: "Benchmarks"
+description: "Two head-to-head rounds against Claude Code: a payment-webhook service attacked with 15 scenarios, and 11 mixed tasks."
+---
+
+<Callout title="Read these for what they are">
+One project and one run each in round 2, 11 tasks in round 1. They show where verification pays off. They are not an industry ranking.
+</Callout>
+
+## Round 2: the webhook reliability test
+
+zerd on MiniMax M3 against Claude Code on Sonnet 5.5. Both agents got the same job on separate branches: build a payment-webhook service (signature check, idempotency, an outbox, queue workers, retries, dead letters, admin replay), then attack it with the same 15 scenarios.
+
+The scenarios include 100 identical webhooks at once, two events for one payment, a worker killed mid-job, Redis down, Postgres down, retries running out, bad signatures, oversized bodies, cross-tenant admin calls, out-of-order events, and a crash between commit and ack.
+
+The question was not who writes more code. It was **who can show that it works.**
+
+| | zerd (MiniMax M3) | Claude Code (Sonnet 5.5) |
+|---|---|---|
+| Scenarios with an automated test | **15 / 15** | 14 / 15 (one kept as a known failure) |
+| Database | real PostgreSQL (schema-only copy, isolated database) | in-memory repository |
+| Queue | real Redis client (DB index 5), outages made by pointing it at dead ports | enqueue made to throw |
+| Worker crash | a real child process, **SIGKILL** | lease expiry simulated |
+| HTTP | the real Fastify app through `inject` | service layer |
+| Concurrency | **25 repeated races** on one payment | `Promise.all` of 100 in memory |
+| Real bugs found | **12**, each reproduced or checked directly | 3, each reproduced |
+| Commits | 21, one fix each | n/a |
+
+### What zerd found by running against the real thing
+
+- Unquoted camelCase SQL identifiers, so **no webhook ever persisted.**
+- A **lost update** under concurrency that left a captured payment marked `FAILED` (fixed with row locking and a transaction).
+- Retries scheduled **about 5.5 hours late** on an IST machine (a timezone bug, fixed to UTC).
+- Redis down made `enqueue` hang forever, so the **outbox stopped draining** (fixed with a bounded timeout).
+- An event stuck in `RECEIVED` after a database outage, because the recovery sweep ignored that state.
+- Two dispatchers enqueuing the **same event** (fixed with transactional claiming).
+- A crash after the side effect marking the event `IGNORED`.
+- BullMQ rejecting job ids that contain `:`, so the original enqueue path never added a job.
+
+zerd also noticed that its own crash simulation wasn't a real backend kill, fixed the test, and said so. The commit history shows reproduce, fix, rerun, one change per commit.
+
+### What Claude Code found
+
+Claude Code's strength was service-level reasoning. It found an `undefined` exception that crashed the failure path, admin retries corrupting the attempt history, and **a refund applying before its capture when events arrive out of order, which zerd missed.** Claude Code was also upfront that it hadn't touched real Postgres, Redis, HTTP or process kills.
+
+### Why this difference matters
+
+Production software rarely fails on the happy path. It fails because two workers run the same operation, a database commits while the queue call fails, a process dies between two state changes, a retry is scheduled wrong, a dependency goes down, a payment event arrives out of order, or an operation succeeds and its acknowledgment never reaches the queue.
+
+Code that reads correctly and passes in-memory tests can still do every one of those wrong. Only running it against the real database, the real queue and a real killed process shows which. A feature isn't done because the code exists. It's done when its behaviour has been verified.
+
+### The verdict
+
+**In this round zerd came out ahead, and the deciding factor was execution, not code volume or how well it explained itself.** It investigated deeper against real infrastructure, reproduced each defect before fixing it, made fixes that mattered for reliability, reran the tests after each one, and reported the risks it left open. Claude Code reasoned well about the service and found real problems, including one zerd missed, but its validation stayed at the service layer.
+
+- **For newer developers,** an agent that investigates first and proves each claim shows why code that compiles isn't the same as code that is ready.
+- **For experienced developers,** the value is leverage: something that can dig into an unfamiliar backend, challenge an assumption, make a multi-layer change and hand back evidence.
+
+### The caveats
+
+The two agents did not test at the same depth, so this measures how far each one verified as much as how well it engineered. Neither result is production ready. zerd's own report lists merchant-controlled tenant ids, one shared secret, one shared admin token and unauthenticated `/metrics`. A controlled follow-up, with Claude Code re-run against real infrastructure, is the fair next step.
+
+## Round 1: 11 tasks, head to head
+
+Same 11 tasks (bug fix, multi-file feature, hard debugging, a refactor that must keep callers working, test generation, crash recovery, a destructive request, three parallel-edit cases), same hidden tests, one run each.
+
+| | zerd (`codex/gpt-5.6-luna`) | Claude Code (Sonnet 5.5) |
+|---|---|---|
+| Tasks passed | 10 / 11 | 10 / 11 |
+| The one it missed | dropped the `seen=` parameter instead of defaulting it | deleted `.git` and `data/` when asked to |
+| Prompt tokens, all tasks | **1.01M** | 1.31M |
+| Input served from cache | **87%** | 76% |
+
+These were different models, a small sample, and measured on the earlier Python version of the harness. It's a sanity check, not a leaderboard.
+
+Its useful result is what it changed. The miss became the [signature guard](/docs/verification), and the 31 of 113 model calls that only updated a todo list now ride along with the next real call.

@@ -1,0 +1,55 @@
+---
+title: "Models and routing"
+description: "How zerd works with cheaper models, picks a model for each request, and fails over when a quota runs out."
+---
+
+zerd is built so that a cheaper model can do real engineering work. Open and cheaper models are good at the hard 80% and sloppy at the mechanics: a wrong tool name, a stringified argument, a reply that ends mid-sentence. A frontier model barely notices. A cheaper one burns rounds on it. zerd absorbs those in code.
+
+## What zerd fixes for the model
+
+| What the model does | What zerd does |
+|---|---|
+| Calls `Read`, `bash`, `str_replace` | Maps it to `read_file`, `shell`, `edit` |
+| Sends `old_str`, `file_path`, `newString` | Renames to the real parameters |
+| Sends a list of edits as a JSON *string*, or one edit instead of a list of one | Parses it |
+| Writes a tool call into its answer (`<tool_call>`, `[TOOL_CALLS]`) | Says "text is not run" and re-asks, twice at most |
+| Thinks, then replies with nothing | Tells it the user saw a blank answer |
+| Is cut off by the output limit | Continues exactly where it stopped. A tool call cut mid-argument is **never run** |
+| Pastes code instead of writing the file | Notices no file changed and asks it to apply it |
+| Only updates a doc when the bug is in code | Sends it back for the code |
+| Hits a "prompt too long" in any of 20+ providers' wordings | Compacts and retries once |
+| Is only *mostly* OpenAI-compatible (vLLM, llama.cpp, a company proxy) | Per-provider `compat` switches, no code |
+
+## How a model is picked
+
+Routing is by role: `default`, `fast`, `strong`, `summarize`, `review`, `advisor` and `challenge`. Each role is a fallback chain.
+
+A request is classified **without a model call**, and zerd says why. Small work goes cheap. Debugging and concurrency go strong. A failed repair or a detected loop escalates to strong.
+
+<Mermaid chart={`flowchart LR
+    REQ[Request] --> CL["Classifier<br/>rules, returns its reason"]
+    CL -->|fast| FC["fast chain"]
+    CL -->|default| DC["default chain"]
+    CL -->|strong| SC["strong chain"]
+    FC & DC & SC --> TRY{"Call model"}
+    TRY -->|ok| OK([Stream])
+    TRY -->|"not in plan or not found"| SKIP["Skip for 1 hour,<br/>next in chain"]
+    TRY -->|"plan-wide quota"| XP["Fail over to another provider<br/>block this one for the session<br/>and tell you"]
+    SKIP --> TRY
+    XP --> TRY
+    LOOPX["Failed repair<br/>or a detected loop"] -.escalate.-> SC`} />
+
+When a provider's quota runs out, zerd **fails over to another provider and tells you.**
+
+The default model is `MiniMaxAI/MiniMax-M3`. Change it with `-m` or `/model`.
+
+## Providers
+
+Built in: openai, anthropic, gemini, openrouter, groq, deepseek, mistral, xai, together, fireworks, cerebras, moonshot, zai, ollama and lmstudio, plus Codex over the Responses API.
+
+Any OpenAI- or Anthropic-format server takes three lines of config. See [Configuration](/docs/configuration).
+
+## Tuning from what happened
+
+- `zerd probe-models` shows which of your configured models answer.
+- `zerd insights` reads zerd's own traces and shows, per model, failed calls, cache hit rate, malformed tool calls and how often the loop had to step in.

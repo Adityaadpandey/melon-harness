@@ -1,0 +1,56 @@
+---
+title: "Memory and undo"
+description: "How zerd learns from your corrections without being told, and how to undo anything it did."
+---
+
+## Memory
+
+Memory is what *you* said and what *verified* runs changed. **It happens on its own in an interactive session.** You don't run a command or write a rule.
+
+After each message you send, zerd quietly asks a model, in the background so your reply isn't held up, to read your new message next to the request and answer it follows. If you redirected it ("no, not that", "I meant the header"), confirmed an approach ("yes, exactly like that"), or stated a preference ("always use pnpm"), it writes one rule. A new unrelated task, a question or a thank-you is ignored.
+
+When it learns something you see:
+
+```text
+Learned: use pnpm, never npm, in this repo (saved to AGENTS.md; /forget removes it)
+```
+
+### Where lessons live
+
+The rule lands in your own `AGENTS.md` under `## Learned by zerd`, so you can read it, edit it and commit it, and your team gets it too. It's loaded at the next session as an ordinary instruction, newest first, capped to 30 per repo.
+
+<Mermaid chart={`flowchart LR
+    S1["/learn rule"] --> L
+    S2["You reject an action<br/>and say why"] --> L
+    S3["A correction: 'no, not that'<br/>or 'yes, like that'"] --> L
+    S4["Past Claude Code sessions<br/>learn-import"] --> L
+    L["Lessons<br/>max 30 per repo"] --> AG["Your AGENTS.md<br/>## Learned by zerd"]
+    L --> PR["Next session's prompt"]
+    V["A verified run:<br/>request words to files changed"] --> EH["Edit history"]
+    EH --> SR["search ranks files that fixed<br/>similar requests higher"]`} />
+
+### You stay in control
+
+- `/learn <rule>` adds one by hand. `/forget N` removes one, from `AGENTS.md` too.
+- Duplicates and notes under four words are dropped.
+- Rejecting an action with a reason ("not like that, use the helper in `utils/`") becomes a lesson immediately.
+- **Scripted runs don't learn** (`zerd "..."`, `--json`, `--rpc`), so CI and benchmarks never write into your repo.
+
+### Only verified work is remembered
+
+A run that ends `verified` records its request words and the files it changed, so `search` ranks files that fixed similar requests higher next time. A run that failed teaches the edit history nothing.
+
+### Learn from the past
+
+```bash
+zerd learn-import --repo .
+```
+
+This mines your old Claude Code sessions for rules, and weighs each against what `AGENTS.md` already says so only new ones are added.
+
+## Undo
+
+Before each request, the working tree is recorded as a commit object under `refs/zerd/backup`. That uses no stash and changes no index.
+
+- `/undo` restores what the last request changed and removes the files it created. Files that were untracked before are never deleted.
+- `/rewind` goes back up to 20 requests.
