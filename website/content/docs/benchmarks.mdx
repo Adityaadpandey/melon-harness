@@ -2,16 +2,9 @@
 title: "Benchmarks"
 description: "Two head-to-head rounds against Claude Code: a payment-webhook service attacked with 15 scenarios, and 11 mixed tasks."
 ---
-
-This page compares zerd with Claude Code in two rounds. In the webhook test (round 2), zerd verified its work against real infrastructure and found more bugs. In the 11-task test (round 1), both agents passed the same number of tasks.
-
-<Callout title="Read these for what they are">
-Round 2 is one project and one run each. Round 1 is 11 tasks. They show where verification pays off. They are not an industry ranking.
-</Callout>
+Round 2 was one project and one run each, and round 1 was 11 tasks. Neither is a ranking. In the webhook test (round 2) zerd tested against real infrastructure and found more bugs. In the 11-task test (round 1) both agents passed the same number of tasks.
 
 ## Round 2: the webhook reliability test
-
-**zerd tested against real infrastructure and found more bugs. Claude Code reasoned well about the service but tested in memory.**
 
 zerd ran on MiniMax M3 and Claude Code on Sonnet 5.5. Both got the same job on separate branches: build a payment-webhook service (signature check, idempotency, an outbox, queue workers, retries, dead letters, admin replay). Then both attacked it with the same 15 scenarios.
 
@@ -23,9 +16,7 @@ The scenarios include:
 - bad signatures, oversized bodies, and cross-tenant admin calls
 - out-of-order events
 
-The question was not who writes more code. It was **who can show that it works.**
-
-Read the table row by row. Each row is something one agent tested and the other tested differently.
+Each row below is something one agent tested and the other tested differently.
 
 | | zerd (MiniMax M3) | Claude Code (Sonnet 5.5) |
 |---|---|---|
@@ -40,7 +31,7 @@ Read the table row by row. Each row is something one agent tested and the other 
 
 ### What zerd found
 
-Running against the real database, queue and processes turned up bugs that in-memory tests cannot show:
+Running against the real database, queue and processes turned up bugs that in-memory tests cannot show. The table counts 12; eight are listed here:
 
 - Unquoted camelCase SQL identifiers, so **no webhook ever persisted.**
 - A **lost update** under concurrency that left a captured payment marked `FAILED` (fixed with row locking and a transaction).
@@ -55,30 +46,17 @@ zerd also noticed that its own crash simulation wasn't a real backend kill, fixe
 
 ### What Claude Code found
 
-**Claude Code was strong at reasoning about the service, and it caught one bug zerd missed.**
-
-It found an `undefined` exception that crashed the failure path, and admin retries that corrupted the attempt history. It also found **a refund applying before its capture when events arrive out of order, which zerd missed.** Claude Code was upfront that it hadn't touched real Postgres, Redis, HTTP or process kills.
+Claude Code found an `undefined` exception that crashed the failure path, and admin retries that corrupted the attempt history. It also found **a refund applying before its capture when events arrive out of order, which zerd missed.** It said plainly that it hadn't touched real Postgres, Redis, HTTP or process kills.
 
 ### Why this difference matters
 
-Production software rarely fails on the happy path. It fails when:
+Production webhooks tend to break when two workers run the same operation, when a database commits while the queue call fails, when a process dies between two state changes, when a retry is scheduled wrong, when a dependency goes down, when a payment event arrives out of order, or when an operation succeeds and its acknowledgment never reaches the queue.
 
-- two workers run the same operation
-- a database commits while the queue call fails
-- a process dies between two state changes
-- a retry is scheduled wrong
-- a dependency goes down
-- a payment event arrives out of order
-- an operation succeeds and its acknowledgment never reaches the queue
-
-Code that reads correctly and passes in-memory tests can still get every one of those wrong. Only running it against the real database, the real queue and a real killed process shows which. A feature isn't done because the code exists. It's done when its behaviour has been verified.
+Code that reads correctly and passes in-memory tests can still get any of those wrong. Running against the real database, the real queue and a real killed process is how you find out which.
 
 ### The verdict
 
-**In this round zerd came out ahead, and the deciding factor was execution, not code volume or how well it explained itself.** It investigated deeper against real infrastructure, reproduced each defect before fixing it, made fixes that mattered for reliability, reran the tests after each one, and reported the risks it left open. Claude Code found real problems, including one zerd missed, but its validation stayed at the service layer.
-
-- **For newer developers,** an agent that investigates first and proves each claim shows why code that compiles isn't the same as code that is ready.
-- **For experienced developers,** the value is leverage: something that can dig into an unfamiliar backend, challenge an assumption, make a multi-layer change and hand back evidence.
+In this round zerd came out ahead because of how it tested, not how much code it wrote. It reproduced each defect before fixing it, reran the tests after each fix, and reported the risks it left open. Claude Code found real problems, including one zerd missed, but its validation stayed at the service layer.
 
 ### The caveats
 
@@ -92,11 +70,9 @@ A controlled follow-up, with Claude Code re-run against real infrastructure, is 
 
 ## Round 1: 11 tasks, head to head
 
-**Both agents passed 10 of 11 tasks. zerd used fewer prompt tokens and got more of its input from cache.**
+The 11 tasks were a bug fix, a multi-file feature, hard debugging, a refactor that must keep callers working, test generation, crash recovery, a destructive request, and three parallel-edit cases. Same hidden tests, one run each. Both agents passed 10 of 11.
 
-The 11 tasks were a bug fix, a multi-file feature, hard debugging, a refactor that must keep callers working, test generation, crash recovery, a destructive request, and three parallel-edit cases. Same hidden tests, one run each.
-
-Read the first two rows as a tie, and the last two as the cost of getting there.
+The first two rows tie. The last two are the token cost of getting there.
 
 | | zerd (`codex/gpt-5.6-luna`) | Claude Code (Sonnet 5.5) |
 |---|---|---|
@@ -105,8 +81,8 @@ Read the first two rows as a tie, and the last two as the cost of getting there.
 | Prompt tokens, all tasks | **1.01M** | 1.31M |
 | Input served from cache | **87%** | 76% |
 
-<Callout title="Why this is only a sanity check">
-These were different models, a small sample, and measured on the earlier Python version of the harness. It's not a leaderboard.
+<Callout title="Small sample">
+These were different models, a small sample, and measured on the earlier Python version of the harness. It's a sanity check, not a leaderboard.
 </Callout>
 
-The useful result is what it changed. The miss became the [signature guard](/docs/verification), and the 31 of 113 model calls that only updated a todo list now ride along with the next real call.
+The miss became the [signature guard](/docs/verification), and the 31 of 113 model calls that only updated a todo list now ride along with the next real call.
