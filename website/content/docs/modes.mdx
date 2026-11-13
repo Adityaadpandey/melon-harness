@@ -1,0 +1,63 @@
+---
+title: "Pi mode and full mode"
+description: "zerd starts in a lean mode called pi mode. This page lists exactly what it changes, and how to get the full harness."
+---
+
+zerd runs in one of two modes. After this page you will know which one you are in, what the other adds, and how to switch.
+
+**Pi mode is the default.** It gives the model a small tool set and a short prompt, which suits strong models and keeps every request cheap. **Full mode** adds the harness's extra tools and safeguards.
+
+## Switching
+
+| To do this | Use |
+|---|---|
+| Try full mode for one run | `zerd --no-pi` |
+| Use full mode for good | `pi_mode = false` in `config.toml` |
+| Force pi mode on | `--pi` |
+
+<Callout title="Why two modes">
+A small tool set is faster and cheaper per request, and strong models need little help. Cheaper and open models benefit more from the full harness. If you run one of those, try `--no-pi`.
+</Callout>
+
+## What changes
+
+| | Pi mode (default) | Full mode (`--no-pi`) |
+|---|---|---|
+| System prompt | Short, with the tool list and a few rules | The full prompt with tool guidelines, skills section, security section and repo profile |
+| Tools the model sees | `read_file`, `write_file`, `edit`, `shell`, `grep`, `glob`, `list_dir`, `graph`, `todos`, `ask_user`, `advisor`, and the read-only `codebase_investigator` sub-agent | Everything, including `search`, `outline`, `git`, `web_fetch`, `web_search`, `memory`, `notes`, `use_skill`, `recall_result` and `parallel_tasks` |
+| Citation check on the final answer | Off | On |
+| Scout (search the repo first) | Off | On |
+| `parallel_tasks` tool | Off | On, inside a git repo |
+| Tool output cap | 2,000 lines or 50 KB. Shell output keeps the last lines, and the full text is written to a temp file | 8,000 characters, head and tail kept. The full text is archived and `recall_result` pages it back |
+| `read_file` | Cut at 2,000 lines or 50 KB, continue with `offset` | Whole file if 400 lines or fewer, `symbol=` reads, unchanged lines are not re-sent |
+| Compaction | Only when the next reply would no longer fit in the window | At 80% of the window or 200,000 tokens, whichever is lower |
+| Tidy after a pause | Off | Clears old tool output when the provider's cache has gone cold |
+
+MCP tools you configured always stay available in pi mode.
+
+## What does not change
+
+These work the same in both modes:
+
+- Running checks on changed files, repair rounds, and knowing whether a failure was already there
+- The signature guard and read-before-edit
+- Per-edit diagnostics
+- Independent review, fix runs and the challenger
+- Learning from corrections, `/undo` and `/rewind`
+- Approvals, permission rules, workspace confinement and the OS sandbox
+- Routing, failover, hooks and trust
+- Loop detection and the rounds estimate
+
+## Turning on one thing in pi mode
+
+Pi mode only fills in keys you haven't set. Say you want the citation check but nothing else. Set it yourself:
+
+```toml
+check_references = true
+```
+
+The same goes for `auto_scout`, `enable_parallel_tasks`, `tool_output_max_chars` and `allowed_tools`. An explicit value always wins over the pi default.
+
+## Which pages this affects
+
+Other pages mark a feature **full mode** when it needs `--no-pi` (or its key set by hand) to be active. Anything unmarked works in both modes.
