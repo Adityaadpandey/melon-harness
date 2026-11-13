@@ -71,13 +71,18 @@ export default async function Home() {
           </picture>
         </div>
         <div className="hero-copy">
-          <h1>It killed the worker to see if the retry held.</h1>
-          <p className="lead">zerd is a terminal coding agent that proves its work. It runs your checks, has a second model review the real diff, and tests against the real database instead of a mock.</p>
+          <h1>Stop re-checking your AI’s work.</h1>
+          <p className="lead">zerd tests every change against your real database, has a second model review the diff, and tells you what it could not verify. You merge with proof, not a hunch.</p>
           <CopyCmd cmd={INSTALL} />
           <p className="hero-links">
             <Link href="/docs/try-it-in-two-minutes">Try it on a small change</Link>
-            <a href="#versus">See the Claude Code comparison</a>
+            <a href="#versus">See it against Claude Code</a>
           </p>
+          <ul className="gains">
+            <li><b>Review less.</b> A second model and a verifier read every diff first. You only see findings that held up.</li>
+            <li><b>Catch it before production.</b> Crashes, races and outages are tested on real Postgres and Redis. One lost update would have left a captured payment marked FAILED.</li>
+            <li><b>Keep your options open.</b> Any model, and when one provider’s quota runs out zerd moves to the next.</li>
+          </ul>
         </div>
         <RunLog />
         <p className="hero-rail"><span>One native binary, about 11 MB</span><span>macOS · Linux · Windows</span></p>

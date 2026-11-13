@@ -29,9 +29,9 @@
 .hero { position: relative; height: 100svh; min-height: 680px; max-height: 1000px; --pad: calc(max(0px, (100% - 1200px) / 2) + clamp(20px, 4vw, 40px)); }
 .hero-img { display: none; }
 .hero::before { content: ""; position: absolute; inset: 0; pointer-events: none;
-  background: linear-gradient(90deg, rgba(3, 5, 12, 0.88) 0%, rgba(3, 5, 12, 0.68) 32%, rgba(3, 5, 12, 0) 60%); }
-.hero-copy { position: absolute; left: var(--pad); top: 50%; transform: translateY(-54%); width: min(620px, 50vw); }
-.hero h1 { font-size: clamp(40px, 5.2vw, 80px); line-height: 1.01; letter-spacing: -0.04em; font-weight: 500; margin: 0 0 24px; text-wrap: balance; }
+  background: linear-gradient(90deg, rgba(3, 5, 12, 0.92) 0%, rgba(3, 5, 12, 0.8) 38%, rgba(3, 5, 12, 0.35) 56%, rgba(3, 5, 12, 0) 72%); }
+.hero-copy { position: absolute; left: var(--pad); top: 50%; transform: translateY(-50%); width: min(620px, 50vw); }
+.hero h1 { font-size: clamp(40px, 4.8vw, 74px); line-height: 1.01; letter-spacing: -0.04em; font-weight: 500; margin: 0 0 24px; text-wrap: balance; }
 .hero-rail { position: absolute; left: var(--pad); right: var(--pad); bottom: 0; display: flex; justify-content: space-between; margin: 0; padding: 16px 0 20px; border-top: 1px solid var(--line); font: 12px/1.4 var(--m); color: var(--dim); }
 .hero .rl { position: absolute; right: var(--pad); bottom: 80px; width: min(400px, 34vw); }
 
@@ -40,6 +40,10 @@
 .hero-links { display: flex; flex-wrap: wrap; gap: 8px 26px; margin: 20px 0 0; font-size: 15px; }
 .hero-links a { color: var(--text); text-underline-offset: 4px; }
 .hero-links span { color: var(--dim); }
+.gains { list-style: none; margin: 30px 0 0; padding: 0; display: grid; gap: 12px; max-width: 34em; }
+.hero .lead { color: rgba(255, 255, 255, 0.84); }
+.gains li { padding-left: 16px; border-left: 2px solid var(--lilac); color: rgba(255, 255, 255, 0.76); font-size: 15px; line-height: 1.5; }
+.gains b { color: var(--text); font-weight: 600; }
 .hero-fine { color: var(--dim); font-size: 14px; margin: 12px 0 0; }
 
 .cmd { display: flex; align-items: center; gap: 12px; max-width: 520px; background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 6px 6px 6px 16px; }
