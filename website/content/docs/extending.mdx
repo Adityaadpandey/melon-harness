@@ -3,9 +3,24 @@ title: "Extending zerd"
 description: "MCP servers, hooks, slash commands, project tools, prompts and repo profiles."
 ---
 
+This page lists the ways to add your own behavior to zerd. Pick the one that fits, then drop a file or config entry into your repo.
+
+| I want to... | Use |
+|---|---|
+| Give the model more tools from another program | [MCP](#mcp) |
+| Run my own command at a point in a run | [Hooks](#hooks) |
+| Save a prompt I reuse | [Slash commands](#slash-commands) |
+| Expose a shell command as a tool | [Project tools](#project-tools) |
+| Change zerd's instructions | [Prompt](#prompt) |
+| Set per-project rules | [Repo profiles](#repo-profiles) |
+
+<Callout type="warn" title="Trust">
+A cloned repo's config can't turn on hooks, MCP servers or verify commands until you trust that exact file. See [Safety](/docs/safety).
+</Callout>
+
 ## MCP
 
-stdio and streamable HTTP servers, gated by project trust.
+zerd connects to stdio and streamable HTTP servers. Project trust gates them.
 
 ## Hooks
 
@@ -32,10 +47,6 @@ Each `.zerd/tools/*.toml` becomes a tool that runs a shell command. Arguments ar
 ## Repo profiles
 
 `profiles/<name>.toml` carries per-project instructions, forbidden paths and commands, and verify rules. `profiles/tunyt.toml` is a worked example.
-
-<Callout type="warn" title="Trust">
-A cloned repo's config can't turn on hooks, MCP servers or verify commands until you trust that exact file. See [Safety](/docs/safety).
-</Callout>
 
 ## All slash commands
 
