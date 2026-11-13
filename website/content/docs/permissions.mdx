@@ -1,0 +1,113 @@
+---
+title: "Permissions"
+description: "The approval modes, the allow, deny and ask rules, and how a single tool call ends up approved or refused."
+---
+
+Two things decide whether a tool call runs without asking: the approval mode and your permission rules. The mode is the default. Rules override it for the calls they match.
+
+## Approval modes
+
+Set the mode with `--approval <mode>`, `/approval <mode>`, or `approval = "<mode>"` in config. The default is `on-request`.
+
+| Mode | File edits inside the workspace | Shell commands |
+|---|---|---|
+| `on-request` | Ask | Ask, unless the command is a safe read-only one |
+| `auto-edit` | Allowed | Ask, unless safe read-only |
+| `auto` | Allowed | Allowed, except dangerous ones (refused) and disruptive ones (ask) |
+| `on-failure` | Allowed | Same as `auto` |
+| `never` | Refused | Only safe read-only commands, everything else refused |
+| `plan` | Refused | Only safe read-only commands, everything else refused |
+| `yolo` | Allowed | Allowed, including dangerous ones |
+
+Some rules hold in every mode except `yolo`:
+
+- An edit outside the workspace asks. In `never` it is refused.
+- Dangerous commands are refused outright. These include `rm -rf` on a path, `git reset --hard`, `git push --force`, `git clean -f`, `git branch -D`, `dd if=`, `mkfs`, `curl ... | sh` and `wget ... | sh`.
+- Moving or deleting build output such as `node_modules`, `dist`, `.next`, `target` or `.venv` asks every time. In `never` it is refused. A past "always" does not cover it.
+- `gh`, `curl`, `git push`, `git pull` and `git fetch` run outside the OS sandbox, so they ask every time, one plain command at a time. A past "always" does not cover them either.
+
+"Safe read-only" means things like `ls`, `cat`, `grep`, `git status`, `git diff` and `git log`, joined with pipes or `&&`. Anything with a redirect into a file, `$(...)`, backticks or a background `&` is not safe. The list is in [Safety](/docs/safety), and [Everyday use](/docs/everyday-use) covers switching modes with Shift+Tab.
+
+A one-shot run (`zerd "..."`) has nobody to ask. With no `--approval` given, it starts in `auto-edit`, so edits go through and commands need `--approval auto`. If a call needs approval and nobody can answer, it is refused with a message saying so.
+
+## Rules
+
+Rules use Claude Code's notation: `Tool(specifier)`. Three kinds exist: `deny`, `ask` and `allow`.
+
+| Rule | Matches |
+|---|---|
+| `Bash(git diff:*)` | `git diff`, and any command starting with `git diff ` |
+| `Bash(npm run build)` | Exactly that command |
+| `Bash(npm run *)` | A command matching the wildcard |
+| `Bash` | Every shell command (no specifier means the whole tool) |
+| `Edit(src/**)` | Edits and new files anywhere under `src/` |
+| `Read(.env*)` | Reading, grepping, globbing or listing anything named `.env...` |
+| `WebFetch(domain:docs.python.org)` | That host and its subdomains |
+
+Tool names map to zerd's tools: `Bash` is the shell tool, `Edit` and `Write` cover file writes, `Read` covers reading, grep, glob, listing, search and outline, `WebFetch` and `WebSearch` cover the web tools.
+
+File patterns are relative to the working directory and gitignore-like. `src/**` is everything under `src`. `*.key` matches that name at any depth. `docs/*.md` matches one level only.
+
+For a command with several parts, such as `ls && rm x`, a `deny` or `ask` rule fires if any part matches. An `allow` rule needs every part to match, so `Bash(ls)` does not allow `ls && rm x`.
+
+### Where rules live
+
+A rules file is JSON with three lists:
+
+```json
+{
+  "allow": ["Bash(pnpm test:*)"],
+  "deny":  ["Read(.env*)", "Bash(rm:*)"],
+  "ask":   ["Bash(git push:*)"]
+}
+```
+
+zerd reads these files, loosest first:
+
+1. `~/.zerd/permissions.json`
+2. `.claude/settings.json` in the project
+3. `.claude/settings.local.json` in the project
+4. `.zerd/permissions.json` in the project
+
+The Claude Code files can hold the same lists under a `permissions` key. Claude Code's global settings are not read.
+
+Inside a session, `/permissions` lists the active rules and the mode. `/permissions allow Bash(git diff:*)`, `/permissions deny Read(.env*)` and `/permissions ask Bash(git push:*)` save a rule to the project's `.zerd/permissions.json`, and `/permissions remove <rule>` deletes one from it.
+
+## Precedence
+
+Rules are matched by kind, not by file: a matching `deny` beats a matching `ask`, which beats a matching `allow`, whichever file each came from.
+
+| Rule that matched | Effect |
+|---|---|
+| `deny` | The call is refused before any approval step, in every mode including `yolo` |
+| `ask` | A call the mode would approve now asks you first |
+| `allow` | A call the mode would ask about is approved |
+
+An `allow` never lifts a refusal. Plan mode, dangerous commands and `never` stay refused. So `allow` is for stopping prompts, not for unlocking blocked commands.
+
+## What happens to a call
+
+In order:
+
+1. The name and arguments are checked. Bad ones are sent back to the model to fix.
+2. Built-in guards run: protected paths, forbidden commands and workspace confinement. A hit is reported as blocked by repository rules.
+3. `before_tool` hooks can veto the call.
+4. A matching `deny` rule refuses it.
+5. The mode and any `ask` or `allow` rule decide: run, ask you, or refuse.
+6. Shell commands that pass are scanned and run in the OS sandbox on macOS.
+
+The same path is shown as a diagram in [Safety](/docs/safety).
+
+## On refusal
+
+The model gets a message telling it not to retry or find another route, and the run continues.
+
+- Denied by a rule: it is told which rule fired and to explain to you what it needed.
+- Refused by the mode: in `plan`, it is told nothing may change and to finish with a plan. Otherwise it gets "Operation rejected by safety policy".
+- You answered no at a prompt: it is told the action did not run and not to get the same effect another way. If you typed a reason, that reason goes back with it, and zerd keeps it as a lesson (see [Memory and undo](/docs/memory-and-undo)).
+
+Answering "always" at a prompt stops asking for that kind of command for the rest of the session. For a file edit it switches the mode to `auto-edit`.
+
+## Project config and trust
+
+A cloned repo's `.zerd/config.toml` cannot set `approval` until you trust that exact file with `--trust`. The same goes for `hooks`, `mcp_servers`, `verify_commands` and the sandbox keys. Editing the file revokes the trust. See [Configuration](/docs/configuration) for precedence between config layers.
