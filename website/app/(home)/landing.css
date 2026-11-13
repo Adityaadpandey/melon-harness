@@ -127,7 +127,7 @@
 .asciinema-theme-zerd { --term-color-foreground: #d9dde5; --term-color-background: #0b0e13; }
 .lp .demo .note { margin: 14px 0 0; font-size: 14px; color: var(--dim); }
 
-.install { padding-bottom: 96px; text-align: center; position: relative; }
+.install { padding-bottom: clamp(120px, 14vw, 200px); text-align: center; position: relative; }
 .install::before { content: ""; position: absolute; left: 50%; bottom: -80px; width: min(1300px, 100%); height: 560px; transform: translateX(-50%); z-index: -1; pointer-events: none;
   background: radial-gradient(ellipse 50% 50% at 50% 50%, rgba(255, 214, 10, 0.24), rgba(255, 255, 255, 0.11) 55%, transparent 100%); }
 .install .sec-head { margin-inline: auto; }
@@ -135,7 +135,7 @@
 .install .hero-links { justify-content: center; }
 
 /* footer: a dark card with rounded feet, then a giant wordmark cropped by the bottom of the page */
-.foot-lp { margin-top: clamp(64px, 9vw, 120px); }
+.foot-lp { margin-top: 0; }
 .foot-card { position: relative; z-index: 2; background: #000; border: 1px solid var(--line); border-top: 0; border-radius: 0 0 clamp(28px, 4vw, 48px) clamp(28px, 4vw, 48px); box-shadow: 0 40px 80px -10px rgba(0, 0, 0, 0.9); padding-top: clamp(32px, 4.5vw, 56px); }
 .foot-cta { display: flex; justify-content: center; margin-bottom: clamp(28px, 4.5vw, 64px); }
 .lp .foot-pill { display: inline-flex; align-items: center; padding: 14px 34px; border-radius: 999px; background: #f5f5f5; color: #000; font-weight: 600; font-size: 16px; text-decoration: none; transition: background 0.15s, transform 0.15s; }
