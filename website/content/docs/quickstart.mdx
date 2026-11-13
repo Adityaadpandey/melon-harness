@@ -3,9 +3,7 @@ title: "Quickstart"
 description: "Install zerd, connect a model, and make your first checked change in about two minutes."
 ---
 
-zerd is a coding agent that lives in your terminal. It edits your code, checks its own work, and tells you honestly how the run ended. It is one native binary, so there is no Python or Node to set up first.
-
-By the end of this page you will have installed it, made one change, and undone it.
+zerd is a coding agent for your terminal. It edits your code, checks its own work and reports how the run ended. It is one native binary, so there is no Python or Node to install first.
 
 <Steps>
 <Step>
@@ -31,16 +29,14 @@ cd your-project
 zerd
 ```
 
-The first time, there is no model to talk to yet, so setup starts on its own. It walks you through four things:
+With no model configured yet, setup starts on its own and asks for four things:
 
 1. Where your models come from, and saving the key.
-2. A live test call, so you know the key really works.
+2. A live test call to check the key.
 3. Which model to use.
 4. How often zerd should ask before it acts.
 
-Run it again whenever you like with `zerd setup`.
-
-Your models can come from any of these:
+Run it again any time with `zerd setup`. Models can come from:
 
 - a ChatGPT/Codex login (model ids start with `codex/`)
 - a key for Anthropic, OpenAI, Gemini, OpenRouter, Groq, DeepSeek, Mistral, xAI, Together, Fireworks, Cerebras, Moonshot or Z.ai
@@ -56,13 +52,13 @@ Your models can come from any of these:
 > rename the helper parse_date to parse_iso_date and update its callers
 ```
 
-Read the last line when it finishes. zerd never ends with a bare "done". It always says what was checked:
+Read the last line when it finishes. zerd always ends with a status line that says what was checked:
 
 ```text
 status: verified   checks: 1 passed   review: clean   citations: 4 checked, 0 unverified
 ```
 
-The five possible statuses are explained in [How a run works](/docs/how-a-run-works).
+The five statuses are explained in [How a run works](/docs/how-a-run-works).
 
 </Step>
 <Step>
@@ -73,7 +69,7 @@ The five possible statuses are explained in [How a run works](/docs/how-a-run-wo
 > /undo
 ```
 
-zerd puts back what the last request changed and removes the files it created. Your git history and staging area are left alone, so this is safe to try.
+zerd puts back what the last request changed and removes the files it created. Your git history and staging area are left alone.
 
 </Step>
 </Steps>
@@ -82,7 +78,7 @@ zerd puts back what the last request changed and removes the files it created. Y
 
 The first interactive run in a git repo writes a `.zerd/config.toml` if there isn't one. Every line in it is commented out, so it changes nothing until you edit it.
 
-It lists which model does which job: `fast`, `strong`, `explore`, `summarize`, `review`, `advisor` and `challenge`. To change one, delete the leading `# ` and put in the model you want.
+It lists the model for each job: `fast`, `strong`, `explore`, `summarize`, `review`, `advisor` and `challenge`. To change one, delete the leading `# ` and set the model you want.
 
 In a repo with 15 or more source files it also starts building the [code graph](/docs/code-graph) in the background.
 
