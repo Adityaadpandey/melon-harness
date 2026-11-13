@@ -3,27 +3,23 @@ title: "Windows"
 description: "How zerd runs on Windows 10 and 11, and what differs from macOS and Linux."
 ---
 
-zerd runs natively on Windows 10/11 (x64). This page covers the one thing to install first and the few places it differs from macOS and Linux.
+zerd runs natively on Windows 10/11 (x64). Install [Git for Windows](https://git-scm.com/download/win) first.
 
 ## The shell
 
-Shell commands run in **Git Bash**, so the bash a model writes for macOS and Linux works unchanged. Install [Git for Windows](https://git-scm.com/download/win) first.
-
-<Callout>
-Without Git for Windows, zerd falls back to PowerShell.
-</Callout>
+Shell commands run in Git Bash, so the bash a model writes for macOS and Linux works unchanged. Without Git for Windows, zerd falls back to PowerShell.
 
 ## What differs
 
 The OS sandbox is macOS only. On Windows you have the confined file tools and the shell path scan.
 
-That scan looks for Unix-style paths. So a command naming a `C:\...` path outside the project isn't caught the way `/etc/passwd` is.
+That scan looks for Unix-style paths, so a command naming a `C:\...` path outside the project is not caught the way `/etc/passwd` is.
 
 <Callout type="warn">
 Read shell commands that touch `C:\...` paths before approving them. The path scan will not flag them.
 </Callout>
 
-## Good to know
+## Other notes
 
 - Use Windows Terminal. `ZERD_PLAIN=1` gives the classic scrolling layout.
 - CI builds and tests on Windows, but the Windows test run is reported, not required yet.
