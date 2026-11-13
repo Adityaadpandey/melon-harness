@@ -66,7 +66,7 @@ export default async function Home() {
         <div className="hero-img" aria-hidden="true">
           <picture>
             <source srcSet="/hero/hero.avif" type="image/avif" />
-            <img src="/hero/hero.webp" alt="" width={1672} height={941} fetchPriority="high" decoding="async" />
+            <img src="/hero/hero.webp" alt="" draggable={false} width={1672} height={941} fetchPriority="high" decoding="async" />
           </picture>
         </div>
         <div className="hero-copy">
