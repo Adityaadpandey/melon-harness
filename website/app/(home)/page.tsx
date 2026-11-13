@@ -63,7 +63,13 @@ export default async function Home() {
     <main>
       <JsonLd data={{ "@context": "https://schema.org", "@type": "FAQPage", mainEntity: FAQ.map(([q, a]) => ({ "@type": "Question", name: q, acceptedAnswer: { "@type": "Answer", text: a } })) }} />
 
-      <section className="hero wrap">
+      <section className="hero">
+        <div className="hero-img" aria-hidden="true">
+          <picture>
+            <source srcSet="/hero/hero.avif" type="image/avif" />
+            <img src="/hero/hero.webp" alt="" width={1672} height={941} fetchPriority="high" decoding="async" />
+          </picture>
+        </div>
         <div className="hero-copy">
           <h1>It killed the worker to see if the retry held.</h1>
           <p className="lead">zerd is a terminal coding agent that proves its work. It runs your checks, has a second model review the real diff, and tests against the real database instead of a mock.</p>
@@ -72,11 +78,12 @@ export default async function Home() {
             <Link href="/docs/try-it-in-two-minutes">Try it on a small change</Link>
             <a href="#versus">See the Claude Code comparison</a>
           </p>
-          <p className="hero-fine">One native binary, about 11 MB. macOS, Linux and Windows.</p>
         </div>
         <RunLog />
+        <p className="hero-rail"><span>One native binary, about 11 MB</span><span>macOS · Linux · Windows</span></p>
       </section>
 
+      <div className="after">
       <section className="sec wrap" id="bugs">
         <div className="sec-head">
           <h2>Eight defects a mock would never show you</h2>
@@ -148,6 +155,7 @@ export default async function Home() {
           {rel && <span>v{rel.version}</span>}
         </p>
       </section>
+      </div>
     </main>
   );
 }

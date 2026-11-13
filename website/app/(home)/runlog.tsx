@@ -20,16 +20,15 @@ export default function RunLog() {
         <span className="rl-env">real Postgres · real Redis · SIGKILL</span>
       </figcaption>
       <ol className="rl-body">
-        {ROWS.map(([what, why], i) => (
+        {ROWS.map(([what], i) => (
           <li key={what} className="rl-row" style={{ "--i": i } as React.CSSProperties}>
             <span className="rl-badge" aria-hidden="true"><b className="bad">FAIL</b><b className="ok">PASS</b></span>
             <span className="rl-what">{what}</span>
-            <span className="rl-why">{why}</span>
             <span className="sr-only">: fixed, rerun passes</span>
           </li>
         ))}
       </ol>
-      <p className="rl-foot"><b>Still open, and said so:</b> out-of-order payment events, cross-tenant isolation, graceful shutdown.</p>
+      <p className="rl-foot">8 defects reproduced, fixed and rerun. Still open: out-of-order payments, tenant isolation.</p>
     </figure>
   );
 }
