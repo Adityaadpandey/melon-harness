@@ -437,18 +437,49 @@ flowchart LR
 
 ### It knows how much work a task should take
 
-Before each request the model names how many tool rounds it needs. Afterward that guess is scored (`+10` on target, minus
-points over, `-25` if the hard stop at 3x cut it off) and the last results are shown to it next time. A loop, a repeated
+Before each request the model names how many tool rounds it needs (a round is one turn, however many calls it holds, so
+reading five files at once costs what reading one does). When the request ends, zerd scores the guess and prints it:
+
+```text
+Rounds: 0 used, 12 estimated, +5 points (within the target)
+```
+
+That one is a question answered from what was already in context: no tools needed, so the 12-round guess was padded and
+earned the smaller reward. A tighter guess that lands on target earns `+10`. Overshooting costs a point per tenth over (up to
+-15), and being cut off by the hard stop (3x the guess, never below 25 rounds) costs `-25`, the worst result, because the job
+isn't done. The scores are kept in `calibration.jsonl`, and the last ten results are shown to the model the next time it makes
+a guess ("when you ran over it was by 1.8x on average: lean higher"). There are no weights to train. The model gets feedback on
+its own record, so its estimates drift toward honest and the stop only catches runaways. A loop, a repeated
 action, or an edit that keeps being rewritten triggers a nudge, then escalates to the strong model, then stops instead of
 burning the budget. Out of time or tokens, one last tool-free call turns what it learned into an answer, and any checks still
 run against the tree it left. `agent/ledger.rs`, `context/loop_detector.rs`
 
 ### It remembers only what can't be invented
 
-Memory is what *you* said and what *verified* runs changed. A correction ("no, not that", "yes, exactly like that") becomes a
-lesson written into your own `AGENTS.md` under `## Learned by zerd`, where you can read, edit and commit it. `/forget N` removes
-one. `zerd learn-import --repo .` mines your past Claude Code sessions for rules, weighing each against what `AGENTS.md`
-already says. `agent/learn.rs`
+Memory is what *you* said and what *verified* runs changed. **It happens on its own in an interactive session.** You don't
+run a command or write a rule.
+
+After each message you send, zerd quietly asks a model, in the background so your reply isn't held up, to read your new message
+next to the request and answer it follows. If you redirected it ("no, not that", "I meant the header"), confirmed an approach
+("yes, exactly like that"), or stated a preference ("always use pnpm"), it writes one rule. A new unrelated task, a question or
+a thank-you is ignored. When it learns something you see:
+
+```text
+Learned: use pnpm, never npm, in this repo (saved to AGENTS.md; /forget removes it)
+```
+
+- **Rejecting an action** with a reason ("not like that, use the helper in `utils/`") becomes a lesson immediately.
+- **The rule lands in your own `AGENTS.md`** under `## Learned by zerd`, so you can read it, edit it, commit it, and your team
+  gets it too. It's loaded at the next session as an ordinary instruction, newest first, capped to 30 per repo.
+- **You stay in control:** `/learn <rule>` adds one by hand, `/forget N` removes one (from `AGENTS.md` too). Duplicates and
+  notes under four words are dropped.
+- **Only verified work is remembered.** A run that ends `verified` records its request words and the files it changed, so
+  `search` ranks files that fixed similar requests higher next time. A run that failed teaches the edit history nothing.
+- **Scripted runs don't learn** (`zerd "..."`, `--json`, `--rpc`), so CI and benchmarks never write into your repo.
+- **Learn from the past:** `zerd learn-import --repo .` mines your old Claude Code sessions for rules, and weighs each
+  against what `AGENTS.md` already says so only new ones are added.
+
+`agent/learn.rs`
 
 ```mermaid
 flowchart LR
