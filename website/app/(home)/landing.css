@@ -19,7 +19,8 @@
 .lp .nav nav a:hover { color: var(--text); background: rgba(255, 255, 255, 0.07); }
 .lp .nav .nav-install { text-decoration: none; color: #0a0d16; background: #fff; padding: 8px 18px; border-radius: 999px; font-size: 14.5px; font-weight: 600; transition: background 0.15s; }
 .lp .nav .nav-install:hover { background: var(--accent); }
-.logo-lp { display: inline-flex; align-items: center; gap: 8px; font-weight: 800; font-size: 21px; letter-spacing: -0.04em; text-decoration: none; }
+.logo-lp { display: inline-flex; align-items: baseline; gap: 3px; font-weight: 800; font-size: 21px; letter-spacing: -0.04em; text-decoration: none; }
+.logo-lp .logo-tick { width: 7px; height: 7px; background: var(--accent); display: inline-block; }
 
 /* the artwork lives in the hero only; everything below sits on plain ink */
 .lp > * { position: relative; z-index: 1; }
