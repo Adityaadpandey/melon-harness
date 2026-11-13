@@ -1,0 +1,125 @@
+---
+title: "Skills and agents"
+description: "Playbooks the model can load, reusable slash commands, and the sub-agents zerd can hand work to."
+---
+
+```bash
+mkdir -p .zerd/skills
+```
+
+A skill is a markdown file in that folder. Here is the shape, taken from `skills/debugging.md` in the zerd repo (body shortened):
+
+```markdown
+---
+name: debugging
+description: Reproduce, form one hypothesis, find the root cause; never mask the symptom
+triggers: bug, bugs, error, crash, fails, regression, flaky, stack trace
+---
+# Debugging and fixing
+1. Reproduce first: a failing test, command or request. ...
+2. Read the evidence before theorising. ...
+```
+
+## Skills
+
+The header fields are `name` (required), `description`, `triggers` (comma separated), `canonical` and `always`. A file without a `---` header, or without `name`, is skipped.
+
+| Field | Effect |
+|---|---|
+| `triggers` | Words or phrases. If the request contains one, the skill body is added to that request. Longer phrases score higher, and at most 4 skills are added, within 16,000 characters. |
+| `always: true` | The body goes into the system prompt on every request. The built-in `ponytail` skill works this way. |
+| `canonical` | Path, relative to the repo root, of a longer reference document. |
+
+A skill with no `always` is listed by name and description in the system prompt, and the model can load it with the `use_skill` tool. Called with just a `name` it returns the body. Called with `section`, it returns the part of the `canonical` document whose heading contains that text, and `section: "list"` shows the headings. A section is cut at 14,000 characters.
+
+Already-loaded skills are named rather than pasted again later in the same conversation.
+
+You can also invoke one yourself: typing `/debugging the flaky upload test` loads that skill for the request, whatever the words say. `/skills` lists what is loaded.
+
+### Where skills are read from
+
+Folders are read in this order, and a later skill with the same name replaces an earlier one:
+
+1. `~/.claude/plugins/.../skills` (newest install of each plugin) and `~/.claude/skills`
+2. the `skills` folder that ships with zerd
+3. `~/.pi/agent/skills` and `~/.zerd/skills`
+4. `<profile>/skills`, when a [repo profile](/docs/extending) is active
+5. `.claude/skills` and `.zerd/skills` in the repo
+6. any folders named in the `skill_dirs` setting
+
+Both flat files (`skills/debugging.md`) and folders (`skills/review-pr/SKILL.md`) work. A folder skill that has no `triggers` and is not from a Claude Code folder gets its name and any quoted phrases in its description as triggers. Claude Code skills are listed but never auto-triggered. When a folder skill is loaded, the result starts with its base directory so the model can find files it refers to.
+
+To hide one, put its name in the `disabled_skills` setting. See [configuration](/docs/configuration).
+
+The full prompt that lists skills is used outside pi mode; see [modes](/docs/modes).
+
+## Slash command templates
+
+A markdown file becomes a command named after the file. These folders are read, home first and the repo last:
+
+`~/.pi/agent/prompts`, `~/.zerd/prompts`, `~/.claude/commands`, `~/.zerd/commands`, then `.claude/commands` and `.zerd/commands` in the repo.
+
+```markdown
+---
+description: Review a change for one concern
+---
+Review the uncommitted diff for ${1:-correctness}. Focus on: $@
+```
+
+Save that as `.zerd/commands/review.md` and run `/review concurrency`. The body is sent as your message after arguments are filled in.
+
+| Placeholder | Becomes |
+|---|---|
+| `$1`, `$2` | one argument |
+| `${1:-default}` | the first argument, or the default if there is none |
+| `$@` or `$ARGUMENTS` | all arguments |
+| `${@:2}` | arguments from the second on |
+
+Quote an argument to keep spaces together: `/review "API compatibility"`. A file in a subfolder is named with a colon, so `review/security.md` is `/review:security`. The `description` header, or the first line of the body, is what the command list shows (cut at 100 characters).
+
+A command template is looked up before a skill of the same name.
+
+## Sub-agents
+
+A sub-agent gets a goal, its own fresh context and its own turn and time budget. Its final report is all the parent sees, clipped to 6,000 characters. Each one is a tool named `subagent_<name>` that takes a `goal`, plus two options: `background: true` returns at once and delivers the report when the agent finishes, and `resume` with an earlier agent id continues that agent with a follow-up.
+
+| Name | Tools | Turns | Purpose |
+|---|---|---|---|
+| `codebase_investigator` | read-only: `read_file`, `grep`, `glob`, `list_dir`, `search`, `outline`, `graph`, `git` | 15 | answers where-is-it and how-does-it-work questions with file and line evidence |
+| `planner` | same read-only set | 15 | returns an implementation plan: files, steps, risks, how to verify |
+| `code_reviewer` | read-only, no `search` | 15 | reports verified bugs in a diff, commit or files |
+| `general` | all tools | 25 | a self-contained job such as a second opinion or a bounded fix |
+
+Agents whose tools are all read-only need no approval and can run several at once. `/agents` lists them and any running in the background, and `/agents stop <id>` stops one. The shared cap on concurrent agents comes from `max_parallel_agents` (default 4). A sub-agent cannot start sub-agents. In pi mode only the investigator is offered; see [modes](/docs/modes).
+
+### Add your own agent
+
+Put a markdown file in `.zerd/agents` or `.claude/agents`, in the repo or in your home folder. The repo's files win over home ones, and a file with the same name as a built-in replaces it.
+
+```markdown
+---
+name: migration-checker
+description: Read-only check of a database migration against the models that use it
+tools: Read, Grep, Glob
+maxTurns: 12
+model: haiku
+---
+You review migrations. Open the migration, then find every model and query that touches the changed tables...
+```
+
+- `name` is lowercased and non-alphanumeric characters become `_`. The file needs a non-empty body, which becomes the agent's instructions.
+- `tools` takes Claude Code names (`Read`, `Grep`, `Glob`, `LS`, `Bash`, `Edit`, `Write`, `WebFetch`, `WebSearch`) or zerd names. Leave it out for all tools.
+- `maxTurns` (or `max_turns`) defaults to 20. The timeout is 600 seconds.
+- `model: haiku` runs it on the fast model role. Anything else uses the default role.
+
+## parallel_tasks
+
+`parallel_tasks` runs two or more coding tasks at once, each worker in its own git worktree, then merges them in dependency order and runs the project checks. It is for edits to different files that do not depend on each other. For exploration, use the read-only sub-agents above.
+
+Each task has an `id`, a self-contained `goal`, optional `files` the worker owns and optional `deps` naming tasks that must finish first. You are shown the plan and asked to approve it. Workers then edit freely inside their own worktree, and do not spawn further agents. The result lists each task's status, files that several workers touched, the check results and the integration branch. With `apply` left at its default of true, a clean result is fast-forwarded into your working tree.
+
+The tool is only registered inside a git repo and when `enable_parallel_tasks` is on, which it is by default outside pi mode. At most `max_parallel_agents` workers run at once.
+
+To run your own plan outside a conversation, pass `--graph tasks.json`; see [everyday use](/docs/everyday-use) and [cli](/docs/cli).
+
+Hooks, MCP servers and project tools are covered in [extending zerd](/docs/extending).
