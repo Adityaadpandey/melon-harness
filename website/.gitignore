@@ -4,3 +4,4 @@ next-env.d.ts
 # copied from the repo root by scripts/sync-docs.mjs
 content/
 public/docs/assets/
+*.tsbuildinfo
