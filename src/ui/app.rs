@@ -1103,6 +1103,7 @@ impl Cli {
                     uprintln!("  cache misses: {} ({} tokens re-billed: {})", w["misses"], w["missed_tokens"], w["reasons"].as_array().map(|r| r.iter().filter_map(Value::as_str).collect::<Vec<_>>().join(", ")).unwrap_or_default());
                 }
             }
+            "/layout" => uprintln!("{}", crate::ui::layout::command(&args)),
             "/verbose" => uprintln!("{}", paint(&format!("  output: {}", if self.tui.toggle_quiet() { "quiet" } else { "verbose" }), MUTED)),
             "/challenge" => {
                 if args.is_empty() {

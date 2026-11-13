@@ -262,7 +262,7 @@ impl Screen {
 
     fn side_on(&mut self, cols: usize) -> bool {
         self.side_seen = self.side_seen || self.tui.side_has().iter().any(|b| *b);
-        cols >= MIN_COLUMNS && self.side_seen
+        cols >= MIN_COLUMNS && self.side_seen && super::layout::shown("side")
     }
 
     fn main_width(&mut self, cols: usize) -> usize {
@@ -523,6 +523,9 @@ impl Screen {
             PageDown => self.scroll(-(self.main_rows as isize - 2)),
             Home if ctrl => self.top = Some(0),
             End if ctrl => self.top = None,
+            F(3) => {
+                super::layout::set("side", None);
+            }
             F(2) => {
                 self.mouse_on = !self.mouse_on;
                 self.sel = None;
@@ -704,7 +707,7 @@ impl Screen {
         } else {
             ("drag to copy · /copy all · F2 native select  ".to_string(), fg(FAINT))
         };
-        let right = if !copied && left.chars().count() + right.chars().count() > cols { String::new() } else { right };
+        let right = if !copied && (!super::layout::shown("hints") && self.top.is_none() && self.mouse_on || left.chars().count() + right.chars().count() > cols) { String::new() } else { right };
         let pad = " ".repeat(cols.saturating_sub(left.chars().count() + right.chars().count()).max(1));
         let header = RLine::from(vec![
             sp(bold_fg(MINT), format!("  ({face})")),
@@ -800,7 +803,8 @@ impl Screen {
 
     fn draw_side(&mut self, f: &mut Frame, r: Rect) {
         let data = self.tui.snapshot_side();
-        let has = [!(data.running.is_empty() && data.finished.is_empty()), !data.read.is_empty(), !data.written.is_empty(), !data.commands.is_empty()];
+        let on = |k: &str| super::layout::shown(k);
+        let has = [!(data.running.is_empty() && data.finished.is_empty()) && on("agents"), !data.read.is_empty() && on("read"), !data.written.is_empty() && on("written"), !data.commands.is_empty() && on("commands")];
         let shown: Vec<usize> = (0..4).filter(|k| has[*k]).collect();
         f.render_widget(Paragraph::new("").style(Style::default().bg(hx(BG_PANEL))), r);
         if shown.is_empty() {

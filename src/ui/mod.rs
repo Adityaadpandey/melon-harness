@@ -4,6 +4,7 @@ pub mod app;
 pub mod editor;
 pub mod fullscreen;
 pub mod input;
+pub mod layout;
 pub mod mascot;
 pub mod screen;
 pub mod md;
