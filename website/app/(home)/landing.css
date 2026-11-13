@@ -149,8 +149,8 @@
 .foot-right a { color: var(--dim); text-decoration: none; transition: color 0.15s; }
 .foot-right a:hover { color: var(--text); }
 .foot-right a:last-child { color: var(--text); font-weight: 600; }
-.foot-word { position: relative; z-index: 1; margin-top: -24px; height: clamp(120px, 26vw, 420px); overflow: hidden; display: flex; justify-content: center; align-items: flex-start; user-select: none; }
-.foot-word span { display: block; font: 800 clamp(200px, 44vw, 700px)/0.86 var(--f); letter-spacing: -0.06em; padding-top: clamp(8px, 1.6vw, 24px); white-space: nowrap;
+.foot-word { position: relative; z-index: 1; margin-top: calc(clamp(40px, 6vw, 96px) * -1); height: clamp(150px, 30vw, 480px); overflow: hidden; display: flex; justify-content: center; align-items: flex-start; user-select: none; }
+.foot-word span { display: block; font: 800 clamp(200px, 44vw, 700px)/0.86 var(--f); letter-spacing: -0.085em; padding-top: clamp(8px, 1.6vw, 24px); white-space: nowrap;
   background: linear-gradient(90deg, #ffd60a 0%, #ffe45c 28%, #fffbe6 55%, #ffffff 70%, #ffffff 100%); -webkit-background-clip: text; background-clip: text; color: transparent; }
 
 @media (max-width: 860px) {
