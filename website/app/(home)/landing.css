@@ -35,7 +35,7 @@
   background: linear-gradient(90deg, rgba(0, 0, 0, 0.92) 0%, rgba(0, 0, 0, 0.8) 38%, rgba(0, 0, 0, 0.35) 56%, rgba(0, 0, 0, 0) 72%), linear-gradient(0deg, #000 0%, rgba(0, 0, 0, 0.6) 12%, rgba(0, 0, 0, 0) 38%); }
 .hero-copy, .hero .rl, .hero-rail { z-index: 1; }
 .hero-copy { position: absolute; left: var(--pad); top: 50%; transform: translateY(-50%); width: min(620px, 50vw); }
-.hero h1 { font-size: clamp(40px, 4.8vw, 74px); line-height: 1.01; letter-spacing: -0.04em; font-weight: 500; margin: 0 0 24px; text-wrap: balance; }
+.hero h1 { font-size: clamp(40px, 4.6vw, 68px); line-height: 1.01; letter-spacing: -0.04em; font-weight: 500; margin: 0 0 24px; text-wrap: balance; }
 .hero-rail { position: absolute; left: var(--pad); right: var(--pad); bottom: 0; display: flex; justify-content: space-between; margin: 0; padding: 16px 0 20px; border-top: 1px solid var(--line); font: 12px/1.4 var(--m); color: var(--dim); }
 .hero .rl { position: absolute; right: var(--pad); bottom: 150px; width: min(400px, 34vw); }
 
@@ -44,6 +44,7 @@
     radial-gradient(800px 520px at 2% 30%, rgba(255, 214, 10, 0.045), transparent 70%),
     radial-gradient(900px 520px at 96% 62%, rgba(255, 255, 255, 0.05), transparent 70%),
     radial-gradient(800px 520px at 4% 88%, rgba(255, 214, 10, 0.045), transparent 70%); }
+.eyebrow { font: 600 12.5px/1 var(--m); letter-spacing: 0.12em; text-transform: uppercase; color: var(--accent); margin: 0 0 18px; }
 .lead { color: var(--dim); font-size: 19px; max-width: 34em; margin: 0 0 28px; }
 .hero-links { display: flex; flex-wrap: wrap; gap: 8px 26px; margin: 20px 0 0; font-size: 15px; }
 .hero-links a { color: var(--text); text-underline-offset: 4px; }
@@ -88,8 +89,8 @@
 /* sections */
 .sec { padding-top: clamp(48px, 7vw, 88px); padding-bottom: clamp(24px, 3vw, 40px); }
 .sec-head { max-width: 46em; margin-bottom: 32px; }
-.sec h2 { font-size: clamp(26px, 3.2vw, 38px); line-height: 1.12; letter-spacing: -0.028em; font-weight: 700; margin: 0 0 14px; text-wrap: balance; }
-.sec-head p { color: var(--dim); margin: 0; }
+.sec h2 { font-size: clamp(30px, 3.8vw, 48px); line-height: 1.08; letter-spacing: -0.03em; font-weight: 600; margin: 0 0 14px; text-wrap: balance; }
+.sec-head p:not(.eyebrow) { color: var(--dim); margin: 0; font-size: 18px; max-width: 36em; }
 
 .bugs, .vs { border: 1px solid var(--line); border-radius: 12px; overflow: hidden; background: var(--panel); backdrop-filter: blur(14px); }
 .bug-h, .bug, .vs-h, .vs-r { display: grid; gap: 20px; padding: 13px 20px; font-size: 15px; }
@@ -187,13 +188,13 @@
 /* ---- the proof pipeline: a sticky heading and steps that light up as they reach the middle ---- */
 .story { display: grid; grid-template-columns: minmax(0, 0.8fr) minmax(0, 1fr); gap: clamp(32px, 6vw, 96px); padding-top: clamp(72px, 9vw, 120px); padding-bottom: 40px; }
 .story-side { position: sticky; top: 22vh; align-self: start; }
-.story h2 { font-size: clamp(28px, 3.4vw, 44px); line-height: 1.1; letter-spacing: -0.03em; font-weight: 600; margin: 0 0 16px; text-wrap: balance; }
-.story-side p { color: var(--dim); margin: 0; max-width: 28em; }
+.story h2 { font-size: clamp(30px, 3.8vw, 48px); line-height: 1.08; letter-spacing: -0.03em; font-weight: 600; margin: 0 0 16px; text-wrap: balance; }
+.story-side p:not(.eyebrow) { font-size: 18px; color: var(--dim); margin: 0; max-width: 28em; }
 .story-steps { list-style: none; margin: 0; padding: 0 0 0 34px; position: relative; border-left: 1px solid var(--line); }
 .story-steps li { padding: 0 0 clamp(56px, 12vh, 120px); position: relative; }
 .story-steps li:last-child { padding-bottom: 0; }
 .story-n { position: absolute; left: -34px; top: 2px; width: 14px; height: 14px; margin-left: -7px; border-radius: 50%; background: var(--bg); border: 1px solid var(--dim); font-size: 0; }
-.story-steps h3 { margin: 0 0 8px; font-size: clamp(24px, 2.6vw, 34px); letter-spacing: -0.025em; font-weight: 600; }
+.story-steps h3 { margin: 0 0 8px; font-size: clamp(20px, 2vw, 26px); letter-spacing: -0.025em; font-weight: 600; }
 .story-steps p { margin: 0; color: var(--dim); max-width: 32em; }
 .story-steps code { display: block; margin-top: 14px; padding: 10px 14px; max-width: 32em; border: 1px solid var(--line); border-radius: 8px; background: var(--panel); color: var(--ok); font-size: 13px; }
 

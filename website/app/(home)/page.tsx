@@ -17,12 +17,12 @@ const VERSUS: [string, string, string][] = [
 ];
 
 const PIPE: [string, string, string?][] = [
-  ["Edit", "zerd changes your files."],
-  ["Test", "Runs tests and lint on what changed.", "npx tsc --noEmit   ✓ Ran"],
-  ["Review", "A second AI reads the actual changes."],
-  ["Challenge", "A third pass tries to prove each finding wrong."],
-  ["Verify", "Every file and line it mentions is checked to exist."],
-  ["Report", "What ran, what passed, what is still unverified.", "verified  1 files · 2 checks ok · /undo reverts"],
+  ["It edits", "zerd makes the change in your files."],
+  ["It tests", "Tests and lint run on exactly what changed.", "npx tsc --noEmit   ✓ Ran"],
+  ["A second AI reviews", "A different model reads the real diff, not a summary."],
+  ["A third pass objects", "A verifier tries to prove each finding wrong, so you only see the ones that hold."],
+  ["It checks its own claims", "Every file and line it mentions is looked up on disk. No invented paths."],
+  ["You get the receipt", "What ran, what passed, what is still unverified.", "verified  1 files · 2 checks ok · /undo reverts"],
 ];
 
 const FAQ = [
@@ -47,18 +47,15 @@ export default async function Home() {
           </picture>
         </div>
         <div className="hero-copy">
-          <h1>Stop re-checking your AI’s work.</h1>
-          <p className="lead">zerd is an AI coding agent for your terminal. After every change it checks its own work, and it tells you what it could not verify.</p>
+          <p className="eyebrow">The coding agent that shows its proof</p>
+          <h1>Ship AI-written code without re-checking it.</h1>
+          <p className="lead">Other agents say “done.” zerd shows what it tested, has a second AI review the real changes, and flags anything it couldn’t verify.</p>
           <CopyCmd cmd={INSTALL} />
           <p className="hero-links">
-            <Link href="/docs/try-it-in-two-minutes">Try it on a small change</Link>
-            <a href="#proof">See the proof</a>
+            <Link href="/docs/try-it-in-two-minutes">Try it in two minutes</Link>
+            <a href="#proof">See it beat a mock test</a>
           </p>
-          <ul className="gains">
-            <li><b>Review less.</b> A second AI double-checks the change before you see it.</li>
-            <li><b>Catch bugs early.</b> It tests against a real database, not a fake one.</li>
-            <li><b>Use any model.</b> If one runs out of quota, it switches to the next.</li>
-          </ul>
+          <p className="hero-fine">Free and open source · macOS, Linux, Windows · Claude, GPT, DeepSeek or local models</p>
         </div>
         <RunLog />
       </section>
@@ -67,24 +64,11 @@ export default async function Home() {
       <section className="lift wrap" aria-label="A real recording of zerd">
         <Demo />
       </section>
-      <section className="sec wrap" id="proof">
-        <div className="sec-head">
-          <h2>Same task, tested deeper</h2>
-          <p>We gave zerd and Claude Code the same job: 15 attack scenarios on a payments webhook. zerd found and fixed 8 real bugs. Claude Code found real bugs too, but never ran against real infrastructure.</p>
-        </div>
-        <div className="vs glow" role="table" aria-label="zerd and Claude Code compared">
-          <div className="vs-h" role="row"><span role="columnheader"></span><span role="columnheader">zerd, MiniMax M3</span><span role="columnheader">Claude Code, Sonnet 5.5</span></div>
-          {VERSUS.map(([k, z, c]) => (
-            <div className="vs-r" role="row" key={k}><span role="rowheader">{k}</span><span role="cell" className="yes">{z}</span><span role="cell">{c}</span></div>
-          ))}
-        </div>
-        <p className="caveat">One project, one run each. This shows how deeply each tool verifies, not which model is better.</p>
-      </section>
-
-      <section className="wrap story" id="how">
+      <section className="sec wrap story" id="how">
         <div className="story-side">
-          <h2>It never just says “done”</h2>
-          <p>After every change, zerd runs these six steps and shows you the result.</p>
+          <p className="eyebrow">How it works</p>
+          <h2>Every change comes with receipts</h2>
+          <p>Six steps run on their own after each edit. You read the result, not the whole diff.</p>
         </div>
         <ol className="story-steps">
           {PIPE.map(([t, d, ev], i) => (
@@ -98,10 +82,26 @@ export default async function Home() {
         </ol>
       </section>
 
+      <section className="sec wrap" id="proof">
+        <div className="sec-head">
+          <p className="eyebrow">The proof</p>
+          <h2>It finds what mock tests can’t</h2>
+          <p>Same payments project, 15 attack scenarios. zerd ran them on real Postgres and Redis and fixed 8 real bugs. Claude Code found real bugs too, but never touched real infrastructure.</p>
+        </div>
+        <div className="vs glow" role="table" aria-label="zerd and Claude Code compared">
+          <div className="vs-h" role="row"><span role="columnheader"></span><span role="columnheader">zerd, MiniMax M3</span><span role="columnheader">Claude Code, Sonnet 5.5</span></div>
+          {VERSUS.map(([k, z, c]) => (
+            <div className="vs-r" role="row" key={k}><span role="rowheader">{k}</span><span role="cell" className="yes">{z}</span><span role="cell">{c}</span></div>
+          ))}
+        </div>
+        <p className="caveat">One project, one run each. This shows how deeply each tool verifies, not which model is better.</p>
+      </section>
+
       <section className="sec wrap install" id="install">
         <div className="sec-head">
-          <h2>Try it on a small change</h2>
-          <p>One binary. No runtime.</p>
+          <p className="eyebrow">Get started</p>
+          <h2>Try it on one small change</h2>
+          <p>One binary, no setup, two minutes. If it doesn’t save you review time, /undo puts everything back.</p>
         </div>
         <CopyCmd cmd={INSTALL} />
         <p className="hero-fine">Windows: <code>irm https://zerd.si/install.ps1 | iex</code></p>
