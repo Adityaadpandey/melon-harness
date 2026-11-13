@@ -1,0 +1,178 @@
+---
+title: "Troubleshooting"
+description: "What zerd doctor checks, and the cause and fix for the errors and odd run endings you are most likely to hit."
+---
+
+Run this first when something is off:
+
+```bash
+zerd doctor
+```
+
+It prints one line per check, with a fix on the line below when something is wrong. It exits `1` if anything is blocking and `0` otherwise, so it also works as a CI gate.
+
+## What zerd doctor checks
+
+| Check | What it looks at | If it fails |
+|---|---|---|
+| `model` | Whether the current model has credentials | Run `zerd setup` |
+| `connection` | A live call to the provider that lists its models. For `codex/` models it validates the ChatGPT login instead | Check the key and your network, or run `zerd setup`. For a Codex login, run `codex login` |
+| `git` | `git` is installed | Install git. On Windows, install Git for Windows |
+| `repo` | The folder is a git repo | Warning only. Run `git init`. Without it, checkpoints and diff review are limited |
+| `sandbox` | Whether commands run in the OS sandbox | Warning only. See [Sandbox and approval refusals](#sandbox-and-approval-refusals) |
+| `approval` | The approval mode in effect | Informational |
+| `terminal` | Output is a terminal and at least 80 columns wide | Warning only. Widen the window |
+| `data folder` | zerd can write to its data folder | Fix the permissions, or point `ZERD_DATA_DIR` somewhere writable |
+| `PATH` | `zerd` is on your `PATH` in this shell | Warning only. Add `~/.local/bin` to `PATH` |
+
+A `✗` line blocks and a warning does not. When nothing blocks, the last line reads `Nothing blocking. You're good to go.` Otherwise it tells you to fix the `✗` lines and run the command again.
+
+`connection` is only checked when `model` passes, so fix credentials first.
+
+## No model or a bad key
+
+| What you see | Why | What to do |
+|---|---|---|
+| `No key for groq. Set GROQ_API_KEY, or run /connect groq` | You picked `provider:model` and that provider's key variable is empty | Export the variable named in the message, or run `/connect <provider>` inside a session. The provider table is in [Models and routing](/docs/models) |
+| `No API key found. Set API_KEY for the gateway, or run /connect to use a provider directly (e.g. openai, anthropic, groq, ollama)` | The model id has no known prefix, so it goes through the gateway, and `API_KEY` is empty | Set `API_KEY`, or switch to a `provider:model` id with `/model` |
+| `(the provider rejected the API key: check it is set in the shell you started zerd from, or enter it again with /connect <provider>)` | The provider answered 401 | The variable is often set in a different shell than the one you launched zerd from. Re-enter it with `/connect <provider>` |
+| `Codex login rejected` | The ChatGPT/Codex login expired | Run `codex login` |
+
+Interactive sessions start anyway with a missing key, so `/connect` can fix it from inside. A one-shot run (`zerd "prompt"`), `--json` or `--rpc` treats a missing key as an error and exits with `1` before it starts.
+
+With no model usable on a first launch, setup starts by itself. Set `ZERD_NO_SETUP=1` to stop that.
+
+## Provider errors and failover
+
+zerd announces a fallback and never makes one silently.
+
+| What you see | Why | What to do |
+|---|---|---|
+| `Falling back from <p> to <model> (...)` | The model failed in a way another model in the chain can cover: a rejected key, a model not in your plan, an unknown model, or a server error | Nothing is needed. If it keeps happening, fix the first model's key or id, or remove it from the chain under `[routing]` |
+| `<model> didn't answer (...), trying again (1/N)` | A transient failure such as a rate limit, a timeout or a 5xx. zerd retries the same model first | Wait. When the retries run out, the next model in the chain is tried |
+| `All candidate models failed. Last: ...` | Every model in the role's chain failed | Read the `Last:` part. It is usually a key, a quota or a misspelled model id. The message adds `did you mean: ...?` when it can guess |
+| `No usable model for role 'review' (...)` | The role's chain is empty or every model in it was skipped | Add a model to that role in `[routing]` |
+
+When a plan-wide quota runs out (messages that mention an exhausted quota, insufficient balance or credits, or a 402), zerd fails over to another provider and blocks the exhausted one for the rest of the session. Top up the account or add a second provider to the chain. Routing is described in [Models and routing](/docs/models).
+
+A model that is not in your plan or not found is skipped for an hour, and the next one in the chain is tried.
+
+If `status: failed` appears right after a provider error, see the next section.
+
+## A run ends failed, verification_failed or unverified
+
+The status line at the end of a run says which. All five endings are listed in [How a run works](/docs/how-a-run-works).
+
+### failed
+
+`failed` means an API error, a loop or a deadline. Look just above the status line.
+
+| What you see | Why | What to do |
+|---|---|---|
+| `Same action repeated 3 times` or `Detected repeating cycle of length 2` | The model is stuck calling the same tool, or two tools in turn | zerd nudges it and brings in the strong model. After the third warning the run stops with `Stopped: ...`. Rephrase the request or break it into smaller steps |
+| `Stopped: this change needs approval and the run cannot ask. Re-run with --approval auto-edit (edits) or --approval auto (edits and commands), or start zerd interactively.` | A one-shot, `--json` or `--rpc` run reached an edit that needs approval and nobody can answer | Pass `--approval auto-edit` or `--approval auto`. See [Safety](/docs/safety) |
+| `Time budget reached (...); wrapping up with what is known` | The run hit its time limit | zerd makes one last tool-free call so the work becomes an answer. Ask for a smaller piece, or continue with `--continue` |
+| `Call budget reached (N tool rounds); wrapping up with what is known` | The tool-round limit for the request was hit | Same as above. Limits and how they are set are in [Context and cost](/docs/context-and-cost) |
+| `Token budget reached (...); wrapping up with what is known` | The token budget is spent | Same as above |
+| `Time budget exhausted while waiting for the model` | The model took too long to answer | Retry, or pin a different model with `-m` |
+
+### verification_failed
+
+You will see this in the log first:
+
+```text
+Verification failed (python3 -m pytest ...); repair attempt 1/2
+```
+
+zerd sends the real check output back to the agent for up to 2 repair rounds, then escalates to the strong model. If the checks still fail, the run ends `verification_failed`. The tree is left as the agent last wrote it, so run the failing command yourself to see the error, or `/undo` to put things back. How checks are picked is in [Verification](/docs/verification).
+
+A run that ran out of budget mid-change still runs the checks. If they fail you get `Stopped on the budget and the tree fails <command>; the change is incomplete`.
+
+### unverified
+
+`unverified` means zerd could not prove the change, which is different from failing. There are three causes.
+
+| What you see | Why | What to do |
+|---|---|---|
+| `<command> was already failing before your change; leaving it alone` | The same check fails on the pre-run copy of your files | Fix the broken check yourself, then ask again. The agent is not sent to repair what it did not break |
+| No `Verifying:` line at all | No check applies to the files that changed | Add your own with `verify_commands` or `[[verify_rules]]` in `config.toml` |
+| The run stopped on the token budget and no check failed | It ran out of budget before it could finish proving the change | Ask for the rest as a new request |
+
+## Checks that fail before the agent touched anything
+
+If every run ends `unverified` and the log shows `was already failing before your change; leaving it alone`, the check is broken on your clean tree. Run the command shown in the message in your terminal and fix it there.
+
+Two things make this more likely:
+
+- You have edits in flight. zerd diffs against a snapshot of the pre-run files, so edits you already had count as part of the baseline, not as the agent's work.
+- The check needs something the shell does not have, such as an activated virtualenv or a started service. Every shell call starts fresh in the workspace root, so state from a previous call does not carry over.
+
+An edit is also refused until the file has been read this session. You will see `Read <path> with read_file before editing it, so the change is based on its real contents.` or `<path> changed on disk since you read it.` This is expected after you edit a file in your editor mid-run. The agent re-reads and retries by itself.
+
+## Sandbox and approval refusals
+
+| What you see | Why | What to do |
+|---|---|---|
+| `Blocked by repository rules: path '<p>' is outside the workspace (...)` | A file or command named a path outside the project | Add the folder with `--add-dir <dir>` or `allowed_dirs` |
+| `Blocked by repository rules: path '<p>' matches protected pattern '<pattern>'` | The path is a protected one such as `.env*`, `*.pem`, `*.key` or an SSH key | Intended. Give the agent the values it needs in the prompt instead |
+| `Blocked by repository rules: command matches forbidden pattern '<pattern>'` | A command matched a forbidden pattern, for example a history-destroying git command | Run it yourself if you really mean it |
+| `'<p>' resolves to <real path>, outside the workspace <root>` | A symlink or `..` leads out of the workspace | Point the path at a real location inside the project, or use `--add-dir` |
+| `Denied by the permission rule <rule>. Do not retry it or look for a way around it; tell the user what you needed.` | One of your own deny rules matched | Edit the rule. See [Safety](/docs/safety) |
+| `Operation rejected by safety policy` | The approval mode rejects this kind of action outright | Switch modes with `--approval` or `/plan`. Modes are in [Everyday use](/docs/everyday-use) |
+| `Plan mode is on: nothing may be changed...` | You are in plan mode | Leave it with `/plan` |
+| `The user refused this action, so it did not run...` | You answered no at an approval prompt | The agent stops and waits. Say how to go on, or use the note field when refusing so it knows what to do instead |
+
+Sandbox notes from `zerd doctor`:
+
+- `turned off in config` means `sandbox = "off"` is set. Remove it from `config.toml` to turn the sandbox back on.
+- `not available here (macOS only), approvals and workspace confinement still apply` is expected on Linux and Windows.
+
+Settings in a project's `.zerd/config.toml` such as `hooks`, `mcp_servers`, `verify_commands`, `verify_rules`, `approval`, `allowed_dirs`, `sandbox` and `providers` are ignored until you trust the file. You will see `Ignoring untrusted project settings: <keys> (use --trust to enable)`, or an interactive `Trust it? [y/N]` prompt. Pass `--trust` once, or answer `y`. Editing the file revokes the trust.
+
+## Windows and terminal problems
+
+- Install Git for Windows. Without it `zerd doctor` reports `git` as not installed, and shell commands fall back to PowerShell. More in [Windows](/docs/windows).
+- The OS sandbox is macOS only, so `zerd doctor` shows the `sandbox` line as a warning. That is expected.
+- Use Windows Terminal. If the full-screen layout misbehaves in your terminal or in a pipe, set `ZERD_PLAIN=1` for the classic scrolling layout.
+- `output isn't a terminal, the interactive UI won't start` means stdout is redirected. Run zerd in a real terminal, or pass a prompt for a one-shot run.
+- `<N> columns is narrow, the side panel needs 80+`: widen the window.
+- `` `zerd` isn't on your PATH from this shell ``: add `~/.local/bin` to `PATH`, then open a new shell.
+
+## The code graph does not build
+
+The graph builds in the background when you start an interactive session in a repo with 15 or more source files. Below that it does not start, and the graph tool is not needed for a small repo anyway.
+
+| What you see | Why | What to do |
+|---|---|---|
+| No `indexing the code graph in the background` line on start | Fewer than 15 source files, or the run is one-shot | Ask the graph directly with `zerd graph stats` |
+| `No code graph found (graphify-out/graph.json). Use grep and read_file instead.` | The `path`, `community`, `neighbors` or `stats` action was called with no graphify snapshot. These actions need `graphify-out/graph.json` | Use `callers`, `callees`, `impact`, `trace` or `symbol`, which are computed live from the working tree |
+| `'<name>' means N definitions: ...` | Several symbols share a name | Say which one with `Parent.name` or `file_stem::name` |
+| A folder of examples or test data pollutes the results | It is indexed along with your code | Run `zerd graph` with no action. It asks which folders to hide and saves the answer to `.zerd/graph.toml` |
+
+Calls in the graph are matched by name, so verify a hit with `read_file`. Languages and actions are described in [Context and cost](/docs/context-and-cost).
+
+## Context too large or cost higher than expected
+
+| What you see | Why | What to do |
+|---|---|---|
+| `The model refused the prompt as too long; compacting and retrying` | The provider rejected the request for size | Nothing. zerd compacts and retries once |
+| `Context compacted (recent messages kept)` | The context passed its limit and was summarised | Nothing. The replaced messages are saved under `transcripts/` |
+| `The context fills up again right after each compaction; pruned old tool output instead` | Three compactions in a row refilled at once | Start a fresh request on a narrower task, or read smaller ranges |
+| `Could not summarise the context; pruned old tool output instead` | The summary call failed | Check the `summarize` role's model and key |
+| `<model> is not reusing its prompt cache (3 large calls, 0 cached tokens). Every call re-bills the whole context; a Claude or deepseek model is much cheaper here.` | The provider is not serving a cache, so every call pays for the full context | Switch to a model that caches with `/model` |
+| `Cache had expired: compacted <N>k of context before the first call` | You were idle long enough for the provider's cache to lapse | Nothing. zerd compacted first so the next call re-bills less |
+
+`/cost` shows tokens, cache hit rate and the estimated cost, and says why a cache miss happened. For a dollar figure add a `[pricing]` section, see [Configuration](/docs/configuration). To see per-model failed calls, retries, cache hits and loop interventions over the last week, run `zerd insights`. The estimator and hard stop are described in [Context and cost](/docs/context-and-cost).
+
+## A bad config.toml
+
+| What you see | Why | What to do |
+|---|---|---|
+| `Configuration Error: Invalid configuration: ...` | A value has the wrong type, or the merged config does not load. zerd exits | Fix the key named in the message |
+| `Skipping invalid project config: Invalid TOML in <path>: ...` | `.zerd/config.toml` is not valid TOML. zerd carries on without it | Fix the syntax at the line the message names |
+| `Skipping invalid system config: ...` | The system-level config failed to parse | Same fix |
+| `[providers.<name>] needs a base_url (it is not one of the built-in providers)` | A custom provider has no `base_url` | Add `base_url` to the block |
+| `Working directory does not exist: <path>` | `-c` or `--cwd` points at a missing folder | Correct the path |
+| `--add-dir: <path> is not a directory` | The directory passed to `--add-dir` is wrong | Correct the path |
+
+When settings disagree, flags win, then the project config, then the user config, then defaults. File locations are in [Configuration](/docs/configuration). If a setting seems to be ignored, check whether it is one of the keys that need `--trust` in a project file.
