@@ -1,30 +1,114 @@
 ---
 title: "Models and routing"
-description: "How zerd works with cheaper models, picks a model for each request, and fails over when a quota runs out."
+description: "Connect a provider, pick a model, and see how zerd routes each request, fails over, and keeps cheaper models on track."
 ---
 
-zerd is built so that a cheaper model can do real engineering work. Open and cheaper models are good at the hard 80% and sloppy at the mechanics: a wrong tool name, a stringified argument, a reply that ends mid-sentence. A frontier model barely notices. A cheaper one burns rounds on it. zerd absorbs those in code.
+This page covers how to connect a model, how zerd chooses which one handles a request, and what it does when a provider fails. By the end you can set up your own routing chains.
 
-## What zerd fixes for the model
+## Connecting a model
 
-| What the model does | What zerd does |
+Pick whichever of these suits you:
+
+- **First-run setup** (`zerd setup`) asks, tests the key with a live call, and saves it.
+- **`/connect <provider>`** inside a session asks for the key, saves it, and lists the provider's models. `/connect` alone shows which providers are ready.
+- **Environment variables**, one per provider (see the table below).
+
+<Callout>
+Keys you paste are saved to zerd's own `.env` in the data folder, readable only by you. zerd never opens the `.env` of the repo you are working in.
+</Callout>
+
+## Model ids
+
+| Form | Where it goes |
 |---|---|
-| Calls `Read`, `bash`, `str_replace` | Maps it to `read_file`, `shell`, `edit` |
-| Sends `old_str`, `file_path`, `newString` | Renames to the real parameters |
-| Sends a list of edits as a JSON *string*, or one edit instead of a list of one | Parses it |
-| Writes a tool call into its answer (`<tool_call>`, `[TOOL_CALLS]`) | Says "text is not run" and re-asks, twice at most |
-| Thinks, then replies with nothing | Tells it the user saw a blank answer |
-| Is cut off by the output limit | Continues exactly where it stopped. A tool call cut mid-argument is **never run** |
-| Pastes code instead of writing the file | Notices no file changed and asks it to apply it |
-| Only updates a doc when the bug is in code | Sends it back for the code |
-| Hits a "prompt too long" in any of 20+ providers' wordings | Compacts and retries once |
-| Is only *mostly* OpenAI-compatible (vLLM, llama.cpp, a company proxy) | Per-provider `compat` switches, no code |
+| `groq:llama-3.3-70b` | Straight to that provider. Only the first colon splits, so `ollama:qwen3:8b` keeps its tag |
+| `codex/gpt-5.6-luna` | Your ChatGPT/Codex login, over the Responses API |
+| `MiniMaxAI/MiniMax-M3` (anything else) | The gateway, using `API_KEY` and `BASE_URL` |
 
-## How a model is picked
+The default model is `MiniMaxAI/MiniMax-M3`. Change it with `-m`, `/model`, or `[model] name` in config.
 
-Routing is by role: `default`, `fast`, `strong`, `summarize`, `review`, `advisor` and `challenge`. Each role is a fallback chain.
+For example, `zerd -m groq:llama-3.3-70b` sends everything to Groq for that run.
 
-A request is classified **without a model call**, and zerd says why. Small work goes cheap. Debugging and concurrency go strong. A failed repair or a detected loop escalates to strong.
+## Built-in providers
+
+| Name | Key variable | Format |
+|---|---|---|
+| `openai` | `OPENAI_API_KEY` | OpenAI |
+| `anthropic` | `ANTHROPIC_API_KEY` | Anthropic |
+| `gemini` | `GEMINI_API_KEY` | OpenAI-compatible |
+| `openrouter` | `OPENROUTER_API_KEY` | OpenAI |
+| `groq` | `GROQ_API_KEY` | OpenAI |
+| `deepseek` | `DEEPSEEK_API_KEY` | OpenAI |
+| `mistral` | `MISTRAL_API_KEY` | OpenAI |
+| `xai` | `XAI_API_KEY` | OpenAI |
+| `together` | `TOGETHER_API_KEY` | OpenAI |
+| `fireworks` | `FIREWORKS_API_KEY` | OpenAI |
+| `cerebras` | `CEREBRAS_API_KEY` | OpenAI |
+| `moonshot` | `MOONSHOT_API_KEY` | OpenAI |
+| `zai` | `ZAI_API_KEY` | OpenAI |
+| `ollama` | none, `localhost:11434` | OpenAI |
+| `lmstudio` | none, `localhost:1234` | OpenAI |
+
+### Your own provider
+
+Any server that speaks the OpenAI or Anthropic format needs only a few lines in `config.toml`:
+
+```toml
+[providers.work]
+base_url    = "https://llm.internal.example.com/v1"
+api_key_env = "WORK_LLM_KEY"
+protocol    = "anthropic"            # default is "openai"
+headers     = { "x-team" = "infra" } # optional extra headers
+```
+
+Then use `-m work:some-model`. A provider that is not a built-in needs a `base_url`.
+
+### Servers that are only mostly OpenAI-compatible
+
+vLLM, llama.cpp, SGLang or a company proxy often differ in small ways. Fix that with `compat` switches in config. Each line below is a separate switch, so set only the ones your server needs:
+
+```toml
+[providers.box.compat]
+max_tokens_field     = "max_completion_tokens"   # or "none" to send no cap
+stream_usage         = false                      # the server rejects stream_options
+tool_result_name     = true                       # tool messages must carry the tool's name
+assistant_after_tool = true                       # the chat template refuses a user message right after a tool one
+cache_control        = true                       # a proxy in front of Claude that wants Anthropic cache marks
+extra_body           = { thinking_token_budget = 4096 }   # merged into every request, last, so it wins
+```
+
+## Roles and routing
+
+A role is a job, and each role is a fallback chain. zerd tries the models left to right and moves on when one fails.
+
+| Role | Used for |
+|---|---|
+| `default` | Ordinary requests |
+| `fast` | Small, easy requests |
+| `strong` | Hard requests, and after a repair fails or a loop is detected |
+| `explore` | The scout that searches the repo first |
+| `summarize` | Shrinking old conversation when the context fills up. Falls back to `fast` |
+| `review` | Independent review of changes. A model other than the main one is preferred |
+| `advisor` | A second opinion before big edits. Defaults to `deepseek/deepseek-v4-pro` |
+| `challenge` | Arguing against risky plans |
+
+```toml
+[routing]
+default = ["anthropic:claude-sonnet-5-5", "deepseek:deepseek-chat"]
+fast    = ["groq:llama-3.3-70b"]
+strong  = ["anthropic:claude-opus-5-5"]
+review  = ["openai:gpt-5.6-sol"]
+```
+
+Each request is classified **without a model call**, and zerd tells you why:
+
+- Small work goes to `fast`.
+- Words like debugging, race condition, refactor, migration, security, payments and webhooks send it to `strong`.
+- A failed repair or a detected loop escalates to `strong`.
+
+<Callout>
+Pinning a model with `-m` or `/model` turns routing off for the main model.
+</Callout>
 
 <Mermaid chart={`flowchart LR
     REQ[Request] --> CL["Classifier<br/>rules, returns its reason"]
@@ -39,17 +123,29 @@ A request is classified **without a model call**, and zerd says why. Small work 
     XP --> TRY
     LOOPX["Failed repair<br/>or a detected loop"] -.escalate.-> SC`} />
 
-When a provider's quota runs out, zerd **fails over to another provider and tells you.**
+If a provider's quota runs out, zerd **fails over to another provider and tells you.**
 
-The default model is `MiniMaxAI/MiniMax-M3`. Change it with `-m` or `/model`.
+## What zerd fixes for the model
 
-## Providers
+Open and cheaper models are good at the hard 80% and sloppy at the mechanics. zerd handles the sloppy part in code, so you rarely see it.
 
-Built in: openai, anthropic, gemini, openrouter, groq, deepseek, mistral, xai, together, fireworks, cerebras, moonshot, zai, ollama and lmstudio, plus Codex over the Responses API.
-
-Any OpenAI- or Anthropic-format server takes three lines of config. See [Configuration](/docs/configuration).
+| What the model does | What zerd does |
+|---|---|
+| Calls `Read`, `bash`, `str_replace` | Maps it to `read_file`, `shell`, `edit` |
+| Sends `old_str`, `file_path`, `newString` | Renames to the real parameters |
+| Sends a list of edits as a JSON *string*, or one edit instead of a list of one | Parses it |
+| Writes a tool call into its answer (`<tool_call>`, `[TOOL_CALLS]`) | Says "text is not run" and re-asks, twice at most |
+| Thinks, then replies with nothing | Tells it the user saw a blank answer |
+| Is cut off by the output limit | Continues exactly where it stopped. A tool call cut mid-argument is **never run** |
+| Pastes code instead of writing the file | Notices no file changed and asks it to apply it |
+| Only updates a doc when the bug is in code | Sends it back for the code |
+| Hits a "prompt too long" in any of 20+ providers' wordings | Compacts and retries once |
 
 ## Tuning from what happened
 
-- `zerd probe-models` shows which of your configured models answer.
-- `zerd insights` reads zerd's own traces and shows, per model, failed calls, cache hit rate, malformed tool calls and how often the loop had to step in.
+Four commands show what your models are really doing:
+
+- `zerd probe-models` shows which models your gateway key can call, with latency.
+- `zerd insights` reads zerd's trace files and shows, per model, failed calls, cache hit rate, malformed tool calls and how often the loop had to step in.
+- `/cost` shows the current session. Add a `[pricing]` section to see a dollar estimate (see [Configuration](/docs/configuration)).
+- `/effort low|medium|high|auto` sets reasoning effort for Codex models. Others ignore it.
