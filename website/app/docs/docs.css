@@ -7,7 +7,7 @@
   --color-fd-background: #000;
   --color-fd-foreground: #f5f5f5;
   --color-fd-muted: rgba(255, 255, 255, 0.06);
-  --color-fd-muted-foreground: #a6a6a6;
+  --color-fd-muted-foreground: #bdbdbd;
   --color-fd-popover: #0b0b0b;
   --color-fd-popover-foreground: #f5f5f5;
   --color-fd-card: rgba(255, 255, 255, 0.045);
@@ -25,7 +25,7 @@
   color-scheme: dark;
 }
 /* the site base (globals.css) reads these names */
-html, html.dark { --paper: #000; --paper2: #0b0b0b; --ink: #f5f5f5; --ink2: #a6a6a6; --ink3: #a6a6a6; --rule: rgba(255, 255, 255, 0.12); --cobalt: #ffd60a; }
+html, html.dark { --paper: #000; --paper2: #0b0b0b; --ink: #f5f5f5; --ink2: #bdbdbd; --ink3: #bdbdbd; --rule: rgba(255, 255, 255, 0.12); --cobalt: #ffd60a; }
 
 body { font-family: var(--font-sans), system-ui, sans-serif; font-size: 16px; background: #000; }
 code, pre, kbd { font-family: var(--font-mono), ui-monospace, Menlo, monospace; }
@@ -36,21 +36,27 @@ code, pre, kbd { font-family: var(--font-mono), ui-monospace, Menlo, monospace; 
 #nd-nav { border-bottom: 1px solid var(--color-fd-border); backdrop-filter: none; }
 #nd-sidebar { border-inline-end: 1px solid var(--color-fd-border); }
 
-/* page header: a big title, a readable summary underneath */
-#nd-page h1 { font-size: clamp(32px, 4vw, 46px); line-height: 1.06; letter-spacing: -0.035em; font-weight: 600; background: linear-gradient(180deg, #fff 30%, rgba(255, 255, 255, 0.62)); -webkit-background-clip: text; background-clip: text; color: transparent; }
-#nd-page h1 + p { font-size: 18px; line-height: 1.55; color: var(--color-fd-muted-foreground); max-width: 38em; margin-top: 10px; }
+/* page header: a big title, a readable summary, then a hairline before the body */
+#nd-page h1 { font-size: clamp(34px, 4vw, 48px); line-height: 1.05; letter-spacing: -0.035em; font-weight: 650; background: linear-gradient(180deg, #fff 40%, rgba(255, 255, 255, 0.75)); -webkit-background-clip: text; background-clip: text; color: transparent; }
+#nd-page h1 + p { font-size: 19px; line-height: 1.55; color: #d0d0d0; margin: 12px 0 0; padding-bottom: 22px; border-bottom: 1px solid var(--color-fd-border); }
 
-/* reading body: tighter hierarchy so h2 clearly outranks h3 */
-.prose { --tw-prose-body: #d6d6d6; font-size: 16.5px; line-height: 1.7; }
-.prose h2 { font-size: 26px; letter-spacing: -0.025em; font-weight: 600; margin-top: 2.6em; padding-top: 1.1em; border-top: 1px solid var(--color-fd-border); }
+/* reading body: bigger, brighter text, and headings that clearly step down */
+.prose { --tw-prose-body: #e4e4e4; font-size: 17px; line-height: 1.7; }
+.prose > :first-child { margin-top: 0; }
+.prose p { margin: 1em 0; }
+.prose h2 { font-size: 28px; line-height: 1.2; letter-spacing: -0.025em; font-weight: 650; color: #fff; margin-top: 2.2em; margin-bottom: 0.6em; padding-top: 1.2em; border-top: 1px solid var(--color-fd-border); }
 .prose h2:first-child { border-top: 0; padding-top: 0; margin-top: 1.4em; }
-.prose h3 { font-size: 19px; letter-spacing: -0.015em; font-weight: 600; }
+.prose h3 { font-size: 20px; line-height: 1.3; letter-spacing: -0.015em; font-weight: 600; color: #ffe066; margin-top: 1.9em; margin-bottom: 0.4em; }
+.prose h4 { font-size: 16px; font-weight: 600; color: #fff; margin-top: 1.6em; }
 .prose a:not([data-card]) { color: var(--color-fd-primary); text-underline-offset: 3px; text-decoration-thickness: 1px; }
-.prose strong { color: #fff; }
+.prose strong { color: #fff; font-weight: 600; }
+.prose li { margin: 0.35em 0; }
 .prose li::marker { color: var(--color-fd-primary); }
+.prose blockquote { border-inline-start: 3px solid var(--color-fd-primary); background: var(--color-fd-card); border-radius: 0 10px 10px 0; padding: 10px 18px; color: #e4e4e4; }
 figure.shiki, pre { box-shadow: none !important; }
 
 /* code blocks and inline code */
+figure.shiki pre, figure.shiki code { font-size: 13px; line-height: 1.6; }
 figure.shiki { background: #0b0e13 !important; border: 1px solid var(--color-fd-border); border-radius: 10px; }
 figure.shiki, figure.shiki * { --color-fd-muted-foreground: #7d8594; --color-fd-secondary: rgba(255, 255, 255, 0.05); }
 figure.shiki pre, figure.shiki code { color: #d9dde5; }
@@ -58,8 +64,8 @@ figure.shiki span, figure.shiki code span { color: var(--shiki-dark) !important;
 :not(pre) > code { background: var(--color-fd-muted); border: 1px solid var(--color-fd-border); border-radius: 5px; color: #f5f5f5; }
 
 /* tables read as one panel, not loose lines */
-.prose table { border: 1px solid var(--color-fd-border); border-radius: 10px; border-collapse: separate; border-spacing: 0; overflow: hidden; background: var(--color-fd-card); font-size: 15px; }
-.prose th { background: rgba(255, 255, 255, 0.04); color: var(--color-fd-muted-foreground); font-size: 13px; font-weight: 600; }
+.prose table { border: 1px solid var(--color-fd-border); border-radius: 10px; border-collapse: separate; border-spacing: 0; overflow: hidden; background: var(--color-fd-card); font-size: 15.5px; }
+.prose th { background: rgba(255, 255, 255, 0.06); color: #e0e0e0; font-size: 13.5px; font-weight: 600; }
 .prose td, .prose th { border-bottom: 1px solid var(--color-fd-border); padding: 10px 14px; }
 .prose tr:last-child td { border-bottom: 0; }
 
@@ -92,3 +98,6 @@ figure.shiki span, figure.shiki code span { color: var(--shiki-dark) !important;
 /* sidebar group labels */
 #nd-sidebar p.inline-flex { font: 600 11.5px/1 var(--font-mono), monospace; letter-spacing: 0.12em; text-transform: uppercase; color: var(--color-fd-muted-foreground); }
 #nd-sidebar a[data-active="true"] { color: var(--color-fd-primary); background: rgba(255, 214, 10, 0.08); }
+#nd-sidebar a { font-size: 14.5px; color: #cfcfcf; }
+#nd-sidebar a:hover { color: #fff; }
+#nd-toc a { font-size: 14px; }
