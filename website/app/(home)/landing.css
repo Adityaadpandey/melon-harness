@@ -1,6 +1,6 @@
 /* Landing page. One rule for colour: green, red and amber only ever mean a test result. */
 .lp {
-  --bg: #050505; --panel: rgba(255, 255, 255, 0.045); --line: rgba(255, 255, 255, 0.12); --text: #f5f5f5; --dim: #a6a6a6; --accent: #ffd60a;
+  --bg: #000; --panel: rgba(255, 255, 255, 0.045); --line: rgba(255, 255, 255, 0.12); --text: #f5f5f5; --dim: #a6a6a6; --accent: #ffd60a;
   --ok: #5fdba8; --bad: #ff6a7a; --warn: #ffd60a;
   --ink: var(--text); --ink2: var(--dim); --ink3: var(--dim);
   --f: var(--font-sans), system-ui, sans-serif; --m: var(--font-mono), ui-monospace, Menlo, monospace;
@@ -30,7 +30,7 @@
 .hero-img img { object-fit: cover; object-position: 62% 50%; }
 /* darken the left for the words, melt the foot into the page */
 .hero-img::after { content: ""; position: absolute; inset: 0; pointer-events: none;
-  background: linear-gradient(90deg, rgba(5, 5, 5, 0.92) 0%, rgba(5, 5, 5, 0.8) 38%, rgba(5, 5, 5, 0.35) 56%, rgba(5, 5, 5, 0) 72%), linear-gradient(0deg, #050505 0%, rgba(5, 5, 5, 0) 22%); }
+  background: linear-gradient(90deg, rgba(0, 0, 0, 0.92) 0%, rgba(0, 0, 0, 0.8) 38%, rgba(0, 0, 0, 0.35) 56%, rgba(0, 0, 0, 0) 72%), linear-gradient(0deg, #000 0%, rgba(0, 0, 0, 0) 22%); }
 .hero-copy, .hero .rl, .hero-rail { z-index: 1; }
 .hero-copy { position: absolute; left: var(--pad); top: 50%; transform: translateY(-50%); width: min(620px, 50vw); }
 .hero h1 { font-size: clamp(40px, 4.8vw, 74px); line-height: 1.01; letter-spacing: -0.04em; font-weight: 500; margin: 0 0 24px; text-wrap: balance; }
@@ -137,9 +137,9 @@
 
 /* footer: a dark card with rounded feet, then a giant wordmark cropped by the bottom of the page */
 .foot-lp { margin-top: clamp(64px, 9vw, 120px); }
-.foot-card { position: relative; z-index: 2; background: #121212; border-radius: 0 0 clamp(28px, 4vw, 48px) clamp(28px, 4vw, 48px); box-shadow: 0 40px 80px -10px rgba(0, 0, 0, 0.9); padding-top: clamp(40px, 6vw, 72px); }
+.foot-card { position: relative; z-index: 2; background: #000; border: 1px solid var(--line); border-top: 0; border-radius: 0 0 clamp(28px, 4vw, 48px) clamp(28px, 4vw, 48px); box-shadow: 0 40px 80px -10px rgba(0, 0, 0, 0.9); padding-top: clamp(40px, 6vw, 72px); }
 .foot-cta { display: flex; justify-content: center; margin-bottom: clamp(48px, 8vw, 110px); }
-.lp .foot-pill { display: inline-flex; align-items: center; padding: 14px 34px; border-radius: 999px; background: #f5f5f5; color: #050505; font-weight: 600; font-size: 16px; text-decoration: none; transition: background 0.15s, transform 0.15s; }
+.lp .foot-pill { display: inline-flex; align-items: center; padding: 14px 34px; border-radius: 999px; background: #f5f5f5; color: #000; font-weight: 600; font-size: 16px; text-decoration: none; transition: background 0.15s, transform 0.15s; }
 .lp .foot-pill:hover { background: var(--accent); transform: translateY(-1px); }
 .foot-row { max-width: 1200px; margin: 0 auto; padding: 28px clamp(20px, 4vw, 40px) 34px; border-top: 1px solid var(--line); display: grid; grid-template-columns: 1fr auto 1fr; align-items: center; gap: 24px; }
 .foot-left { display: flex; align-items: center; gap: 16px; color: var(--dim); font: 13px var(--m); }
@@ -151,13 +151,13 @@
 .foot-right a:last-child { color: var(--text); font-weight: 600; }
 .foot-word { position: relative; z-index: 1; margin-top: -24px; height: clamp(120px, 26vw, 420px); overflow: hidden; display: flex; justify-content: center; align-items: flex-start; user-select: none; }
 .foot-word span { display: block; font: 800 clamp(200px, 44vw, 700px)/0.86 var(--f); letter-spacing: -0.06em; padding-top: clamp(8px, 1.6vw, 24px); white-space: nowrap;
-  background: linear-gradient(90deg, #ffd60a 0%, #ffe45c 28%, #fffbe6 55%, #ffffff 75%, #bdbdbd 100%); -webkit-background-clip: text; background-clip: text; color: transparent; }
+  background: linear-gradient(90deg, #ffd60a 0%, #ffe45c 28%, #fffbe6 55%, #ffffff 70%, #ffffff 100%); -webkit-background-clip: text; background-clip: text; color: transparent; }
 
 @media (max-width: 860px) {
   .hero { height: auto; max-height: none; min-height: 0; padding: 0 var(--pad) 28px; --pad: 20px; }
   .hero-img { bottom: auto; height: 64svh; min-height: 420px; }
   .hero-img img { object-position: 60% 50%; }
-  .hero-img::after { background: linear-gradient(0deg, #050505 0%, rgba(5, 5, 5, 0) 45%), linear-gradient(180deg, rgba(5, 5, 5, 0.5) 0%, rgba(5, 5, 5, 0) 20%); }
+  .hero-img::after { background: linear-gradient(0deg, #000 0%, rgba(0, 0, 0, 0) 45%), linear-gradient(180deg, rgba(0, 0, 0, 0.5) 0%, rgba(0, 0, 0, 0) 20%); }
   .hero-copy { position: relative; left: auto; top: auto; transform: none; width: auto; padding-top: max(46svh, 300px); }
   .hero .rl { position: relative; right: auto; bottom: auto; width: auto; margin-top: 32px; }
   .hero-rail { position: relative; left: auto; right: auto; margin-top: 24px; }
