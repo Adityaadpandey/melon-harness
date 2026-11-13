@@ -27,10 +27,12 @@
 .hero { position: relative; height: 100svh; min-height: 680px; max-height: 1000px; --pad: calc(max(0px, (100% - 1200px) / 2) + clamp(20px, 4vw, 40px)); }
 .hero-img { position: absolute; inset: 0; overflow: hidden; z-index: 0; }
 .hero-img picture, .hero-img img { display: block; width: 100%; height: 100%; }
-.hero-img img { object-fit: cover; object-position: 62% 50%; -webkit-user-drag: none; user-select: none; pointer-events: none; }
+.hero-img img { object-fit: cover; object-position: 62% 50%; -webkit-user-drag: none; user-select: none; pointer-events: none;
+  mix-blend-mode: screen;
+  -webkit-mask-image: radial-gradient(ellipse 85% 80% at 62% 45%, #000 40%, transparent 100%); mask-image: radial-gradient(ellipse 85% 80% at 62% 45%, #000 40%, transparent 100%); }
 /* darken the left for the words, melt the foot into the page */
 .hero-img::after { content: ""; position: absolute; inset: 0; pointer-events: none;
-  background: linear-gradient(90deg, rgba(0, 0, 0, 0.92) 0%, rgba(0, 0, 0, 0.8) 38%, rgba(0, 0, 0, 0.35) 56%, rgba(0, 0, 0, 0) 72%), linear-gradient(0deg, #000 0%, rgba(0, 0, 0, 0) 22%); }
+  background: linear-gradient(90deg, rgba(0, 0, 0, 0.92) 0%, rgba(0, 0, 0, 0.8) 38%, rgba(0, 0, 0, 0.35) 56%, rgba(0, 0, 0, 0) 72%), linear-gradient(0deg, #000 0%, rgba(0, 0, 0, 0.6) 12%, rgba(0, 0, 0, 0) 38%); }
 .hero-copy, .hero .rl, .hero-rail { z-index: 1; }
 .hero-copy { position: absolute; left: var(--pad); top: 50%; transform: translateY(-50%); width: min(620px, 50vw); }
 .hero h1 { font-size: clamp(40px, 4.8vw, 74px); line-height: 1.01; letter-spacing: -0.04em; font-weight: 500; margin: 0 0 24px; text-wrap: balance; }
