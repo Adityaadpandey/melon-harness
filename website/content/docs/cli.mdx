@@ -1,0 +1,94 @@
+---
+title: "CLI reference"
+description: "Every flag and subcommand of the zerd command, with exit codes and examples."
+---
+
+This page lists every flag and subcommand of the `zerd` command, so you can script it or find the one option you half remember.
+
+```text
+zerd [OPTIONS] [PROMPT]
+```
+
+With no `PROMPT` you get the interactive session. With a `PROMPT` zerd runs once and exits:
+
+```bash
+zerd                                   # interactive
+zerd "fix the failing test"            # one shot, then exit
+```
+
+## Options
+
+| Flag | What it does |
+|---|---|
+| `-m`, `--model <id>` | Model id. Overrides config. Interactive sessions otherwise start on the model you used last |
+| `--approval <mode>` | `on-request`, `on-failure`, `auto`, `auto-edit`, `never`, `yolo` or `plan`. Overrides config |
+| `--effort <low\|medium\|high>` | Reasoning effort. Codex models only, others ignore it |
+| `-c`, `--cwd <dir>` | Working directory |
+| `--add-dir <dir>` | An extra directory the agent may use besides the working directory. Repeatable |
+| `--trust` | Trust this project's `.zerd/config.toml` (hooks, verify commands, approval) |
+| `--challenge` | Have a second model argue against risky requests first. Always on interactively |
+| `--pi`, `--no-pi` | Pi mode on or off for this run. Overrides `pi_mode` in config. See [Modes](/docs/modes) |
+| `--continue` | Continue the newest saved session that ran in this folder |
+| `--resume <id>` | Continue a saved session by id. The id is shown when you exit, and `/sessions` lists them |
+| `--parallel` | Let a planner split the request into parallel workers. Needs a prompt |
+| `--graph <tasks.json>` | Run a task graph from a JSON file. Implies `--parallel` |
+| `--apply [true\|false]` | After a parallel run, fast-forward the integrated result into a clean checkout. Default true |
+| `--json` | Print agent events as JSON lines instead of the UI. Needs a prompt |
+| `--rpc` | Read JSON commands on stdin and write events on stdout, for editors and scripts |
+| `--report <file>` | Write run metrics as JSON |
+| `-h`, `--help` / `-V`, `--version` | Help and version |
+
+## What scripted runs change
+
+A run is scripted when you pass a prompt, `--json` or `--rpc`. Then:
+
+- There is nobody to ask, so the default approval becomes `auto-edit`. Commands still need `--approval auto`.
+- Checks run automatically after edits, with repair rounds.
+- The challenger is off unless you pass `--challenge`.
+- Learning from corrections is off, so CI never writes into your repo.
+- A missing API key is an error instead of a warning.
+- The "last model" is neither read nor saved.
+
+<Callout title="Exit codes">
+The exit code is `1` when the run ends `failed` or `verification_failed`, or when it could not run at all. Otherwise it is `0`. Use this to fail a CI build.
+</Callout>
+
+## Subcommands
+
+### `zerd setup`
+
+The first-run walkthrough: choose where models come from, save and test a key, choose a model, choose an approval mode. Runs by itself when no model is usable. Set `ZERD_NO_SETUP=1` to stop that.
+
+### `zerd doctor`
+
+One line per thing that can go wrong, each with its fix. Exits 1 if something blocks. See [Troubleshooting](/docs/troubleshooting).
+
+### `zerd graph <action> [name] [to|direction] [depth]`
+
+Ask the code graph directly, to see what the model would see. The actions are: `trace`, `symbol`, `find`, `callers`, `callees`, `impact`, `importers`, `imports`, `blast`, `tests`, `neighbors`, `path`, `community` and `stats`.
+
+```bash
+zerd graph callers parse_invoice
+zerd graph impact charge
+zerd graph stats
+```
+
+With no action, `zerd graph` indexes the repo and asks a few questions about folders to ignore. See [Code graph](/docs/code-graph).
+
+### `zerd learn-import --repo <dir> [--deep] [--reweigh] [--apply]`
+
+Mines your old Claude Code sessions for rules and edit history.
+
+<Callout>
+This is a **dry run unless you pass `--apply`**, so it is safe to try first.
+</Callout>
+
+See [Memory and undo](/docs/memory-and-undo).
+
+### `zerd insights [--days N] [--json]`
+
+Reads zerd's own trace files and reports, per model, failed calls, retries, speed, cache hit rate, bad tool calls and how often the loop had to step in. Defaults to the last 7 days.
+
+### `zerd probe-models [--json <file>]`
+
+Sends a tiny request to every model your gateway key can list and prints status and latency. It uses the gateway's `API_KEY` and `BASE_URL`.
