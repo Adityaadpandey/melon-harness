@@ -15,7 +15,7 @@ export const metadata: Metadata = {
   title: { default: `${NAME}, ${TAGLINE}`, template: `%s · ${NAME}` },
   description: DESCRIPTION,
   applicationName: NAME,
-  keywords: ["coding agent", "terminal coding agent", "AI coding assistant", "CLI", "Claude Code alternative", "code review", "Rust", "open source"],
+  keywords: ["coding agent", "terminal coding agent", "AI coding assistant", "CLI", "Claude Code alternative", "code review", "Rust"],
   alternates: { canonical: "/" },
   openGraph: { type: "website", siteName: NAME, url: SITE, title: `${NAME}, ${TAGLINE}`, description: DESCRIPTION },
   twitter: { card: "summary_large_image", title: `${NAME}, ${TAGLINE}`, description: DESCRIPTION },

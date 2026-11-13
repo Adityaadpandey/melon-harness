@@ -30,7 +30,7 @@ const FAQ = [
   ["How do I install zerd?", "On macOS or Linux run: curl -fsSL https://zerd.si/install.sh | sh. On Windows PowerShell run: irm https://zerd.si/install.ps1 | iex. It is a single binary with no runtime to set up."],
   ["Which models does zerd work with?", "Claude, GPT, Codex, DeepSeek and local models. If a provider's quota runs out, zerd fails over to the next one and tells you."],
   ["How is zerd different from other coding agents?", "Instead of saying “done”, it reports the checks that ran, a review of the actual diff, and which claims were verified. Safety rules are enforced in code (confined tools and an OS sandbox), not just in the prompt."],
-  ["Is zerd free and open source?", "Yes, the code is on GitHub and the license is in the docs."],
+  ["Is zerd free and open source?", "It is free to run, including for commercial use. The source is on GitHub but it is source-available, not open source: you can read it, but not copy, modify or redistribute it."],
 ] as const;
 
 export default async function Home() {
@@ -55,7 +55,7 @@ export default async function Home() {
             <Link href="/docs/install">Try it in two minutes</Link>
             <a href="#proof">See it beat a mock test</a>
           </p>
-          <p className="hero-fine">Free and open source · macOS, Linux, Windows · Claude, GPT, DeepSeek or local models</p>
+          <p className="hero-fine">Free to run · macOS, Linux, Windows · Claude, GPT, DeepSeek or local models</p>
         </div>
         <RunLog />
       </section>
@@ -86,7 +86,7 @@ export default async function Home() {
         <div className="sec-head">
           <p className="eyebrow">The proof</p>
           <h2>It finds what mock tests can’t</h2>
-          <p>Same payments project, 15 attack scenarios. zerd ran them on real Postgres and Redis and fixed 8 real bugs. Claude Code found real bugs too, but never touched real infrastructure.</p>
+          <p>Same payments project, 15 attack scenarios. zerd ran them on real Postgres and Redis and found 12 real bugs. Claude Code found real bugs too, but never touched real infrastructure.</p>
         </div>
         <div className="vs glow" role="table" aria-label="zerd and Claude Code compared">
           <div className="vs-h" role="row"><span role="columnheader"></span><span role="columnheader">zerd, MiniMax M3</span><span role="columnheader">Claude Code, Sonnet 5.5</span></div>
