@@ -85,11 +85,13 @@ export default async function Home() {
           </ul>
         </div>
         <RunLog />
-        <p className="hero-rail"><span>One native binary, about 11 MB</span><span>macOS · Linux · Windows</span></p>
       </section>
 
       <div className="after">
-      <section className="sec wrap" id="bugs">
+      <section className="lift wrap" aria-label="A real recording of zerd">
+        <Demo />
+      </section>
+      <section className="sec wrap split" id="bugs">
         <div className="sec-head">
           <h2>Eight defects a mock would never show you</h2>
           <p>The task: build a webhook system that survives duplicates, races, crashes and outages. zerd ran 15 attack scenarios against a real Postgres and Redis, reproduced each failure, fixed it and ran it again, one commit per fix.</p>
@@ -134,7 +136,7 @@ export default async function Home() {
         </ol>
       </section>
 
-      <section className="sec wrap">
+      <section className="sec wrap split">
         <div className="sec-head">
           <h2>What a team needs from an agent, and the part that answers it</h2>
         </div>
@@ -143,14 +145,6 @@ export default async function Home() {
             <div key={q}><dt>{q}</dt><dd>{a}</dd></div>
           ))}
         </dl>
-      </section>
-
-      <section className="sec wrap">
-        <div className="sec-head">
-          <h2>A real run, not a mock-up</h2>
-          <p>zerd on MiniMax M3 fixing a retry bug in a small repo, then running its own checks.</p>
-        </div>
-        <Demo />
       </section>
 
       <section className="sec wrap install" id="install">

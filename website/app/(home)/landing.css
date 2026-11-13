@@ -35,11 +35,10 @@
 .hero-copy { position: absolute; left: var(--pad); top: 50%; transform: translateY(-50%); width: min(620px, 50vw); }
 .hero h1 { font-size: clamp(40px, 4.8vw, 74px); line-height: 1.01; letter-spacing: -0.04em; font-weight: 500; margin: 0 0 24px; text-wrap: balance; }
 .hero-rail { position: absolute; left: var(--pad); right: var(--pad); bottom: 0; display: flex; justify-content: space-between; margin: 0; padding: 16px 0 20px; border-top: 1px solid var(--line); font: 12px/1.4 var(--m); color: var(--dim); }
-.hero .rl { position: absolute; right: var(--pad); bottom: 80px; width: min(400px, 34vw); }
+.hero .rl { position: absolute; right: var(--pad); bottom: 150px; width: min(400px, 34vw); }
 
 .after { padding-top: 24px;
   background:
-    radial-gradient(900px 520px at 92% 3%, rgba(255, 255, 255, 0.06), transparent 70%),
     radial-gradient(800px 520px at 2% 30%, rgba(255, 214, 10, 0.045), transparent 70%),
     radial-gradient(900px 520px at 96% 62%, rgba(255, 255, 255, 0.05), transparent 70%),
     radial-gradient(800px 520px at 4% 88%, rgba(255, 214, 10, 0.045), transparent 70%); }
@@ -114,7 +113,7 @@
 .lp .win-lights i { width: 11px; height: 11px; border-radius: 50%; background: var(--line); }
 .lp .win-title { flex: 1; text-align: center; padding-right: 56px; }
 .lp .win-end { display: flex; align-items: center; gap: 10px; margin-left: auto; }
-.lp .demo { max-width: 1020px; }
+.lp .demo { max-width: 1100px; margin: 0 auto; }
 .lp .demo .win-end button { background: none; color: var(--text); border: 1px solid var(--line); border-radius: 6px; padding: 4px 11px; font: inherit; font-size: 12px; font-weight: 600; cursor: pointer; }
 .lp .demo .win-end button:hover:not(:disabled) { border-color: var(--dim); }
 .lp .demo .win-end button:disabled { opacity: 0.4; cursor: default; }
@@ -221,3 +220,30 @@
   }
 }
 @media (max-width: 860px) { .story { grid-template-columns: minmax(0, 1fr); } .story-side { position: static; } }
+
+/* the recording rides up over the bottom of the hero, on a soft yellow glow */
+.lp .lift { position: relative; z-index: 3; margin-top: calc(clamp(90px, 11vw, 170px) * -1); padding-bottom: clamp(8px, 2vw, 24px); }
+.lift::before { content: ""; position: absolute; z-index: -1; left: 50%; top: 8%; width: min(1100px, 100%); height: 70%; transform: translateX(-50%); pointer-events: none;
+  background: radial-gradient(ellipse 55% 55% at 50% 50%, rgba(255, 214, 10, 0.2), transparent 75%); filter: blur(30px); }
+.lift .win { box-shadow: 0 50px 100px -30px rgba(0, 0, 0, 0.95), 0 0 0 1px rgba(255, 255, 255, 0.06); border-radius: 14px; }
+.lift .demo .note { text-align: center; margin-top: 18px; }
+@media (prefers-reduced-motion: no-preference) {
+  @supports (animation-timeline: view()) {
+    .lift .win { transform-origin: 50% 100%; animation: settle linear both; animation-timeline: view(); animation-range: entry 0% entry 85%; }
+    @keyframes settle { from { transform: perspective(1500px) rotateX(10deg) scale(0.93); opacity: 0.55; } to { transform: none; opacity: 1; } }
+  }
+}
+@media (max-width: 860px) { .lp .lift { margin-top: 0; } }
+
+/* two-column sections: the heading stays put on the left while the content scrolls past on the right */
+.split { display: grid; grid-template-columns: minmax(0, 0.72fr) minmax(0, 1.28fr); gap: clamp(32px, 5vw, 80px); align-items: start; padding-top: clamp(72px, 9vw, 130px); }
+.split .sec-head { position: sticky; top: 18vh; margin: 0; }
+.split .bug-h, .split .bug { grid-template-columns: 1fr 1fr 0.9fr; gap: 16px; padding-inline: 18px; }
+.split .needs > div { grid-template-columns: 1fr 1.35fr; gap: 24px; }
+.split .needs > div:first-child { border-top: 0; padding-top: 0; }
+/* the comparison table puts zerd's column under a yellow rule */
+.vs-h span:nth-child(2) { color: var(--text); box-shadow: 0 2px 0 var(--accent); width: fit-content; padding-bottom: 6px; }
+@media (max-width: 980px) {
+  .split { grid-template-columns: minmax(0, 1fr); }
+  .split .sec-head { position: static; }
+}
