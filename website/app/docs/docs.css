@@ -90,7 +90,7 @@ figure.shiki span, figure.shiki code span { color: var(--shiki-dark) !important;
 .docs-card:hover { border-color: var(--color-fd-primary); background: rgba(255, 214, 10, 0.06); }
 .docs-card strong { font-weight: 600; font-size: 16px; }
 .docs-card span { font-size: 14.5px; line-height: 1.5; color: var(--color-fd-muted-foreground); }
-.docs-featured { grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); }
+.docs-featured { grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); }
 .docs-featured .docs-card { padding: 22px 24px; border-color: rgba(255, 214, 10, 0.35); }
 .docs-featured .docs-card strong { font-size: 21px; letter-spacing: -0.02em; }
 .docs-featured .docs-card span { font-size: 16px; }
@@ -103,3 +103,4 @@ figure.shiki span, figure.shiki code span { color: var(--shiki-dark) !important;
 #nd-toc a { font-size: 14px; }
 [role="alert"] p { margin: 0; }
 .fd-step h3 { color: #fff; margin-top: 0; }
+.docs-blurb { margin: -4px 0 14px; font-size: 16px; line-height: 1.5; color: #d0d0d0; }
