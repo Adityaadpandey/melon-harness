@@ -23,13 +23,14 @@ function groups() {
 export default function DocsIndex() {
   return (
     <DocsPage toc={[]}>
-      <DocsTitle>Documentation</DocsTitle>
-      <DocsDescription>How zerd works, how to use it, and where it still falls short.</DocsDescription>
+      <p className="docs-lead">Documentation</p>
+      <DocsTitle>Learn zerd</DocsTitle>
+      <DocsDescription>Install it in two minutes, see how it proves its work, and find out where it still falls short.</DocsDescription>
       <DocsBody>
-        {groups().map((g) => (
+        {groups().map((g, i) => (
           <section key={g.title} className="docs-group">
             <h2>{g.title}</h2>
-            <div className="docs-cards">
+            <div className={`docs-cards${i === 0 ? " docs-featured" : ""}`}>
               {g.pages.map((p) => (
                 <Link key={p.url} href={p.url} className="docs-card">
                   <strong>{p.name}</strong>

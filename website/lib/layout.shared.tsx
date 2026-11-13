@@ -3,6 +3,7 @@ import { REPO } from "@/lib/docs";
 
 export function baseOptions(): BaseLayoutProps {
   return {
+    themeSwitch: { enabled: false }, // the whole site is dark, like the landing page
     nav: {
       title: (
         <span className="logo">

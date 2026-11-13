@@ -4,6 +4,7 @@ import { useTheme } from "next-themes";
 
 // Colours match the docs palette, so a diagram reads as part of the page in either theme.
 const THEMES = {
+  // the site is dark only now, the light set stays so a diagram never breaks if that changes
   light: { background: "#f1f2ee", primaryColor: "#e7e9e3", primaryTextColor: "#14171c", primaryBorderColor: "#2241e0", lineColor: "#4a505c", secondaryColor: "#dfe5ff", tertiaryColor: "#f1f2ee", clusterBkg: "#ebece7", clusterBorder: "#d4d7ce", edgeLabelBackground: "#f1f2ee" },
   dark: { background: "#0f1217", primaryColor: "#161a21", primaryTextColor: "#eceef2", primaryBorderColor: "#8da2ff", lineColor: "#a3a9b6", secondaryColor: "#1c2440", tertiaryColor: "#0f1217", clusterBkg: "#12161c", clusterBorder: "#252a34", edgeLabelBackground: "#0f1217" },
 };
