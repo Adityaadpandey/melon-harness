@@ -70,9 +70,9 @@ export default function Demo() {
 
   const controls = (
     <>
-      <span className="live"><i className={playing ? "on" : ""} aria-hidden="true" />{playing ? "recording playing" : "recording paused"}</span>
-      <button type="button" onClick={toggle} disabled={!player.current}>{playing ? "Pause" : "Play"}</button>
-      <button type="button" onClick={replay} disabled={!player.current}>Replay</button>
+      <span className="live"><i className={playing ? "on" : ""} aria-hidden="true" />{playing ? "playing" : "paused"}</span>
+      <button type="button" onClick={toggle} disabled={!player.current}>{playing ? "pause" : "play"}</button>
+      <button type="button" onClick={replay} disabled={!player.current}>replay</button>
     </>
   );
   return (
@@ -82,7 +82,7 @@ export default function Demo() {
           {failed && <p className="stage-fail">The recording could not load. The same run is described below.</p>}
         </div>
       </AppWindow>
-      <p className="note">A real recording: zerd with MiniMax M3 fixing a bug in a small demo repo, then running its own checks with /verify. Not scripted. Long pauses are shortened.</p>
+      <p className="note">Not scripted. zerd, running MiniMax M3, fixes a retry bug in a small Python repo, then runs its own checks with /verify. Long waits are cut.</p>
     </div>
   );
 }

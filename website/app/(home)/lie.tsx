@@ -7,12 +7,12 @@ export default function Lie() {
   return (
     <div className={`lie${on ? " on" : ""}`}>
       <div className="lie-switch" role="radiogroup" aria-label="Who checked this answer">
-        <button type="button" role="radio" aria-checked={!on} onClick={() => setOn(false)}>Most agents</button>
+        <button type="button" role="radio" aria-checked={!on} onClick={() => setOn(false)}>most agents</button>
         <button type="button" role="radio" aria-checked={on} onClick={() => setOn(true)}>zerd</button>
       </div>
 
       <div className="lie-answer" aria-live="polite">
-        <div className="lie-head"><i className={on ? "dot ok" : "dot"} />{on ? "zerd · checked before answering" : "Most agents · nothing checked"}</div>
+        <div className="lie-head"><i className={on ? "dot ok" : "dot"} />{on ? "zerd: checked before answering" : "most agents: nothing checked"}</div>
         <p>
           Fixed the redirect loop. The refresh ran twice in{" "}
           <span className="claim">

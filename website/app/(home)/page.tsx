@@ -1,35 +1,24 @@
 import Link from "next/link";
-import Image from "next/image";
 import { latestRelease } from "@/lib/latest";
 import { JsonLd } from "@/lib/jsonld";
 import Hero from "./hero";
-import Ledger, { type Row } from "./ledger";
 import Install from "./install";
 import Lie from "./lie";
 import Round from "./round";
-import AppWindow from "./window";
-import "./sky.css";
+import Demo from "./demo";
+import "./z.css";
 
-// Each row: what most agents do, zerd's answer as [plain, bold, plain], and one line on how
-// it is enforced. Wording follows the "what makes it different" page and the docs it links to.
-const rows: Row[] = [
-  ["Say “done”", ["Run checks on the changed files, then have a ", "different model review the real diff", ""],
-    "The answer states what was reviewed, how many commits, and every fallback taken."],
-  ["Show every review finding", ["A ", "verifier tries to refute each one", "; high-severity claims are reproduced in a sandbox or capped"],
-    "A claim the verifier refuted, or you called wrong, is remembered per repo for two weeks and shown to the next review."],
-  ["Quietly invent a file or line", ["Every path:line in the answer is ", "checked against your tree", ""],
-    "An always-on rule says to only claim what a tool showed you."],
-  ["Re-send the whole file every turn", ["Remember what was read; send only ", "new lines or a diff", ""],
-    "Incremental reads: only new lines, or a diff since the last copy the model saw."],
-  ["Ask the prompt to behave (“never read .env”)", ["", "Enforce it in code", ": confined tools, a path-scanning shell, an OS sandbox"],
-    "File tools resolve the path first, a shell scan refuses paths outside the workspace before running, and the OS sandbox (macOS sandbox-exec, on by default) backs both up."],
-  ["Die when a provider’s quota runs out", ["", "Fail over", " to another provider and tell you"],
-    "On a plan-wide quota error the failing provider is blocked for the session and the next one is tried; your own model is the last resort."],
-  ["Forget what you told them", ["Turn your corrections into ", "lessons in your own AGENTS.md", ""],
-    "Lessons are written under “Learned by zerd”, so you can review and commit them. /forget N removes one."],
-  ["Break an old caller while “refactoring”", ["", "Signature guard", " sends it back if a public parameter disappeared"],
-    "When checks pass but the diff drops a parameter, reorders positional ones or removes an export, the agent is sent back once to keep old calls working or say why not."],
-];
+// What most agents do, what zerd does instead, and where it is enforced.
+const rows = [
+  ["Say “done”.", "Runs the checks on the changed files, then has a different model read the real diff.", "The answer says what was reviewed, how many commits, and every fallback taken."],
+  ["Show every review finding.", "A verifier tries to refute each finding first. High-severity ones are reproduced in a sandbox or capped.", "A finding the verifier refuted, or you called wrong, is remembered for two weeks and shown to the next review."],
+  ["Invent a file or a line number.", "Looks up every path:line in the answer against your tree.", "An always-on rule says to claim only what a tool showed."],
+  ["Re-send the whole file every turn.", "Sends only the new lines, or a diff since the last copy the model saw.", "Incremental reads."],
+  ["Ask the prompt to behave.", "Enforces it in code: confined file tools, a shell path scan, and an OS sandbox on macOS.", "File tools resolve the path first, the shell scan refuses outside paths before running, and sandbox-exec backs both up."],
+  ["Stop when the quota runs out.", "Fails over to the next provider and tells you.", "The failing provider is blocked for the session. Your own model is the last resort."],
+  ["Forget your corrections.", "Writes them as lessons in your own AGENTS.md.", "They sit under “Learned by zerd” so you can review and commit them. /forget N removes one."],
+  ["Break an old caller while refactoring.", "Sends the change back if a public parameter disappeared.", "If checks pass but the diff drops a parameter, reorders positional ones or removes an export, the agent gets one chance to fix it or say why not."],
+] as const;
 
 // Plain question-and-answer pairs, mirrored as FAQ schema so answer engines can quote them.
 const FAQ = [
@@ -43,105 +32,71 @@ const FAQ = [
 export default async function Home() {
   const rel = await latestRelease();
   return (
-    <main className="sky">
+    <main className="z-main">
       <JsonLd data={{ "@context": "https://schema.org", "@type": "FAQPage", mainEntity: FAQ.map(([q, a]) => ({ "@type": "Question", name: q, acceptedAnswer: { "@type": "Answer", text: a } })) }} />
       <Hero />
-
-      <section className="shot">
-        <div className="wrap shot-grid">
-          <div className="shot-text">
-            <p className="eyebrow">A real session on Tunyt</p>
-            <h2><span className="h-sans">No “done!” at the end.</span> <span className="h-serif">A summary that says what was checked.</span></h2>
-          </div>
-          <div className="shot-win">
-            <AppWindow title="zerd · ~/Devlopment/tunyt">
-              <Image src="/docs/assets/screenshot.png" alt="A zerd session in the terminal, ending in a verified summary" width={3024} height={1780} sizes="(min-width: 1200px) 1100px, 100vw" />
-            </AppWindow>
-          </div>
-        </div>
-      </section>
-
-      <section className="lie-sec">
-        <div className="wrap lie-grid">
-          <div>
-            <p className="eyebrow">Try it</p>
-            <h2><span className="h-sans">Try to make</span> <span className="h-serif">an agent lie.</span></h2>
-            <p className="lie-lead">Same answer from two agents. Flip the switch and see what zerd does to the file path and to the claim that tests passed.</p>
-          </div>
-          <div><Lie /></div>
-        </div>
-      </section>
-
       <Round />
 
-      <section className="wrap ledger">
-        <div>
-          <p className="eyebrow">The difference</p>
-          <h2><span className="h-sans">What zerd does</span> <span className="h-serif">that most agents don’t.</span></h2>
-        </div>
-        <Ledger rows={rows} />
-        <p className="rule">Every token and every tool call should earn its place.</p>
-      </section>
-
-
-      <section className="wrap two">
-        <div>
-          <p className="eyebrow">Safety</p>
-          <h2><span className="h-sans">Two questions,</span> <span className="h-serif">answered in code.</span></h2>
-        </div>
-        <div className="two-cols">
-          <div>
-            <h3>What can it touch?</h3>
-            <p>File tools stay inside the folder you started in; <code>..</code> and symlinks that point out are refused. Shell commands are scanned for paths in your home, <code>/etc</code> or other users’ folders before they run. On macOS an OS sandbox backs both up, and <code>.env</code>, keys and SSH folders are protected by default.</p>
-          </div>
-          <div>
-            <h3>When does it ask?</h3>
-            <p>Seven approval modes, from <code>plan</code> (read-only) to <code>auto</code>, and Shift+Tab cycles them. Approvals show the diff, and what you approve is exactly what gets written. <code>/undo</code> restores what the last request changed.</p>
-          </div>
-        </div>
-        <p className="two-note">The kernel sandbox is macOS only. On Linux and Windows you get the confined tools and the shell scan, not the OS layer.</p>
-      </section>
-
-      <section className="wrap fit">
-        <div>
-          <p className="eyebrow">Fit</p>
-          <h2><span className="h-sans">Use zerd when</span> <span className="h-serif">you want proof.</span></h2>
-        </div>
-        <div className="fit-cols">
-          <ul>
-            <li><strong>You review before you merge.</strong> Run a review on the working tree, a commit, a branch or a PR, and get findings a second agent already tried to refute.</li>
-            <li><strong>Quota runs out mid-task.</strong> zerd tells you, then moves to the next provider.</li>
-            <li><strong>Work splits cleanly.</strong> <code>parallel_tasks</code> gives each worker its own git worktree and merges in dependency order.</li>
-          </ul>
-          <ul className="not">
-            <li>No image input yet.</li>
-            <li>No IDE extension.</li>
-            <li>The 11-task benchmark came from the Python version, before the Rust port.</li>
-            <li>Many defaults are tuned on one repo.</li>
-          </ul>
+      <section className="z-sec">
+        <div className="z-wrap">
+          <h2>A real run.</h2>
+          <p className="z-lead">This is the binary on a small repo, recorded as it happened. Watch the end: it ran its own checks before it called the fix done.</p>
+          <Demo />
         </div>
       </section>
 
-      <section className="end" id="install">
-        {/* the hero artwork again, cropped to its flower field, so the page ends where it began */}
-        <div className="end-bg" aria-hidden="true">
-          <picture>
-            <source srcSet="/hero/hero.avif" type="image/avif" />
-            <img src="/hero/hero.webp" alt="" width={1672} height={941} loading="lazy" decoding="async" />
-          </picture>
-        </div>
-        <div className="wrap end-in">
+      <section className="z-sec">
+        <div className="z-wrap z-split">
           <div>
-            <p className="eyebrow">Install</p>
-            <h2><span className="h-sans">Try it on</span> <span className="h-serif">a small change.</span></h2>
-            <p className="end-lead">One binary, no runtime to set up. Paste this in a terminal.</p>
-            <Install big />
-            <div className="end-cta">
-              <Link className="p-btn" href="/docs/try-it-in-two-minutes">Get started</Link>
-              <Link className="p-ghost" href="/docs/what-makes-it-different">Why zerd</Link>
-              {rel && <span className="ver">v{rel.version}</span>}
-            </div>
+            <h2>Try to make an agent lie.</h2>
+            <p className="z-lead">Same final answer from two agents. Flip the switch and watch what zerd does to the file path and to the claim that tests passed.</p>
           </div>
+          <Lie />
+        </div>
+      </section>
+
+      <section className="z-sec">
+        <div className="z-wrap">
+          <h2>What zerd does that most agents don&rsquo;t.</h2>
+          <dl className="z-rows">
+            {rows.map(([bad, good, how]) => (
+              <div className="z-row" key={bad}>
+                <dt><span>Most agents</span>{bad}</dt>
+                <dd><span>zerd</span>{good}<small>{how}</small></dd>
+              </div>
+            ))}
+          </dl>
+        </div>
+      </section>
+
+      <section className="z-sec">
+        <div className="z-wrap z-split">
+          <div>
+            <h2>What it can touch, and when it asks.</h2>
+            <p className="z-lead">File tools stay inside the folder you started in. <code>..</code> and symlinks that point out are refused. Shell commands are scanned for paths in your home, <code>/etc</code> or other users&rsquo; folders before they run. On macOS an OS sandbox backs that up, and <code>.env</code>, keys and SSH folders are protected by default.</p>
+            <p className="z-lead">There are seven approval modes, from <code>plan</code> (read-only) to <code>auto</code>. Shift+Tab cycles them. Approvals show the diff, and what you approve is what gets written. <code>/undo</code> restores what the last request changed.</p>
+          </div>
+          <div>
+            <h3 className="z-h3">What it doesn&rsquo;t do yet</h3>
+            <ul className="z-no">
+              <li><b>No image input.</b> Text and code only.</li>
+              <li><b>No IDE extension.</b> It is a terminal program.</li>
+              <li><b>No OS sandbox on Linux or Windows.</b> You still get the confined tools and the shell scan.</li>
+              <li><b>No benchmark for this binary.</b> The 11-task run (10 of 11 each, with different models) was done on the Python version, before the Rust port.</li>
+              <li><b>Defaults tuned on one repo.</b> Yours may want different ones.</li>
+            </ul>
+          </div>
+        </div>
+      </section>
+
+      <section className="z-sec z-end" id="install">
+        <div className="z-wrap">
+          <h2>Try it on a small change.</h2>
+          <p className="z-lead">One binary, nothing else to install. Paste this in a terminal, open a repo, and ask for a bug fix.</p>
+          <Install big />
+          <p className="z-meta">
+            <Link href="/docs/try-it-in-two-minutes">Two-minute start</Link> · <Link href="/docs/what-makes-it-different">What makes it different</Link>{rel ? ` · v${rel.version}` : ""}
+          </p>
         </div>
       </section>
     </main>
