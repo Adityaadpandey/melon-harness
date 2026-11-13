@@ -7,46 +7,45 @@ import RunLog from "./runlog";
 
 const INSTALL = "curl -fsSL https://zerd.si/install.sh | sh";
 
-// The eight defects from the webhook benchmark: what broke, why, and what the fix was.
-const BUGS: [string, string, string][] = [
-  ["Webhooks never reached the database", "Unquoted camelCase SQL identifiers made every insert fail.", "Quoted the identifiers."],
-  ["A captured payment ended up FAILED", "Two events for one payment raced and one overwrote the other.", "Row lock inside a transaction. Rerun as 25 repeated races."],
-  ["Retries fired 5.5 hours late", "A timezone slip in the retry timestamp.", "UTC timestamps."],
-  ["The outbox stopped draining", "With Redis down, enqueue hung with no timeout.", "A bounded timeout."],
-  ["Events stuck in RECEIVED forever", "After a database outage the recovery sweep skipped that state.", "The sweep now covers it."],
-  ["The same event queued twice", "Two dispatchers could both claim it.", "Claim inside the transaction."],
-  ["A crash marked work as IGNORED", "A worker killed mid-job left the wrong state behind.", "Fixed the state transition. Tested with a real SIGKILL."],
-  ["BullMQ refused the job", "Job ids containing colons are not accepted.", "Dropped the id scheme."],
+// The eight defects from the webhook benchmark: what broke, and the fix.
+const BUGS: [string, string][] = [
+  ["Webhooks never reached the database", "Quoted the SQL identifiers"],
+  ["A captured payment ended up FAILED", "Row lock, rerun as 25 races"],
+  ["Retries fired 5.5 hours late", "UTC timestamps"],
+  ["The outbox stopped draining", "Bounded timeout"],
+  ["Events stuck in RECEIVED forever", "Recovery sweep covers it"],
+  ["The same event queued twice", "Claim inside the transaction"],
+  ["A crash marked work IGNORED", "Fixed, tested with real SIGKILL"],
+  ["BullMQ refused the job", "Dropped the colon ids"],
 ];
 
 const VERSUS: [string, string, string][] = [
-  ["Real PostgreSQL", "Yes", "No, in-memory repository"],
+  ["Real PostgreSQL", "Yes", "No"],
   ["Real Redis", "Yes", "No"],
-  ["Worker crash", "kill -9 on a child process", "Simulated lease expiry"],
-  ["HTTP layer", "Fastify inject", "Code review for several cases"],
-  ["Concurrent claims", "25 repeated races", "In-memory"],
-  ["Database and queue outages", "Exercised", "Simulated"],
+  ["Worker crash", "kill -9", "Simulated"],
+  ["Concurrent claims", "25 real races", "In-memory"],
+  ["Outages", "Exercised", "Simulated"],
   ["Scenarios", "15 of 15 run", "15 of 15 attempted"],
 ];
 
-// What a team needs from a coding agent, and the part of zerd that answers it.
+// A worry a team has, and the part of zerd that answers it.
 const NEEDS: [string, string][] = [
-  ["I can’t review everything an agent writes.", "A second model reads the real diff, and a verifier tries to refute each finding. A high-severity claim is reproduced in a sandbox or capped at medium."],
-  ["“Tests pass” didn’t cover what it changed.", "Checks run on the changed files. A signature guard sends it back if a public parameter disappeared while the tests stayed green."],
-  ["It invented a file, or a line number.", "Every path and path:line in the answer is looked up in your tree before you see it."],
-  ["Our provider hit its quota mid-task.", "zerd fails over to the next provider and tells you. Claude, GPT, Codex, DeepSeek and local models all work."],
-  ["It must not read .env or touch other repos.", "Enforced in code: confined file tools, a shell that refuses outside paths, and an OS sandbox. Not a line in a prompt."],
-  ["Every session starts from zero.", "Your corrections become lessons in your own AGENTS.md. You can read them, edit them and commit them."],
-  ["The bill grows with the session.", "It remembers what it has read and sends only new lines or a diff. Cache hits were 87% against 76% in the 11-task run."],
+  ["Too much to review", "A second model and a verifier read the diff first."],
+  ["Green tests, broken change", "Checks run on what changed. Dropped parameters get caught."],
+  ["Invented files and lines", "Every cited path is looked up before you see it."],
+  ["Quota ran out mid-task", "Fails over to the next provider."],
+  ["Reads .env, touches other repos", "Blocked in code and by an OS sandbox."],
+  ["Starts from zero every time", "Corrections become lessons in your AGENTS.md."],
+  ["The bill grows", "Sends only new lines. 87% cache hits."],
 ];
 
 const PIPE: [string, string, string?][] = [
   ["Edit", "The agent changes your files."],
-  ["Check", "Typecheck, lint and tests run on the changed files, not the whole repo.", "npx tsc --noEmit   ✓ Ran"],
-  ["Review", "A different model reads the actual diff, in a fresh context with read-only tools."],
-  ["Refute", "A verifier tries to disprove each finding. A confirmed high-severity claim is reproduced in a sandbox, or capped at medium."],
-  ["Look up", "Each cited path and line is checked on disk. A file that does not exist is sent back for correction."],
-  ["Report", "The answer says what ran, what was reviewed and what stayed unverified. /undo reverts it.", "verified  1 files · 2 checks ok · /undo reverts"],
+  ["Check", "Tests and lint on the changed files.", "npx tsc --noEmit   ✓ Ran"],
+  ["Review", "A different model reads the real diff."],
+  ["Refute", "A verifier tries to disprove each finding."],
+  ["Look up", "Every cited file and line is checked on disk."],
+  ["Report", "What ran, what held, what stayed unverified.", "verified  1 files · 2 checks ok · /undo reverts"],
 ];
 
 const FAQ = [
@@ -72,16 +71,16 @@ export default async function Home() {
         </div>
         <div className="hero-copy">
           <h1>Stop re-checking your AI’s work.</h1>
-          <p className="lead">zerd tests every change against your real database, has a second model review the diff, and tells you what it could not verify. You merge with proof, not a hunch.</p>
+          <p className="lead">zerd tests on your real database, has a second model review the diff, and says what it could not verify.</p>
           <CopyCmd cmd={INSTALL} />
           <p className="hero-links">
             <Link href="/docs/try-it-in-two-minutes">Try it on a small change</Link>
             <a href="#versus">See it against Claude Code</a>
           </p>
           <ul className="gains">
-            <li><b>Review less.</b> A second model and a verifier read every diff first. You only see findings that held up.</li>
-            <li><b>Catch it before production.</b> Crashes, races and outages are tested on real Postgres and Redis. One lost update would have left a captured payment marked FAILED.</li>
-            <li><b>Keep your options open.</b> Any model, and when one provider’s quota runs out zerd moves to the next.</li>
+            <li><b>Review less.</b> Findings are argued over before you see them.</li>
+            <li><b>Catch it before production.</b> Crashes and races hit real Postgres and Redis.</li>
+            <li><b>Keep your options open.</b> Any model. Quota out? It switches.</li>
           </ul>
         </div>
         <RunLog />
@@ -93,21 +92,21 @@ export default async function Home() {
       </section>
       <section className="sec wrap split" id="bugs">
         <div className="sec-head">
-          <h2>Eight defects a mock would never show you</h2>
-          <p>The task: build a webhook system that survives duplicates, races, crashes and outages. zerd ran 15 attack scenarios against a real Postgres and Redis, reproduced each failure, fixed it and ran it again, one commit per fix.</p>
+          <h2>Eight bugs a mock never shows</h2>
+          <p>15 attack scenarios on real Postgres and Redis. Each failure reproduced, fixed, rerun.</p>
         </div>
         <div className="bugs glow" role="table" aria-label="Defects found">
-          <div className="bug-h" role="row"><span role="columnheader">What went wrong</span><span role="columnheader">Why</span><span role="columnheader">The fix</span></div>
-          {BUGS.map(([a, b, c]) => (
-            <div className="bug" role="row" key={a}><strong role="cell">{a}</strong><span role="cell">{b}</span><span role="cell" className="fix">{c}</span></div>
+          <div className="bug-h" role="row"><span role="columnheader">What broke</span><span role="columnheader">The fix</span></div>
+          {BUGS.map(([a, c]) => (
+            <div className="bug" role="row" key={a}><strong role="cell">{a}</strong><span role="cell" className="fix">{c}</span></div>
           ))}
         </div>
       </section>
 
       <section className="sec wrap" id="versus">
         <div className="sec-head">
-          <h2>Same task, same requirements. Claude Code stayed in the service layer.</h2>
-          <p>zerd on MiniMax M3 against Claude Code on Sonnet 5.5, each on its own Git branch. Claude Code found real problems too: an exception path that left events stuck in PROCESSING, and a refund that could land before its capture. Its report was honest that it never touched real infrastructure.</p>
+          <h2>Same task. Claude Code stayed in the service layer.</h2>
+          <p>zerd on MiniMax M3 vs Claude Code on Sonnet 5.5. Claude Code found real bugs too, and said plainly it never touched real infrastructure.</p>
         </div>
         <div className="vs glow" role="table" aria-label="zerd and Claude Code compared">
           <div className="vs-h" role="row"><span role="columnheader"></span><span role="columnheader">zerd, MiniMax M3</span><span role="columnheader">Claude Code, Sonnet 5.5</span></div>
@@ -115,14 +114,14 @@ export default async function Home() {
             <div className="vs-r" role="row" key={k}><span role="rowheader">{k}</span><span role="cell" className="yes">{z}</span><span role="cell">{c}</span></div>
           ))}
         </div>
-        <p className="caveat">One project, one set of scenarios, one run each. This shows depth of verification, not a ranking of models. zerd’s own list of open risks is in the log above: tenant isolation, replay auditing, out-of-order payment events.</p>
-        <p className="caveat">On an earlier 11-task set, zerd and Claude Code each passed 10. zerd sent 1.01M prompt tokens against 1.31M, but made 113 model calls against 42 and was slower. Claude Code deleted <code>.git</code> and <code>data/</code> when asked to wipe history. zerd’s miss, a dropped parameter, is what the signature guard now catches.</p>
+        <p className="caveat">One project, one run each. This shows depth of verification, not a model ranking. zerd’s own open risks: tenant isolation, replay auditing, out-of-order payments.</p>
+        <p className="caveat">Earlier 11-task run: 10 of 11 each. zerd used fewer tokens (1.01M vs 1.31M) but made more calls and was slower. Claude Code deleted <code>.git</code> when asked to wipe history.</p>
       </section>
 
       <section className="wrap story">
         <div className="story-side">
-          <h2>It will not call work done until it has evidence</h2>
-          <p>Six steps run after every change. The two that matter most are the ones most agents skip: a verifier that argues against the review, and a lookup that checks every file the answer mentions.</p>
+          <h2>No “done” without evidence</h2>
+          <p>Six steps after every change. Most agents skip Refute and Look up.</p>
         </div>
         <ol className="story-steps">
           {PIPE.map(([t, d, ev], i) => (
@@ -138,7 +137,7 @@ export default async function Home() {
 
       <section className="sec wrap split">
         <div className="sec-head">
-          <h2>What a team needs from an agent, and the part that answers it</h2>
+          <h2>What teams worry about</h2>
         </div>
         <dl className="needs">
           {NEEDS.map(([q, a]) => (
@@ -150,7 +149,7 @@ export default async function Home() {
       <section className="sec wrap install" id="install">
         <div className="sec-head">
           <h2>Try it on a small change</h2>
-          <p>One binary, no runtime. First run walks you through a provider, and <code>zerd doctor</code> tells you what is missing.</p>
+          <p>One binary. No runtime.</p>
         </div>
         <CopyCmd cmd={INSTALL} />
         <p className="hero-fine">Windows: <code>irm https://zerd.si/install.ps1 | iex</code></p>

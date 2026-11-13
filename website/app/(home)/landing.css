@@ -91,7 +91,7 @@
 
 .bugs, .vs { border: 1px solid var(--line); border-radius: 12px; overflow: hidden; background: var(--panel); backdrop-filter: blur(14px); }
 .bug-h, .bug, .vs-h, .vs-r { display: grid; gap: 20px; padding: 13px 20px; font-size: 15px; }
-.bug-h, .bug { grid-template-columns: 1.1fr 1.4fr 1fr; }
+.bug-h, .bug { grid-template-columns: 1.3fr 1fr; }
 .vs-h, .vs-r { grid-template-columns: 0.9fr 1fr 1fr; }
 .bug-h, .vs-h { color: var(--dim); font-size: 13px; font-weight: 600; border-bottom: 1px solid var(--line); }
 .bug + .bug, .vs-r + .vs-r { border-top: 1px solid var(--line); }
@@ -238,7 +238,7 @@
 /* two-column sections: the heading stays put on the left while the content scrolls past on the right */
 .split { display: grid; grid-template-columns: minmax(0, 0.72fr) minmax(0, 1.28fr); gap: clamp(32px, 5vw, 80px); align-items: start; padding-top: clamp(72px, 9vw, 130px); }
 .split .sec-head { position: sticky; top: 18vh; margin: 0; }
-.split .bug-h, .split .bug { grid-template-columns: 1fr 1fr 0.9fr; gap: 16px; padding-inline: 18px; }
+.split .bug-h, .split .bug { grid-template-columns: 1.3fr 1fr; gap: 16px; padding-inline: 18px; }
 .split .needs > div { grid-template-columns: 1fr 1.35fr; gap: 24px; }
 .split .needs > div:first-child { border-top: 0; padding-top: 0; }
 /* the comparison table puts zerd's column under a yellow rule */
