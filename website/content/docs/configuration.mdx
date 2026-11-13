@@ -3,7 +3,11 @@ title: "Configuration"
 description: "Where config, keys and data live, which layer wins, and the flags you will actually use."
 ---
 
-Later layers win: flags, then the project's `.zerd/config.toml`, then the user config, then defaults.
+This page tells you where zerd keeps its settings, which one wins when they disagree, and how to set up your own model routing.
+
+<Callout title="Which setting wins">
+Later layers win: flags, then the project's `.zerd/config.toml`, then the user config, then defaults. A flag on the command line always beats a file.
+</Callout>
 
 ## Where things live
 
@@ -31,9 +35,15 @@ api_key_env = "WORK_LLM_KEY"
 protocol    = "anthropic"              # default "openai"
 ```
 
-Each role is a fallback chain, tried in order. See [Models and routing](/docs/models).
+Each role is a fallback chain. zerd tries the first model, and if it fails, moves to the next. In the example, `default` uses `claude-sonnet-5-5` and falls back to `deepseek/deepseek-v4-pro`.
+
+The `[providers.work]` block adds your own server. Point `api_key_env` at the environment variable that holds its key.
+
+More in [Models and routing](/docs/models).
 
 ## Flags
+
+The flags you will use most. The full list is in the [CLI reference](/docs/cli).
 
 | Flag | What it does |
 |---|---|
