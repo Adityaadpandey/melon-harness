@@ -96,7 +96,7 @@ export default async function Home() {
       <section className="z-sec z-end" id="install">
         <div className="z-wrap">
           <h2>Try it on a small change.</h2>
-          <p className="z-lead">One binary, nothing else to install. Paste this in a terminal, open a repo, and ask for a bug fix.</p>
+          <p className="z-lead">One binary, nothing else to install. Paste this in a terminal, then run <code>zerd</code> in a repo: the first launch connects a model in about a minute, and <code>zerd doctor</code> checks the setup any time.</p>
           <Install big />
           <p className="z-meta">
             <Link href="/docs/try-it-in-two-minutes">Two-minute start</Link> · <Link href="/docs/what-makes-it-different">What makes it different</Link>{rel ? ` · v${rel.version}` : ""}
