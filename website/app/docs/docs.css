@@ -101,3 +101,5 @@ figure.shiki span, figure.shiki code span { color: var(--shiki-dark) !important;
 #nd-sidebar a { font-size: 14.5px; color: #cfcfcf; }
 #nd-sidebar a:hover { color: #fff; }
 #nd-toc a { font-size: 14px; }
+[role="alert"] p { margin: 0; }
+.fd-step h3 { color: #fff; margin-top: 0; }
