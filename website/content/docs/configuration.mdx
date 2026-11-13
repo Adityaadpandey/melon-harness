@@ -10,7 +10,7 @@ When settings disagree, the first of these wins: flags, the project's `.zerd/con
 | What | Where |
 |---|---|
 | Keys | environment variables or zerd's own `.env` (`/connect <provider>` saves one) |
-| User config | `~/Library/Application Support/zerd/config.toml` (Linux `~/.local/share/zerd`, Windows `%APPDATA%\zerd`) |
+| User config | `~/Library/Application Support/zerd/config.toml` (Linux `~/.config/zerd`, Windows `%APPDATA%\zerd`) |
 | Project config | `.zerd/config.toml` (sensitive keys need `--trust`) |
 | Data | sessions, traces, transcripts, lessons and review memory in the user folder. `ZERD_DATA_DIR` moves it |
 | Instructions | `AGENTS.md` / `CLAUDE.md` in the repo and `~/.claude/CLAUDE.md`, with `@imports` followed |
