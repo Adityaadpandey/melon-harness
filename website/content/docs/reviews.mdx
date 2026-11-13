@@ -3,30 +3,22 @@ title: "Reviews and fixes"
 description: "Review a diff, PR or commits with zerd, see how it tries to disprove its own findings, and fix what is left."
 ---
 
-Say "review my changes", "review my last 3 commits" or "review PR #42" and zerd runs a real pipeline, not one prompt. This page shows what that pipeline does, and how to fix what it finds.
-
-## The review pipeline
-
-Ask for a review in plain words:
+Ask for a review in plain words: "review my changes", "review my last 3 commits" or "review PR #42".
 
 ```text
 > review PR #42
 ```
 
-zerd then works through these stages:
+zerd runs a multi-stage pipeline rather than a single prompt:
 
-1. **Triage.** A cheap pass picks what could plausibly break.
-2. **Reviewers.** Each reads the diff through one lens: behaviour, approach, failures, project rules, git history, security, and a dedicated **producer-to-consumer contracts** reviewer.
-3. **Gap pass.** One more pass asks what nobody checked.
-4. **Verifiers.** Each finding goes to a verifier whose default is to refute it. Six run at a time, and each must name the exact line it read.
-5. **Repro.** A confirmed HIGH goes to a **repro agent** that tries to make the defect happen in a sandboxed copy of the change. If it can't, the finding is capped at MEDIUM and shows what was tried.
-6. **Scoring.** Each claim gets a confidence score. Below the cutoff it is dropped. Refuted claims are remembered per repo for two weeks.
+1. Triage. A cheap pass picks what could plausibly break.
+2. Reviewers. Each reads the diff through one lens: behaviour, approach, failures, project rules, git history and security. A separate reviewer checks producer-to-consumer contracts.
+3. Gap pass. One more pass asks what nobody checked.
+4. Verifiers. Each finding goes to a verifier whose default is to refute it. Six run at a time, and each must name the exact line it read.
+5. Repro. A confirmed HIGH goes to a repro agent that tries to make the defect happen in a sandboxed copy of the change. If it can't, the finding is capped at MEDIUM and shows what was tried.
+6. Scoring. Each claim gets a confidence score, and anything below the cutoff is dropped. Refuted claims are remembered per repo for two weeks.
 
-The write-up says what was reviewed, every fallback taken (the PR base, a failed fetch), and what the reviewers *didn't* check.
-
-<Callout>
-A finding only reaches you after a verifier failed to knock it down. A HIGH that could not be reproduced is shown as MEDIUM, with the attempt attached.
-</Callout>
+The write-up lists what was reviewed, any fallback taken (the PR base, a failed fetch), and what the reviewers did not check.
 
 <Mermaid chart={`flowchart TB
     Q["'review PR #42'"] --> T["Resolve the target<br/>working tree, commits, branch or PR<br/>PR diffed against its real base"]
@@ -51,7 +43,7 @@ After a review, pick findings by number:
 > fix 2 and 3
 ```
 
-The fix run starts from the facts the review proved. It must consult the **advisor** before its first edit. It ends with a fresh verifier, in a scratch worktree, that never saw the author's reasoning.
+The fix run starts from the facts the review proved. It has to consult the advisor before its first edit, and it ends with a fresh verifier in a scratch worktree that never saw the author's reasoning.
 
 <Mermaid chart={`flowchart LR
     F["'fix 2 and 3'"] --> BR["Brief per finding<br/>where, why it breaks"]
@@ -64,14 +56,12 @@ The fix run starts from the facts the review proved. It must consult the **advis
 
 ## The challenger
 
-For risky requests ("should we...", a migration, "replace X with Y"), a read-only **challenger** on a *different model family* argues against the plan before anything is built.
-
-Each objection is tagged:
+For risky requests ("should we...", a migration, "replace X with Y"), a read-only challenger on a different model family argues against the plan before anything is built. Each objection is tagged:
 
 - `verified`, with a real `file:line`
 - `plausible`
 - `guess`
 
-An objection that cites a file that doesn't exist is dropped, never shown.
+An objection that cites a file that doesn't exist is dropped.
 
 The challenger is on in interactive sessions and off in scripted ones. `--challenge` turns it on there.
