@@ -1,55 +1,144 @@
 ---
 title: "Everyday use"
-description: "The full-screen UI, steering a run, resuming, parallel agents, skills, and how interactive and scripted runs differ."
+description: "The full-screen UI, what you can type, keyboard shortcuts, approvals, steering a run and resuming later."
 ---
 
-## The interface
+This page covers the day-to-day of the interactive session: what is on screen, what you can type, the keys, and how to stay in control of a run.
 
-- **Transcript and side panel.** A scrollable transcript, plus a panel listing files read and written (with lines added and removed), commands, todos and agents.
-- **Diffs you can trust.** Approvals show a syntax-highlighted diff, and what you approve is exactly what gets written.
-- **One-key questions.** When zerd needs a decision, `ask_user` gives you choices you pick with one key instead of prose with lettered options.
+## The screen
+
+The session is full-screen. You get a scrollable transcript, an input line at the bottom, and a side panel on the right.
+
+The side panel lists:
+
+- sub-agents, running and finished
+- files read
+- files written, with `+`/`-` counts
+- shell commands run
+
+Press **F3** to hide or show it. To toggle single parts, use `/layout` with `side`, `agents`, `read`, `written`, `commands` or `hints`. `/layout reset` brings everything back.
+
+Output is quiet by default, so each tool call shows as one line. `/verbose` switches to full tool output. To see one call in full, use `/expand` for the last one and `/expand 2` for the one before.
+
+## What you can type
+
+| Input | What it does |
+|---|---|
+| `fix the flaky test` | A request. zerd works on it and ends with a status line |
+| `@src/app.ts` | Attaches a file. Tab completes paths and hides secret files |
+| `!git status` | Runs a shell command and shows the output to the model |
+| `!!git status` | Runs it privately, the model does not see the output |
+| `/command` | A [slash command](/docs/commands). Tab completes names |
+| `/review src/auth` | A custom prompt template from `.zerd/commands` or `.claude/commands`. See [Extending](/docs/extending) |
+
+## Keyboard
+
+| Keys | What they do |
+|---|---|
+| Enter | Send |
+| Shift+Enter, Alt+Enter or Ctrl+J | New line |
+| Tab / Shift+Tab | Next / previous completion. With no menu open, Shift+Tab cycles the approval mode |
+| Up / Down | Move in the input, or in the menu |
+| Ctrl+C | Clears your input if there is any. Otherwise interrupts the agent, not the app |
+| Ctrl+D | Quits when the input is empty |
+| PageUp / PageDown | Scroll the transcript |
+| Ctrl+Home / Ctrl+End | Jump to the top or follow the bottom |
+| F2 | Toggles mouse capture. Off lets your terminal do native text selection |
+| F3 | Shows or hides the side panel |
+| Ctrl+A / Ctrl+E | Start / end of line |
+| Ctrl+K / Ctrl+U / Ctrl+W | Delete to end of line / to start of line / one word |
+| Esc | Closes a menu or clears a selection |
+
+At an approval prompt, press `y` or Enter to approve, `n` or Esc to refuse, or a number to pick a numbered option.
+
+`/copy` copies the last reply, and `/copy all` the whole conversation.
 
 ## Steering a run
 
-**Ctrl+C interrupts the agent, not the app.** Anything you type while it works steers the next step, and pauses the running checks so your note is handled now instead of after a slow typecheck.
+You do not have to wait for zerd to finish. Anything you type while it works steers the next step. It also pauses the running checks, so your note is handled now instead of after a slow typecheck.
 
-**Everything resumes.** Each turn autosaves. `zerd --continue` picks up where you left off, redrawn, with cost and trace.
+```text
+> add pagination to the users endpoint
+  ...zerd is working...
+> use cursor pagination, not offset
+```
+
+<Callout>
+**Ctrl+C interrupts the agent, not the app.** Press Ctrl+D on an empty input to quit.
+</Callout>
 
 ## Approval modes
 
-The modes are `on-request`, `auto-edit`, `auto`, `plan`, `never`, `on-failure` and `yolo`. Shift+Tab cycles `on-request`, `auto-edit`, `auto` and `plan`, and never lands on `yolo` by accident. Set any of them with `/approval` or `--approval`.
+This controls how much zerd asks before acting. Set a mode with `/approval <mode>` or `--approval <mode>`. The default, `on-request`, is a good place to start.
 
-- `on-request` is the default for interactive sessions.
-- `plan` is read-only and ends in a plan.
-- Scripted runs (one-shot, `--json`, `--rpc`) use `auto-edit` unless you pass `--approval`.
+| Mode | File edits in the workspace | Shell commands |
+|---|---|---|
+| `on-request` (default) | Ask | Ask, except safe read-only commands |
+| `auto-edit` | Allowed | Ask, except safe read-only commands |
+| `auto` | Allowed | Allowed, except dangerous or disruptive ones |
+| `on-failure` | Allowed | Allowed, except dangerous or disruptive ones |
+| `never` | Refused | Only safe read-only commands |
+| `plan` | Refused | Only safe read-only commands |
+| `yolo` | Allowed | Allowed, everything |
+
+- **`plan`** (also `/plan` to toggle) makes zerd read and search but change nothing, and end in a plan.
+- Edits outside the workspace always ask, or are refused in `never`.
+- **Shift+Tab** cycles `on-request`, `auto-edit`, `auto` and `plan`. It never lands on `yolo` by accident.
+- Choosing "always" at a prompt stops asking for that kind of command for the rest of the session. For edits that switches to `auto-edit`, so commands still ask.
+
+<Callout type="warn" title="Dangerous commands">
+`rm -rf` on a path, `git reset --hard`, force pushes, `curl | sh` and similar are refused in every mode except `yolo`. Moving or deleting build output such as `node_modules`, `dist` or `.next` always asks, even in `auto`.
+</Callout>
+
+Which commands count as "safe read-only" is in [Safety](/docs/safety).
+
+## Sessions
+
+Every turn autosaves, so you can close the terminal and come back later:
+
+```bash
+zerd --continue          # newest session that ran in this folder
+zerd --resume <id>       # a specific one, the id is printed when you exit
+```
+
+Inside a session:
+
+- `/save` and `/sessions` (to list them)
+- `/resume <id>` to switch to one
+- `/checkpoint` to mark a point, and `/restore <id>` to go back to it
 
 ## Parallel agents
 
-Read-only sub-agents run concurrently, and in the background with follow-ups. `parallel_tasks` fans write-capable workers out into separate git worktrees, merges them in dependency order, and flags real conflicts instead of guessing.
+Read-only sub-agents run concurrently, and in the background with follow-ups. `/agents` lists them and `/agents stop <id>` stops one. See [Skills and agents](/docs/skills-and-agents).
+
+For edits, `parallel_tasks` fans write-capable workers out into separate git worktrees. It merges them in dependency order and flags real conflicts instead of guessing. **Full mode.**
+
+For a whole run:
+
+- `--parallel` lets a planner split the request itself.
+- `--graph tasks.json` takes your own plan.
 
 <Callout title="When it pays off">
 Only for genuinely independent work, such as three unrelated modules. For one tangled change, a single agent is faster.
 </Callout>
 
-## Skills
+## Background commands
 
-19 short playbooks attach by keyword with no model call: `debugging`, `security`, `refactor`, `review-pr` and more. Three are always on: `ponytail` (do the least that fully works), `grounded` and `house-rules`.
+Long-running commands can go to the background:
+
+```text
+/jobs            # list them
+/jobs 1          # show output of job 1
+/jobs kill 1     # stop job 1
+```
 
 ## Interactive versus scripted
-
-zerd behaves a little differently when you talk to it and when a script does, because a script has nobody to ask.
 
 | | Interactive | One-shot, `--json`, `--rpc` |
 |---|---|---|
 | Checks on changed files | when you run `/verify` | **automatically** after edits, with repair rounds |
-| Independent diff review | when you ask ("review my changes"). Set `auto_review = true` to review every change | same |
+| Independent diff review | when you ask. Set `auto_review = true` to review every change | same |
 | Challenger on risky requests | on | off (`--challenge` turns it on) |
 | Learning from corrections | on | off |
 | Approvals | `on-request` | `auto-edit` unless you pass `--approval` |
-| Signature guard, read-before-edit, citation check, per-edit diagnostics, loop detection | always on | always on |
-
-## Automation
-
-- `--json` prints events as JSON lines.
-- `--rpc` takes JSON commands on stdin, for editors.
-- `--report file` writes run metrics.
+| Signature guard, read-before-edit, per-edit diagnostics, loop detection | always on | always on |
