@@ -1,0 +1,4 @@
+ignore = []
+keep = ["website/app/"]
+
+[areas]
