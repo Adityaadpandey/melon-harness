@@ -615,14 +615,16 @@ impl Cli {
                 Err(e) => uprintln!("{}", paint(&format!("full-screen mode unavailable ({e}); using the plain terminal"), AMBER)),
             }
         }
-        self.tui.print_welcome(
-            "zerd",
-            &[
-                format!("model: {}   approval: {}", cfg.model.name, cfg.approval.value()),
-                format!("cwd: {}{}", home_short(&cfg.cwd), cfg.profile.as_ref().map(|p| format!("   profile: {p}")).unwrap_or_default()),
-                "/help for commands · @file to attach · !cmd to run a command · Shift+Enter (or Ctrl+J) for a newline".into(),
-            ],
-        );
+        let mut welcome = vec![
+            format!("model: {}   approval: {}", cfg.model.name, cfg.approval.value()),
+            format!("cwd: {}{}", home_short(&cfg.cwd), cfg.profile.as_ref().map(|p| format!("   profile: {p}")).unwrap_or_default()),
+            "/help for commands · @file to attach · !cmd to run a command · Shift+Enter (or Ctrl+J) for a newline".into(),
+        ];
+        // a folder zerd has never worked in gets a nudge toward a first task; after that the welcome stays short
+        if crate::agent::persistence::PersistenceManager::new().latest_for(&cfg.cwd.to_string_lossy()).is_none() {
+            welcome.push("new here? try \"explain how this repo is laid out\" · /model switches models · `zerd doctor` if something's off".into());
+        }
+        self.tui.print_welcome("zerd", &welcome);
         let input = if fs.is_none() {
             let inp = Input::new(cfg.cwd.clone(), cfg.forbidden_paths.clone(), Box::new(models), history);
             *inp.skills.lock().unwrap() = skills.lock().unwrap().clone();
