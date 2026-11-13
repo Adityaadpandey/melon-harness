@@ -3,20 +3,16 @@ title: "Everyday use"
 description: "The full-screen UI, what you can type, keyboard shortcuts, approvals, steering a run and resuming later."
 ---
 
-This page covers the day-to-day of the interactive session: what is on screen, what you can type, the keys, and how to stay in control of a run.
-
 ## The screen
 
-The session is full-screen. You get a scrollable transcript, an input line at the bottom, and a side panel on the right.
-
-The side panel lists:
+The session is full-screen: a scrollable transcript, an input line at the bottom and a side panel on the right. The side panel lists:
 
 - sub-agents, running and finished
 - files read
 - files written, with `+`/`-` counts
 - shell commands run
 
-Press **F3** to hide or show it. To toggle single parts, use `/layout` with `side`, `agents`, `read`, `written`, `commands` or `hints`. `/layout reset` brings everything back.
+Press F3 to hide or show it. To toggle single parts, use `/layout` with `side`, `agents`, `read`, `written`, `commands` or `hints`. `/layout reset` brings everything back.
 
 Output is quiet by default, so each tool call shows as one line. `/verbose` switches to full tool output. To see one call in full, use `/expand` for the last one and `/expand 2` for the one before.
 
@@ -55,7 +51,7 @@ At an approval prompt, press `y` or Enter to approve, `n` or Esc to refuse, or a
 
 ## Steering a run
 
-You do not have to wait for zerd to finish. Anything you type while it works steers the next step. It also pauses the running checks, so your note is handled now instead of after a slow typecheck.
+Anything you type while zerd works steers the next step. It also pauses the running checks, so your note is handled now instead of after a slow typecheck.
 
 ```text
 > add pagination to the users endpoint
@@ -63,13 +59,11 @@ You do not have to wait for zerd to finish. Anything you type while it works ste
 > use cursor pagination, not offset
 ```
 
-<Callout>
-**Ctrl+C interrupts the agent, not the app.** Press Ctrl+D on an empty input to quit.
-</Callout>
+Ctrl+C interrupts the agent and leaves the app open. To quit, press Ctrl+D on an empty input.
 
 ## Approval modes
 
-This controls how much zerd asks before acting. Set a mode with `/approval <mode>` or `--approval <mode>`. The default, `on-request`, is a good place to start.
+Set how much zerd asks before acting with `/approval <mode>` or `--approval <mode>`. The default is `on-request`.
 
 | Mode | File edits in the workspace | Shell commands |
 |---|---|---|
@@ -81,9 +75,9 @@ This controls how much zerd asks before acting. Set a mode with `/approval <mode
 | `plan` | Refused | Only safe read-only commands |
 | `yolo` | Allowed | Allowed, everything |
 
-- **`plan`** (also `/plan` to toggle) makes zerd read and search but change nothing, and end in a plan.
+- `plan` (or `/plan` to toggle) makes zerd read and search but change nothing, and end in a plan.
 - Edits outside the workspace always ask, or are refused in `never`.
-- **Shift+Tab** cycles `on-request`, `auto-edit`, `auto` and `plan`. It never lands on `yolo` by accident.
+- Shift+Tab cycles `on-request`, `auto-edit`, `auto` and `plan`. It never lands on `yolo`.
 - Choosing "always" at a prompt stops asking for that kind of command for the rest of the session. For edits that switches to `auto-edit`, so commands still ask.
 
 <Callout type="warn" title="Dangerous commands">
@@ -109,18 +103,16 @@ Inside a session:
 
 ## Parallel agents
 
-Read-only sub-agents run concurrently, and in the background with follow-ups. `/agents` lists them and `/agents stop <id>` stops one. See [Skills and agents](/docs/skills-and-agents).
+Read-only sub-agents run concurrently, or in the background with follow-ups. `/agents` lists them and `/agents stop <id>` stops one. See [Skills and agents](/docs/skills-and-agents).
 
-For edits, `parallel_tasks` fans write-capable workers out into separate git worktrees. It merges them in dependency order and flags real conflicts instead of guessing. **Full mode.**
+For edits, `parallel_tasks` fans write-capable workers out into separate git worktrees. It merges them in dependency order and flags real conflicts. This is Full mode only.
 
 For a whole run:
 
 - `--parallel` lets a planner split the request itself.
 - `--graph tasks.json` takes your own plan.
 
-<Callout title="When it pays off">
-Only for genuinely independent work, such as three unrelated modules. For one tangled change, a single agent is faster.
-</Callout>
+Parallel runs pay off for independent work, such as three unrelated modules. For one tangled change, a single agent is faster.
 
 ## Background commands
 
@@ -136,7 +128,7 @@ Long-running commands can go to the background:
 
 | | Interactive | One-shot, `--json`, `--rpc` |
 |---|---|---|
-| Checks on changed files | when you run `/verify` | **automatically** after edits, with repair rounds |
+| Checks on changed files | when you run `/verify` | automatically after edits, with repair rounds |
 | Independent diff review | when you ask. Set `auto_review = true` to review every change | same |
 | Challenger on risky requests | on | off (`--challenge` turns it on) |
 | Learning from corrections | on | off |
