@@ -3,15 +3,13 @@ title: "Safety"
 description: "The rules the model can't talk its way past: confined files, scanned shell commands, an OS sandbox, and trusted-only project config."
 ---
 
-This page explains what zerd stops the model from doing, and where those limits are enforced. The short version: they are code, not a line in a prompt.
-
-Every tool call passes through one tool registry. That covers the main agent, sub-agents and parallel workers alike. The model can't talk its way past these rules.
+Every tool call passes through one tool registry, whether it comes from the main agent, a sub-agent or a parallel worker. The limits below are enforced in code there, so the model can't talk its way past them.
 
 ## Three layers
 
-1. **File tools** resolve the path first. `..` and symlinks that lead out of the workspace are refused.
-2. **Shell commands** are scanned for paths in your home, `/etc`, other users' folders or `..` escapes, and refused before they run. History-destroying git commands are blocked.
-3. **OS sandbox** (macOS `sandbox-exec`, on by default). A command can't write outside the workspace, temp and package caches. It also can't read `~/.ssh`, `~/.aws`, `~/.gnupg`, keychains, or the workspace's own `.env`, however the command reaches them.
+1. File tools resolve the path first. `..` and symlinks that lead out of the workspace are refused.
+2. Shell commands are scanned for paths in your home, `/etc`, other users' folders or `..` escapes, and refused before they run. History-destroying git commands are blocked.
+3. The OS sandbox (macOS `sandbox-exec`, on by default). A command can't write outside the workspace, temp and package caches. It also can't read `~/.ssh`, `~/.aws`, `~/.gnupg`, keychains, or the workspace's own `.env`, however the command reaches them.
 
 <Callout type="warn" title="Platform differences">
 The OS sandbox is macOS only. Linux and Windows get the confined file tools and the shell path scan, not the kernel layer. See [Windows](/docs/windows) and [Limits](/docs/limits).
@@ -30,12 +28,12 @@ The OS sandbox is macOS only. Linux and Windows get the confined file tools and 
     AP -->|refused| NO(["Refused: the model is told<br/>not to find another way"])
     X["Shell scan, then<br/>macOS sandbox-exec"] --> RUN(["Runs"])`} />
 
-## On top of that
+## Other protections
 
 - `.env*`, `*.pem`, `*.key` and SSH keys are protected by default.
 - Permission rules use Claude Code's notation, for example `Bash(git diff:*)` and `Edit(src/**)`.
-- `web_fetch` refuses localhost, private ranges and cloud metadata at *every* redirect hop.
-- **A cloned repo can't turn on code execution.** Its `.zerd/config.toml` cannot enable `hooks`, `mcp_servers`, `verify_commands`, `approval` and similar until you trust that exact file. Editing the file revokes the trust.
+- `web_fetch` refuses localhost, private ranges and cloud metadata at every redirect hop.
+- A cloned repo can't turn on code execution. Its `.zerd/config.toml` cannot enable `hooks`, `mcp_servers`, `verify_commands`, `approval` and similar until you trust that exact file. Editing the file revokes the trust.
 
 ## Approvals
 
