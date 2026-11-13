@@ -95,14 +95,6 @@
 .vs-r .yes { color: var(--ok); font-weight: 600; }
 .caveat { color: var(--dim); font-size: 14.5px; max-width: 52em; margin: 16px 0 0; }
 
-.pipe { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(6, 1fr); border-top: 1px solid var(--line); }
-.pipe li { padding: 18px 18px 0 0; border-right: 1px solid var(--line); padding-left: 18px; }
-.pipe li:first-child { padding-left: 0; }
-.pipe li:last-child { border-right: 0; }
-.pipe-n { font: 600 12px var(--m); color: var(--lilac); }
-.pipe h3 { margin: 6px 0 6px; font-size: 18px; }
-.pipe p { margin: 0; color: var(--dim); font-size: 14.5px; line-height: 1.5; }
-
 .needs { margin: 0; display: grid; }
 .needs > div { display: grid; grid-template-columns: 1fr 1.5fr; gap: 32px; padding: 18px 0; border-top: 1px solid var(--line); }
 .needs dt { font-weight: 600; }
@@ -143,8 +135,6 @@
 .foot-lp-end p { font-size: 13.5px; margin: 0; }
 
 @media (max-width: 960px) {
-  .pipe { grid-template-columns: repeat(2, 1fr); }
-  .pipe li, .pipe li:first-child { padding: 18px 18px 18px 0; border-right: 0; border-bottom: 1px solid var(--line); }
 }
 @media (max-width: 860px) {
   .hero { height: auto; max-height: none; min-height: 0; padding: 0 var(--pad) 28px; --pad: 20px; }
@@ -158,6 +148,54 @@
   .lp .nav nav a:not(.nav-install):not(:nth-child(3)) { display: none; }
   .bug-h, .vs-h { display: none; }
   .bug, .vs-r, .needs > div { grid-template-columns: minmax(0, 1fr); gap: 4px; }
-  .pipe { grid-template-columns: 1fr; }
   .foot-lp-cols { gap: 40px; }
 }
+
+/* ---- Linear: crisp lit borders, a light that follows the cursor, headings that fade down ---- */
+.rl, .bugs, .vs, .cmd { box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.07), 0 24px 60px -30px rgba(0, 0, 0, 0.8); }
+.glow { position: relative; }
+.glow::after { content: ""; position: absolute; inset: 0; border-radius: inherit; pointer-events: none; opacity: 0; transition: opacity 0.3s;
+  background: radial-gradient(360px circle at var(--mx, 50%) var(--my, 50%), rgba(185, 162, 255, 0.14), transparent 65%); }
+.glow:hover::after { opacity: 1; }
+.hero h1, .sec h2, .story h2 { background: linear-gradient(180deg, #fff 30%, rgba(255, 255, 255, 0.62)); -webkit-background-clip: text; background-clip: text; color: transparent; }
+
+/* ---- the proof pipeline: a sticky heading and steps that light up as they reach the middle ---- */
+.story { display: grid; grid-template-columns: minmax(0, 0.8fr) minmax(0, 1fr); gap: clamp(32px, 6vw, 96px); padding-top: clamp(72px, 9vw, 120px); padding-bottom: 40px; }
+.story-side { position: sticky; top: 22vh; align-self: start; }
+.story h2 { font-size: clamp(28px, 3.4vw, 44px); line-height: 1.1; letter-spacing: -0.03em; font-weight: 600; margin: 0 0 16px; text-wrap: balance; }
+.story-side p { color: var(--dim); margin: 0; max-width: 28em; }
+.story-steps { list-style: none; margin: 0; padding: 0 0 0 34px; position: relative; border-left: 1px solid var(--line); }
+.story-steps li { padding: 0 0 clamp(56px, 12vh, 120px); position: relative; }
+.story-steps li:last-child { padding-bottom: 0; }
+.story-n { position: absolute; left: -34px; top: 2px; width: 14px; height: 14px; margin-left: -7px; border-radius: 50%; background: var(--bg); border: 1px solid var(--dim); font-size: 0; }
+.story-steps h3 { margin: 0 0 8px; font-size: clamp(24px, 2.6vw, 34px); letter-spacing: -0.025em; font-weight: 600; }
+.story-steps p { margin: 0; color: var(--dim); max-width: 32em; }
+.story-steps code { display: block; margin-top: 14px; padding: 10px 14px; max-width: 32em; border: 1px solid var(--line); border-radius: 8px; background: var(--panel); color: var(--ok); font-size: 13px; }
+
+/* ---- Apple: scroll-driven motion. Browsers without scroll timelines just get the still page. ---- */
+@media (prefers-reduced-motion: no-preference) {
+  /* one staggered entrance for the hero, once */
+  .hero h1, .hero .lead, .hero .cmd, .hero .hero-links, .hero .gains, .hero .rl { animation: rise 0.9s cubic-bezier(0.2, 0.7, 0.2, 1) backwards; }
+  .hero .lead { animation-delay: 0.12s; } .hero .cmd { animation-delay: 0.24s; } .hero .hero-links { animation-delay: 0.32s; } .hero .gains { animation-delay: 0.42s; } .hero .rl { animation-delay: 0.3s; }
+  @keyframes rise { from { opacity: 0; translate: 0 22px; filter: blur(8px); } }
+
+  @supports (animation-timeline: scroll()) {
+    /* the artwork drifts closer and darkens as you leave the hero */
+    .lp::before { animation: drift linear both; animation-timeline: scroll(root); animation-range: 0 110svh; }
+    @keyframes drift { to { transform: scale(1.16); filter: brightness(0.5) saturate(0.9); } }
+    /* the hero copy and the log lift away */
+    .hero-copy, .hero .rl { animation: lift linear both; animation-timeline: scroll(root); animation-range: 0 70svh; }
+    @keyframes lift { to { opacity: 0; translate: 0 -48px; } }
+    .nav { animation: navbar linear both; animation-timeline: scroll(root); animation-range: 0 120px; }
+    @keyframes navbar { to { background: rgba(4, 6, 12, 0.78); backdrop-filter: blur(14px); border-bottom: 1px solid var(--line); } }
+    /* each step lights up while it crosses the middle of the screen, and its dot fills */
+    .story-steps li { animation: focus linear both; animation-timeline: view(); animation-range: entry 10% exit 90%; }
+    @keyframes focus { 0% { opacity: 0.28; } 35%, 65% { opacity: 1; } 100% { opacity: 0.28; } }
+    .story-n { animation: dot linear both; animation-timeline: view(); animation-range: entry 20% exit 80%; }
+    @keyframes dot { 0%, 100% { background: var(--bg); border-color: var(--dim); box-shadow: none; } 40%, 60% { background: var(--lilac); border-color: var(--lilac); box-shadow: 0 0 18px rgba(185, 162, 255, 0.7); } }
+    /* table rows slide their accent in as they arrive */
+    .bug .fix, .vs-r .yes { animation: arrive linear both; animation-timeline: view(); animation-range: entry 0% entry 80%; }
+    @keyframes arrive { from { opacity: 0.2; translate: -10px 0; } }
+  }
+}
+@media (max-width: 860px) { .story { grid-template-columns: minmax(0, 1fr); } .story-side { position: static; } }

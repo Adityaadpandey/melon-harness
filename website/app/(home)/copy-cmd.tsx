@@ -14,7 +14,7 @@ export default function CopyCmd({ cmd }: { cmd: string }) {
     }
   };
   return (
-    <div className="cmd">
+    <div className="cmd glow">
       <code><span aria-hidden="true">$ </span>{cmd}</code>
       <button type="button" onClick={copy}>{done ? "Copied" : "Copy"}</button>
       <span className="sr-only" role="status">{done ? "Install command copied" : ""}</span>

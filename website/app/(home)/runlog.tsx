@@ -14,7 +14,7 @@ const ROWS: [string, string][] = [
 
 export default function RunLog() {
   return (
-    <figure className="rl" aria-label="Eight defects zerd reproduced against real Postgres and Redis, then fixed">
+    <figure className="rl glow" aria-label="Eight defects zerd reproduced against real Postgres and Redis, then fixed">
       <figcaption className="rl-head">
         <span>zerd, webhook reliability audit</span>
         <span className="rl-env">real Postgres · real Redis · SIGKILL</span>

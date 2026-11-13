@@ -40,13 +40,13 @@ const NEEDS: [string, string][] = [
   ["The bill grows with the session.", "It remembers what it has read and sends only new lines or a diff. Cache hits were 87% against 76% in the 11-task run."],
 ];
 
-const PIPE: [string, string][] = [
+const PIPE: [string, string, string?][] = [
   ["Edit", "The agent changes your files."],
-  ["Check", "Typecheck, lint and tests run on the changed files."],
-  ["Review", "A different model reads the actual diff."],
-  ["Refute", "A verifier tries to disprove each finding. Survivors are reproduced in a sandbox."],
-  ["Look up", "Each cited path and line is checked on disk."],
-  ["Report", "The answer says what ran, what was reviewed and what stayed unverified."],
+  ["Check", "Typecheck, lint and tests run on the changed files, not the whole repo.", "npx tsc --noEmit   ✓ Ran"],
+  ["Review", "A different model reads the actual diff, in a fresh context with read-only tools."],
+  ["Refute", "A verifier tries to disprove each finding. A confirmed high-severity claim is reproduced in a sandbox, or capped at medium."],
+  ["Look up", "Each cited path and line is checked on disk. A file that does not exist is sent back for correction."],
+  ["Report", "The answer says what ran, what was reviewed and what stayed unverified. /undo reverts it.", "verified  1 files · 2 checks ok · /undo reverts"],
 ];
 
 const FAQ = [
@@ -94,7 +94,7 @@ export default async function Home() {
           <h2>Eight defects a mock would never show you</h2>
           <p>The task: build a webhook system that survives duplicates, races, crashes and outages. zerd ran 15 attack scenarios against a real Postgres and Redis, reproduced each failure, fixed it and ran it again, one commit per fix.</p>
         </div>
-        <div className="bugs" role="table" aria-label="Defects found">
+        <div className="bugs glow" role="table" aria-label="Defects found">
           <div className="bug-h" role="row"><span role="columnheader">What went wrong</span><span role="columnheader">Why</span><span role="columnheader">The fix</span></div>
           {BUGS.map(([a, b, c]) => (
             <div className="bug" role="row" key={a}><strong role="cell">{a}</strong><span role="cell">{b}</span><span role="cell" className="fix">{c}</span></div>
@@ -107,7 +107,7 @@ export default async function Home() {
           <h2>Same task, same requirements. Claude Code stayed in the service layer.</h2>
           <p>zerd on MiniMax M3 against Claude Code on Sonnet 5.5, each on its own Git branch. Claude Code found real problems too: an exception path that left events stuck in PROCESSING, and a refund that could land before its capture. Its report was honest that it never touched real infrastructure.</p>
         </div>
-        <div className="vs" role="table" aria-label="zerd and Claude Code compared">
+        <div className="vs glow" role="table" aria-label="zerd and Claude Code compared">
           <div className="vs-h" role="row"><span role="columnheader"></span><span role="columnheader">zerd, MiniMax M3</span><span role="columnheader">Claude Code, Sonnet 5.5</span></div>
           {VERSUS.map(([k, z, c]) => (
             <div className="vs-r" role="row" key={k}><span role="rowheader">{k}</span><span role="cell" className="yes">{z}</span><span role="cell">{c}</span></div>
@@ -117,13 +117,19 @@ export default async function Home() {
         <p className="caveat">On an earlier 11-task set, zerd and Claude Code each passed 10. zerd sent 1.01M prompt tokens against 1.31M, but made 113 model calls against 42 and was slower. Claude Code deleted <code>.git</code> and <code>data/</code> when asked to wipe history. zerd’s miss, a dropped parameter, is what the signature guard now catches.</p>
       </section>
 
-      <section className="sec wrap">
-        <div className="sec-head">
-          <h2>Why it can catch these: it will not call work done until it has evidence</h2>
+      <section className="wrap story">
+        <div className="story-side">
+          <h2>It will not call work done until it has evidence</h2>
+          <p>Six steps run after every change. The two that matter most are the ones most agents skip: a verifier that argues against the review, and a lookup that checks every file the answer mentions.</p>
         </div>
-        <ol className="pipe">
-          {PIPE.map(([t, d], i) => (
-            <li key={t}><span className="pipe-n">{i + 1}</span><h3>{t}</h3><p>{d}</p></li>
+        <ol className="story-steps">
+          {PIPE.map(([t, d, ev], i) => (
+            <li key={t}>
+              <span className="story-n">{i + 1}</span>
+              <h3>{t}</h3>
+              <p>{d}</p>
+              {ev && <code className="glow">{ev}</code>}
+            </li>
           ))}
         </ol>
       </section>

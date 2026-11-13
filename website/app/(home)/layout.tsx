@@ -4,6 +4,7 @@ import { latestRelease } from "@/lib/latest";
 import Logo from "./logo";
 import Nav from "./nav";
 import "./landing.css";
+import Spotlight from "./spotlight";
 
 // The landing page has its own nav and footer.
 // The docs bring their own chrome.
@@ -11,6 +12,7 @@ export default async function HomeLayout({ children }: { children: React.ReactNo
   const rel = await latestRelease();
   return (
     <div className="lp">
+      <Spotlight />
       <Nav repo={REPO} />
       {children}
       <footer className="foot-lp">
