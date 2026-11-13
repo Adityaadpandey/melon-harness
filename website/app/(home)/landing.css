@@ -1,7 +1,7 @@
 /* Landing page. One rule for colour: green, red and amber only ever mean a test result. */
 .lp {
-  --bg: #04060c; --panel: rgba(8, 11, 20, 0.72); --line: rgba(255, 255, 255, 0.13); --text: #f1f3f8; --dim: #a4adbf; --lilac: #b9a2ff;
-  --ok: #4fd39a; --bad: #ff6a5c; --warn: #f0b44c;
+  --bg: #07060f; --panel: rgba(30, 24, 50, 0.55); --line: rgba(255, 232, 214, 0.13); --text: #f7f2ee; --dim: #b5abbb; --accent: #ffb77a;
+  --ok: #5fdba8; --bad: #ff6a7a; --warn: #f2d46b;
   --ink: var(--text); --ink2: var(--dim); --ink3: var(--dim);
   --f: var(--font-sans), system-ui, sans-serif; --m: var(--font-mono), ui-monospace, Menlo, monospace;
   background: var(--bg); color: var(--text); font: 17px/1.6 var(--f); min-height: 100vh; color-scheme: dark; position: relative;
@@ -12,37 +12,44 @@
 .lp .sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
 .lp .wrap { max-width: 1200px; margin: 0 auto; padding-inline: clamp(20px, 4vw, 40px); }
 
-.lp .nav { position: sticky; top: 0; z-index: 20; background: color-mix(in srgb, var(--bg) 88%, transparent); backdrop-filter: blur(10px); border-bottom: 1px solid var(--line); }
-.lp .nav-in { max-width: 1200px; margin: 0 auto; padding: 0 clamp(20px, 4vw, 40px); height: 60px; display: flex; align-items: center; justify-content: space-between; }
-.lp .nav nav { display: flex; align-items: center; gap: 26px; font-size: 15px; }
-.lp .nav nav a { text-decoration: none; color: var(--dim); }
-.lp .nav nav a:hover { color: var(--text); }
-.lp .nav .nav-install { color: var(--bg); background: var(--text); padding: 6px 14px; border-radius: 6px; font-weight: 600; }
-.lp .nav .nav-install:hover { background: var(--ok); color: var(--bg); }
-.logo-lp { display: inline-flex; align-items: center; gap: 8px; font-weight: 800; font-size: 22px; letter-spacing: -0.04em; text-decoration: none; }
+.lp .nav { position: fixed; top: 14px; left: 0; right: 0; z-index: 30; display: flex; justify-content: center; padding: 0 16px; pointer-events: none; background: none; border: 0; backdrop-filter: none; height: auto; }
+.nav-pill { pointer-events: auto; display: flex; align-items: center; gap: clamp(16px, 3vw, 36px); width: min(880px, 100%); height: 52px; padding: 0 8px 0 18px; border-radius: 999px; background: rgba(10, 13, 22, 0.55); backdrop-filter: blur(18px) saturate(1.4); border: 1px solid var(--line); box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.08), 0 12px 40px -12px rgba(0, 0, 0, 0.7); }
+.lp .nav nav { display: flex; align-items: center; gap: 4px; margin: 0 auto; font-size: 14.5px; }
+.lp .nav nav a { text-decoration: none; color: var(--dim); padding: 7px 13px; border-radius: 999px; transition: color 0.15s, background 0.15s; }
+.lp .nav nav a:hover { color: var(--text); background: rgba(255, 255, 255, 0.07); }
+.lp .nav .nav-install { text-decoration: none; color: #0a0d16; background: #fff; padding: 8px 18px; border-radius: 999px; font-size: 14.5px; font-weight: 600; transition: background 0.15s; }
+.lp .nav .nav-install:hover { background: var(--accent); }
+.logo-lp { display: inline-flex; align-items: center; gap: 8px; font-weight: 800; font-size: 21px; letter-spacing: -0.04em; text-decoration: none; }
 
-/* the artwork stays put behind the whole page; sections float over it as glass */
-.lp::before { content: ""; position: fixed; inset: 0; z-index: 0; background: #04060c url("/hero/hero.webp") 62% 50% / cover no-repeat; }
+/* the artwork lives in the hero only; everything below sits on plain ink */
 .lp > * { position: relative; z-index: 1; }
-.lp .nav { background: linear-gradient(rgba(3, 5, 12, 0.7), rgba(3, 5, 12, 0)); border-bottom: 0; backdrop-filter: none; }
 
 .hero { position: relative; height: 100svh; min-height: 680px; max-height: 1000px; --pad: calc(max(0px, (100% - 1200px) / 2) + clamp(20px, 4vw, 40px)); }
-.hero-img { display: none; }
-.hero::before { content: ""; position: absolute; inset: 0; pointer-events: none;
-  background: linear-gradient(90deg, rgba(3, 5, 12, 0.92) 0%, rgba(3, 5, 12, 0.8) 38%, rgba(3, 5, 12, 0.35) 56%, rgba(3, 5, 12, 0) 72%); }
+.hero-img { position: absolute; inset: 0; overflow: hidden; z-index: 0; }
+.hero-img picture, .hero-img img { display: block; width: 100%; height: 100%; }
+.hero-img img { object-fit: cover; object-position: 62% 50%; }
+/* darken the left for the words, melt the foot into the page */
+.hero-img::after { content: ""; position: absolute; inset: 0; pointer-events: none;
+  background: linear-gradient(90deg, rgba(7, 6, 15, 0.92) 0%, rgba(7, 6, 15, 0.8) 38%, rgba(7, 6, 15, 0.35) 56%, rgba(7, 6, 15, 0) 72%), linear-gradient(0deg, #07060f 0%, rgba(7, 6, 15, 0) 22%); }
+.hero-copy, .hero .rl, .hero-rail { z-index: 1; }
 .hero-copy { position: absolute; left: var(--pad); top: 50%; transform: translateY(-50%); width: min(620px, 50vw); }
 .hero h1 { font-size: clamp(40px, 4.8vw, 74px); line-height: 1.01; letter-spacing: -0.04em; font-weight: 500; margin: 0 0 24px; text-wrap: balance; }
 .hero-rail { position: absolute; left: var(--pad); right: var(--pad); bottom: 0; display: flex; justify-content: space-between; margin: 0; padding: 16px 0 20px; border-top: 1px solid var(--line); font: 12px/1.4 var(--m); color: var(--dim); }
 .hero .rl { position: absolute; right: var(--pad); bottom: 80px; width: min(400px, 34vw); }
 
-.after { background: linear-gradient(180deg, rgba(4, 6, 12, 0) 0, rgba(4, 6, 12, 0.86) 260px); padding-top: 120px; margin-top: -120px; }
+.after { padding-top: 24px;
+  background:
+    radial-gradient(900px 520px at 92% 3%, rgba(122, 92, 255, 0.13), transparent 70%),
+    radial-gradient(800px 520px at 2% 30%, rgba(255, 140, 80, 0.07), transparent 70%),
+    radial-gradient(900px 520px at 96% 62%, rgba(122, 92, 255, 0.10), transparent 70%),
+    radial-gradient(800px 520px at 4% 88%, rgba(255, 140, 80, 0.07), transparent 70%); }
 .lead { color: var(--dim); font-size: 19px; max-width: 34em; margin: 0 0 28px; }
 .hero-links { display: flex; flex-wrap: wrap; gap: 8px 26px; margin: 20px 0 0; font-size: 15px; }
 .hero-links a { color: var(--text); text-underline-offset: 4px; }
 .hero-links span { color: var(--dim); }
 .gains { list-style: none; margin: 30px 0 0; padding: 0; display: grid; gap: 12px; max-width: 34em; }
 .hero .lead { color: rgba(255, 255, 255, 0.84); }
-.gains li { padding-left: 16px; border-left: 2px solid var(--lilac); color: rgba(255, 255, 255, 0.76); font-size: 15px; line-height: 1.5; }
+.gains li { padding-left: 16px; border-left: 2px solid var(--accent); color: rgba(255, 255, 255, 0.76); font-size: 15px; line-height: 1.5; }
 .gains b { color: var(--text); font-weight: 600; }
 .hero-fine { color: var(--dim); font-size: 14px; margin: 12px 0 0; }
 
@@ -121,41 +128,47 @@
 .asciinema-theme-zerd { --term-color-foreground: #d9dde5; --term-color-background: #0b0e13; }
 .lp .demo .note { margin: 14px 0 0; font-size: 14px; color: var(--dim); }
 
-.install { padding-bottom: 72px; }
+.install { padding-bottom: 96px; text-align: center; position: relative; }
+.install::before { content: ""; position: absolute; left: 50%; bottom: -80px; width: min(1300px, 100%); height: 560px; transform: translateX(-50%); z-index: -1; pointer-events: none;
+  background: radial-gradient(ellipse 50% 50% at 50% 50%, rgba(255, 150, 90, 0.24), rgba(122, 92, 255, 0.11) 55%, transparent 100%); }
+.install .sec-head { margin-inline: auto; }
+.install .cmd { margin-inline: auto; }
+.install .hero-links { justify-content: center; }
 
-.foot-lp { border-top: 1px solid var(--line); margin-top: 56px; }
-.foot-lp-in { max-width: 1200px; margin: 0 auto; padding: 44px clamp(20px, 4vw, 40px) 28px; display: flex; justify-content: space-between; gap: 40px; flex-wrap: wrap; }
-.foot-lp p { color: var(--dim); font-size: 15px; max-width: 30em; margin: 10px 0 0; }
-.foot-lp-cols { display: flex; gap: 64px; }
-.foot-lp-cols > div { display: flex; flex-direction: column; gap: 8px; font-size: 15px; }
-.foot-lp-cols h4 { margin: 0 0 4px; font-size: 14px; }
-.foot-lp-cols a { color: var(--dim); text-decoration: none; }
+.foot-lp { margin-top: clamp(64px, 9vw, 120px); border-top: 1px solid var(--line); background: linear-gradient(180deg, rgba(255, 150, 90, 0.07), transparent 220px); }
+.foot-lp-in { max-width: 1200px; margin: 0 auto; padding: 56px clamp(20px, 4vw, 40px) 44px; display: grid; grid-template-columns: minmax(0, 1.3fr) minmax(0, 1.7fr); gap: 56px; }
+.foot-brand p { color: var(--dim); font-size: 15px; max-width: 26em; margin: 12px 0 20px; }
+.foot-lp-cols { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 32px; }
+.foot-lp-cols > div { display: flex; flex-direction: column; gap: 10px; font-size: 14.5px; }
+.foot-lp-cols h4 { margin: 0 0 6px; font-size: 13.5px; font-weight: 600; color: var(--text); }
+.foot-lp-cols a { color: var(--dim); text-decoration: none; width: fit-content; transition: color 0.15s; }
 .foot-lp-cols a:hover { color: var(--text); }
-.foot-lp-end { max-width: 1200px; margin: 0 auto; padding: 0 clamp(20px, 4vw, 40px) 36px; }
-.foot-lp-end p { font-size: 13.5px; margin: 0; }
+.foot-lp-end { max-width: 1200px; margin: 0 auto; padding: 20px clamp(20px, 4vw, 40px) 36px; border-top: 1px solid var(--line); display: flex; justify-content: space-between; gap: 8px 24px; flex-wrap: wrap; font-size: 13.5px; color: var(--dim); }
+.foot-brand .cmd code { font-size: 13px; }
+.foot-lp-end span:first-child { color: var(--text); font-family: var(--m); }
 
-@media (max-width: 960px) {
-}
 @media (max-width: 860px) {
   .hero { height: auto; max-height: none; min-height: 0; padding: 0 var(--pad) 28px; --pad: 20px; }
-  .hero::before { background: linear-gradient(180deg, rgba(3, 5, 12, 0.35) 0, rgba(3, 5, 12, 0.92) 62%); }
+  .hero-img { bottom: auto; height: 64svh; min-height: 420px; }
+  .hero-img img { object-position: 60% 50%; }
+  .hero-img::after { background: linear-gradient(0deg, #07060f 0%, rgba(7, 6, 15, 0) 45%), linear-gradient(180deg, rgba(7, 6, 15, 0.5) 0%, rgba(7, 6, 15, 0) 20%); }
   .hero-copy { position: relative; left: auto; top: auto; transform: none; width: auto; padding-top: max(46svh, 300px); }
   .hero .rl { position: relative; right: auto; bottom: auto; width: auto; margin-top: 32px; }
   .hero-rail { position: relative; left: auto; right: auto; margin-top: 24px; }
-  .lp::before { background-position: 60% 20%; background-size: auto 70svh; background-color: #04060c; }
 }
 @media (max-width: 700px) {
-  .lp .nav nav a:not(.nav-install):not(:nth-child(3)) { display: none; }
+  .lp .nav nav a:not(:nth-child(3)) { display: none; }
   .bug-h, .vs-h { display: none; }
   .bug, .vs-r, .needs > div { grid-template-columns: minmax(0, 1fr); gap: 4px; }
-  .foot-lp-cols { gap: 40px; }
+  .foot-lp-in { grid-template-columns: minmax(0, 1fr); gap: 40px; }
+  .foot-lp-cols { gap: 20px; }
 }
 
 /* ---- Linear: crisp lit borders, a light that follows the cursor, headings that fade down ---- */
 .rl, .bugs, .vs, .cmd { box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.07), 0 24px 60px -30px rgba(0, 0, 0, 0.8); }
 .glow { position: relative; }
 .glow::after { content: ""; position: absolute; inset: 0; border-radius: inherit; pointer-events: none; opacity: 0; transition: opacity 0.3s;
-  background: radial-gradient(360px circle at var(--mx, 50%) var(--my, 50%), rgba(185, 162, 255, 0.14), transparent 65%); }
+  background: radial-gradient(360px circle at var(--mx, 50%) var(--my, 50%), rgba(255, 183, 122, 0.13), transparent 65%); }
 .glow:hover::after { opacity: 1; }
 .hero h1, .sec h2, .story h2 { background: linear-gradient(180deg, #fff 30%, rgba(255, 255, 255, 0.62)); -webkit-background-clip: text; background-clip: text; color: transparent; }
 
@@ -181,18 +194,16 @@
 
   @supports (animation-timeline: scroll()) {
     /* the artwork drifts closer and darkens as you leave the hero */
-    .lp::before { animation: drift linear both; animation-timeline: scroll(root); animation-range: 0 110svh; }
+    .hero-img img { animation: drift linear both; animation-timeline: scroll(root); animation-range: 0 110svh; }
     @keyframes drift { to { transform: scale(1.16); filter: brightness(0.5) saturate(0.9); } }
     /* the hero copy and the log lift away */
     .hero-copy, .hero .rl { animation: lift linear both; animation-timeline: scroll(root); animation-range: 0 70svh; }
     @keyframes lift { to { opacity: 0; translate: 0 -48px; } }
-    .nav { animation: navbar linear both; animation-timeline: scroll(root); animation-range: 0 120px; }
-    @keyframes navbar { to { background: rgba(4, 6, 12, 0.78); backdrop-filter: blur(14px); border-bottom: 1px solid var(--line); } }
     /* each step lights up while it crosses the middle of the screen, and its dot fills */
     .story-steps li { animation: focus linear both; animation-timeline: view(); animation-range: entry 10% exit 90%; }
     @keyframes focus { 0% { opacity: 0.28; } 35%, 65% { opacity: 1; } 100% { opacity: 0.28; } }
     .story-n { animation: dot linear both; animation-timeline: view(); animation-range: entry 20% exit 80%; }
-    @keyframes dot { 0%, 100% { background: var(--bg); border-color: var(--dim); box-shadow: none; } 40%, 60% { background: var(--lilac); border-color: var(--lilac); box-shadow: 0 0 18px rgba(185, 162, 255, 0.7); } }
+    @keyframes dot { 0%, 100% { background: var(--bg); border-color: var(--dim); box-shadow: none; } 40%, 60% { background: var(--accent); border-color: var(--accent); box-shadow: 0 0 18px rgba(255, 183, 122, 0.75); } }
     /* table rows slide their accent in as they arrive */
     .bug .fix, .vs-r .yes { animation: arrive linear both; animation-timeline: view(); animation-range: entry 0% entry 80%; }
     @keyframes arrive { from { opacity: 0.2; translate: -10px 0; } }
