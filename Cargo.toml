@@ -5,7 +5,6 @@ edition = "2024"
 license-file = "LICENSE"
 
 [dependencies]
-anyhow = "1.0.104"
 async-stream = "0.3.6"
 async-trait = "0.1.92"
 base64 = "0.23.1"
