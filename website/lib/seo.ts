@@ -114,19 +114,24 @@ export const DOC_SEO: Record<string, Seo> = {
     keywords: ["AI coding agent Windows", "PowerShell coding agent", "install on Windows"],
   },
   compare: {
-    title: "Terminal AI coding agents compared: zerd, Claude Code, Aider",
-    description: "zerd next to Claude Code, Aider and Codex CLI: verification, model choice, safety and licensing side by side, and which one to pick.",
+    title: "Terminal AI coding agents compared: zerd and 4 more",
+    description: "zerd next to Claude Code, Aider, Codex CLI and OpenCode: verification, model choice, safety and licensing side by side, and which to pick.",
     keywords: ["AI coding agents compared", "best terminal coding agent", "Claude Code alternatives", "CLI coding agent comparison"],
   },
   "compare/claude-code": {
     title: "zerd vs Claude Code: a Claude Code alternative",
-    description: "How zerd and Claude Code differ on verification, model choice and safety, with real benchmark results and where Claude Code is ahead.",
+    description: "zerd vs Claude Code with real numbers from two head-to-head rounds: 10/11 each on tasks, 12 vs 3 bugs found, and where Claude Code is ahead.",
     keywords: ["Claude Code alternative", "zerd vs Claude Code", "Claude Code vs", "Claude Code competitor"],
   },
   "compare/aider": {
     title: "zerd vs Aider: an Aider alternative",
     description: "How zerd compares with Aider on verification, git workflow, model support and licensing, and where Aider is the better fit.",
     keywords: ["Aider alternative", "zerd vs Aider", "Aider vs", "Aider competitor"],
+  },
+  "compare/opencode": {
+    title: "zerd vs OpenCode: an OpenCode alternative",
+    description: "How zerd compares with OpenCode on verification, review, safety and licensing, and where OpenCode's MIT license and desktop app come out ahead.",
+    keywords: ["OpenCode alternative", "zerd vs OpenCode", "OpenCode vs", "opencode competitor"],
   },
   "compare/codex-cli": {
     title: "zerd vs Codex CLI: a Codex CLI alternative",
