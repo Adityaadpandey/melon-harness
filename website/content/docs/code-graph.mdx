@@ -13,7 +13,7 @@ That prints what the model would see if it asked the `graph` tool the same thing
 
 In an interactive terminal session, if the repo has 15 or more source files, zerd prints `indexing the code graph in the background` and starts building the symbol graph while the prompt comes up. Source files are counted from `git ls-files` (tracked, plus untracked files that are not ignored), limited to the supported extensions, minus [noise](#what-is-left-out) and anything you ignored.
 
-A session also warms the graph when it starts, so the first graph question finds it ready. The `graph` tool is only offered to the model in repos of 15 or more source files (or when a `graphify-out/graph.json` snapshot exists).
+A session also prepares the graph when it starts, so the first graph question finds it ready. The `graph` tool is only offered to the model in repos of 15 or more source files (or when a `graphify-out/graph.json` snapshot exists).
 
 ## What it indexes
 

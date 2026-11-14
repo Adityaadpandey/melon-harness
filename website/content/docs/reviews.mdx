@@ -9,7 +9,7 @@ Ask for a review in plain words: "review my changes", "review my last 3 commits"
 > review PR #42
 ```
 
-zerd runs a multi-stage pipeline rather than a single prompt:
+zerd reviews in stages instead of with one prompt:
 
 1. Triage. A cheap pass picks what could plausibly break.
 2. Reviewers. Each reads the diff through one lens: behaviour, approach, failures, project rules, git history and security. A separate reviewer checks producer-to-consumer contracts.

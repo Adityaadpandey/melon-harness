@@ -105,7 +105,7 @@ Inside a session:
 
 Read-only sub-agents run concurrently, or in the background with follow-ups. `/agents` lists them and `/agents stop <id>` stops one. See [Skills and agents](/docs/skills-and-agents).
 
-For edits, `parallel_tasks` fans write-capable workers out into separate git worktrees. It merges them in dependency order and flags real conflicts. This is Full mode only.
+For edits, `parallel_tasks` runs workers that can write files, each in its own git worktree. It merges them in dependency order and flags real conflicts. This is Full mode only.
 
 For a whole run:
 
