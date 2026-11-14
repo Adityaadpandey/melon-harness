@@ -8,11 +8,11 @@ export const metadata: Metadata = { title: "Docs" };
 // Groups come from the sidebar tree (the separators in meta.json), so this index never drifts from it.
 // One line per sidebar group, saying who it is for. Keyed by the separator names in meta.json.
 const BLURBS: Record<string, string> = {
-  "Start here": "New to zerd? Read these three in order.",
-  Guides: "Day-to-day use: what to type, which model to pick, and how zerd keeps your code safe.",
-  "Under the hood": "How zerd decides a change is good enough to call finished.",
-  Reference: "Every flag, setting and command, for when you know what you are looking for.",
-  Evidence: "Head-to-head results, honest limits and the license.",
+  "Start here": "New here? Read these three in order.",
+  Guides: "Everyday use: what to type, which model to pick, and how zerd keeps your code safe.",
+  "Under the hood": "How zerd decides a change is actually finished.",
+  Reference: "Every flag, setting and command, for when you know what you’re after.",
+  Evidence: "Head-to-head results, honest limits, and the license.",
 };
 
 function groups() {
@@ -32,9 +32,8 @@ function groups() {
 export default function DocsIndex() {
   return (
     <DocsPage toc={[]}>
-      <p className="docs-lead">Documentation</p>
       <DocsTitle>Learn zerd</DocsTitle>
-      <DocsDescription>zerd is a coding agent for your terminal that checks its own work. Install it in two minutes, see how a run is verified, and find out where it still falls short.</DocsDescription>
+      <DocsDescription>zerd is a terminal coding agent that checks its own work. Install it in two minutes, see how a run is verified, and read where it still falls short.</DocsDescription>
       <DocsBody>
         {groups().map((g, i) => (
           <section key={g.title} className="docs-group">

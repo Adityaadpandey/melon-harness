@@ -37,7 +37,7 @@ code, pre, kbd { font-family: var(--font-mono), ui-monospace, Menlo, monospace; 
 #nd-sidebar { border-inline-end: 1px solid var(--color-fd-border); }
 
 /* page header: a big title, a readable summary, then a hairline before the body */
-#nd-page h1 { font-size: clamp(34px, 4vw, 48px); line-height: 1.05; letter-spacing: -0.035em; font-weight: 650; background: linear-gradient(180deg, #fff 40%, rgba(255, 255, 255, 0.75)); -webkit-background-clip: text; background-clip: text; color: transparent; }
+#nd-page h1 { font-size: clamp(34px, 4vw, 48px); line-height: 1.05; letter-spacing: -0.035em; font-weight: 650; color: #fff; }
 #nd-page h1 + p { font-size: 19px; line-height: 1.55; color: #d0d0d0; margin: 12px 0 0; padding-bottom: 22px; border-bottom: 1px solid var(--color-fd-border); }
 
 /* reading body: bigger, brighter text, and headings that clearly step down */
@@ -52,7 +52,7 @@ code, pre, kbd { font-family: var(--font-mono), ui-monospace, Menlo, monospace; 
 .prose strong { color: #fff; font-weight: 600; }
 .prose li { margin: 0.35em 0; }
 .prose li::marker { color: var(--color-fd-primary); }
-.prose blockquote { border-inline-start: 3px solid var(--color-fd-primary); background: var(--color-fd-card); border-radius: 0 10px 10px 0; padding: 10px 18px; color: #e4e4e4; }
+.prose blockquote { border: 1px solid rgba(255, 214, 10, 0.3); background: var(--color-fd-card); border-radius: 10px; padding: 10px 18px; color: #e4e4e4; }
 figure.shiki, pre { box-shadow: none !important; }
 
 /* code blocks and inline code */
@@ -82,7 +82,6 @@ figure.shiki span, figure.shiki code span { color: var(--shiki-dark) !important;
 .mermaid-fallback { overflow-x: auto; padding: 14px; border: 1px solid var(--color-fd-border); border-radius: 10px; }
 
 /* docs index: the first group is the "start here" row, its cards are larger */
-.docs-lead { margin: 0 0 8px; font: 600 12.5px/1 var(--font-mono), monospace; letter-spacing: 0.12em; text-transform: uppercase; color: var(--color-fd-primary); }
 .docs-group { margin-top: 2.6rem; }
 .docs-group h2 { margin: 0 0 14px; padding: 0; border: 0; font: 600 12.5px/1 var(--font-mono), monospace; letter-spacing: 0.12em; text-transform: uppercase; color: var(--color-fd-muted-foreground); }
 .docs-cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(250px, 1fr)); gap: 12px; }
