@@ -44,6 +44,10 @@ export default async function Home() {
             <source srcSet="/hero/hero.avif" type="image/avif" />
             <img src="/hero/hero.webp" alt="" draggable={false} width={2560} height={1441} fetchPriority="high" decoding="async" />
           </picture>
+          <video autoPlay muted loop playsInline preload="auto" poster="/hero/hero-poster.webp" width={1280} height={662}>
+            <source src="/hero/hero.webm" type="video/webm" />
+            <source src="/hero/hero.mp4" type="video/mp4" />
+          </video>
         </div>
         <div className="hero-copy">
           <p className="eyebrow">The coding agent that shows its proof</p>

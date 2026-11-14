@@ -27,10 +27,14 @@
 
 .hero { position: relative; height: 100svh; min-height: 680px; max-height: 1000px; --pad: calc(max(0px, (100% - 1200px) / 2) + clamp(20px, 4vw, 40px)); }
 .hero-img { position: absolute; inset: 0; overflow: hidden; z-index: 0; }
-.hero-img picture, .hero-img img { display: block; width: 100%; height: 100%; }
-.hero-img img { object-fit: cover; object-position: 62% 50%; -webkit-user-drag: none; user-select: none; pointer-events: none;
+.hero-img picture, .hero-img img, .hero-img video { display: block; width: 100%; height: 100%; }
+.hero-img img, .hero-img video { object-fit: cover; object-position: 62% 50%; -webkit-user-drag: none; user-select: none; pointer-events: none;
   mix-blend-mode: screen;
   -webkit-mask-image: radial-gradient(ellipse 85% 80% at 62% 45%, #000 40%, transparent 100%); mask-image: radial-gradient(ellipse 85% 80% at 62% 45%, #000 40%, transparent 100%); }
+/* the loop replaces the still; people who ask for less motion keep the still */
+.hero-img video { position: absolute; inset: 0; }
+@media (prefers-reduced-motion: no-preference) { .hero-img picture { display: none; } }
+@media (prefers-reduced-motion: reduce) { .hero-img video { display: none; } }
 /* darken the left for the words, melt the foot into the page */
 .hero-img::after { content: ""; position: absolute; inset: 0; pointer-events: none;
   background: linear-gradient(90deg, rgba(0, 0, 0, 0.92) 0%, rgba(0, 0, 0, 0.8) 38%, rgba(0, 0, 0, 0.35) 56%, rgba(0, 0, 0, 0) 72%), linear-gradient(0deg, #000 0%, rgba(0, 0, 0, 0.6) 12%, rgba(0, 0, 0, 0) 38%); }
