@@ -32,6 +32,7 @@ export default async function HomeLayout({ children }: { children: React.ReactNo
               <Link href="/docs/license">License</Link>
               <a href="/llms.txt">llms.txt</a>
               <Link href="/docs/verification">Why zerd</Link>
+              <Link href="/docs/compare">Compare</Link>
             </nav>
           </div>
         </div>

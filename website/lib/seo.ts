@@ -113,6 +113,26 @@ export const DOC_SEO: Record<string, Seo> = {
     description: "How zerd runs on Windows 10 and 11 with PowerShell and Git for Windows, and what differs from macOS and Linux.",
     keywords: ["AI coding agent Windows", "PowerShell coding agent", "install on Windows"],
   },
+  compare: {
+    title: "Terminal AI coding agents compared: zerd, Claude Code, Aider",
+    description: "zerd next to Claude Code, Aider and Codex CLI: verification, model choice, safety and licensing side by side, and which one to pick.",
+    keywords: ["AI coding agents compared", "best terminal coding agent", "Claude Code alternatives", "CLI coding agent comparison"],
+  },
+  "compare/claude-code": {
+    title: "zerd vs Claude Code: a Claude Code alternative",
+    description: "How zerd and Claude Code differ on verification, model choice and safety, with real benchmark results and where Claude Code is ahead.",
+    keywords: ["Claude Code alternative", "zerd vs Claude Code", "Claude Code vs", "Claude Code competitor"],
+  },
+  "compare/aider": {
+    title: "zerd vs Aider: an Aider alternative",
+    description: "How zerd compares with Aider on verification, git workflow, model support and licensing, and where Aider is the better fit.",
+    keywords: ["Aider alternative", "zerd vs Aider", "Aider vs", "Aider competitor"],
+  },
+  "compare/codex-cli": {
+    title: "zerd vs Codex CLI: a Codex CLI alternative",
+    description: "How zerd compares with OpenAI's Codex CLI on verification, model choice and sandboxing, plus how to use your ChatGPT login in zerd.",
+    keywords: ["Codex CLI alternative", "zerd vs Codex CLI", "OpenAI Codex CLI vs", "Codex CLI competitor"],
+  },
   benchmarks: {
     title: "zerd vs Claude Code benchmarks and caveats",
     description: "Two head-to-head rounds against Claude Code: a payment-webhook service attacked with 15 scenarios, and 11 mixed tasks.",

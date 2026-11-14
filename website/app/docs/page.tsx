@@ -20,6 +20,7 @@ const BLURBS: Record<string, string> = {
   "Under the hood": "How zerd decides a change is actually finished.",
   Reference: "Every flag, setting and command, for when you know what you’re after.",
   Evidence: "Head-to-head results, honest limits, and the license.",
+  Compare: "zerd next to Claude Code, Aider and Codex CLI, and which to pick.",
 };
 
 function groups() {
