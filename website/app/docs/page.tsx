@@ -6,6 +6,7 @@ import { pageMeta } from "@/lib/seo";
 
 export const metadata: Metadata = pageMeta({
   path: "/docs",
+  image: "/opengraph-image",
   title: "zerd docs: install, models, safety, CLI reference",
   description: "Learn zerd, the terminal AI coding agent: install in two minutes, see how every run is verified, and read the full CLI, config and tools reference.",
   keywords: ["zerd docs", "AI coding agent documentation", "coding agent CLI reference"],

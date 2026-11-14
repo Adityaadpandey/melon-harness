@@ -133,15 +133,16 @@ export const DOC_SEO: Record<string, Seo> = {
 // The full set of tags for one page. Next replaces `openGraph` and `twitter` wholesale when a page sets
 // them, so a page that only passed title and description would silently lose the card type and site name.
 // Building the whole object here keeps every page complete.
-export function pageMeta(o: { path: string; title: string; description: string; keywords?: string[]; type?: "website" | "article" }): Metadata {
-  const { path, title, description, keywords, type = "website" } = o;
+export function pageMeta(o: { path: string; title: string; description: string; keywords?: string[]; type?: "website" | "article"; image?: string }): Metadata {
+  const { path, title, description, keywords, type = "website", image } = o;
+  const images = image ? [{ url: image, width: 1200, height: 630, alt: title }] : undefined;
   return {
     title,
     description,
     keywords,
     alternates: { canonical: path },
-    openGraph: { type, siteName: NAME, locale: "en_US", url: path, title: `${title} · ${NAME}`, description },
-    twitter: { card: "summary_large_image", title: `${title} · ${NAME}`, description },
+    openGraph: { type, siteName: NAME, locale: "en_US", url: path, title: `${title} · ${NAME}`, description, images },
+    twitter: { card: "summary_large_image", title: `${title} · ${NAME}`, description, images },
   };
 }
 

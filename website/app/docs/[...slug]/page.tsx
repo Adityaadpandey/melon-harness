@@ -39,5 +39,5 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
   if (!page) notFound();
   // Hand-tuned search copy wins; the frontmatter title and description are the fallback for a new page.
   const seo = DOC_SEO[page.slugs.join("/")];
-  return pageMeta({ path: page.url, type: "article", title: seo?.title ?? page.data.title, description: seo?.description ?? page.data.description ?? "", keywords: seo?.keywords });
+  return pageMeta({ path: page.url, type: "article", title: seo?.title ?? page.data.title, description: seo?.description ?? page.data.description ?? "", keywords: seo?.keywords, image: `/og/${page.slugs.join("/")}` });
 }
