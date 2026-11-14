@@ -67,9 +67,8 @@ export default async function Home() {
       </section>
       <section className="sec wrap story" id="how">
         <div className="story-side">
-          <p className="eyebrow">How it works</p>
           <h2>Every change comes with receipts</h2>
-          <p>Six steps run on their own after each edit. You read the result, not the whole diff.</p>
+          <p>Six steps run on their own after every edit. None of them wait for you.</p>
         </div>
         <ol className="story-steps">
           {PIPE.map(([t, d, ev], i) => (
@@ -85,7 +84,6 @@ export default async function Home() {
 
       <section className="sec wrap" id="proof">
         <div className="sec-head">
-          <p className="eyebrow">The proof</p>
           <h2>It finds what mock tests can’t</h2>
           <p>Same payments project, 15 attack scenarios. zerd ran them on real Postgres and Redis and found 12 real bugs. Claude Code found real bugs too, but never touched real infrastructure.</p>
         </div>
@@ -100,7 +98,6 @@ export default async function Home() {
 
       <section className="sec wrap install" id="install">
         <div className="sec-head">
-          <p className="eyebrow">Get started</p>
           <h2>Try it on one small change</h2>
           <p>One binary, no setup, two minutes. If it doesn’t save you review time, /undo puts everything back.</p>
         </div>
