@@ -273,3 +273,12 @@
 .hero .hero-links a:last-child { color: var(--dim); }
 .hero .hero-links a:last-child:hover { color: var(--text); }
 .hero .hero-fine { margin-top: 20px; }
+
+/* FAQ: native <details>, so it works without JS and the answers stay in the page for search engines */
+.faq-list { max-width: 52em; border-top: 1px solid var(--line, rgba(255,255,255,0.12)); }
+.faq-list details { border-bottom: 1px solid var(--line, rgba(255,255,255,0.12)); padding: 18px 0; }
+.faq-list summary { cursor: pointer; font-size: 18px; font-weight: 600; list-style: none; display: flex; justify-content: space-between; gap: 16px; }
+.faq-list summary::-webkit-details-marker { display: none; }
+.faq-list summary::after { content: "+"; color: var(--dim); font-weight: 400; }
+.faq-list details[open] summary::after { content: "\2212"; }
+.faq-list p { color: var(--dim); margin: 12px 0 0; max-width: 44em; }
