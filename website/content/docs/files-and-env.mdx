@@ -11,7 +11,7 @@ description: "Every folder and file zerd reads or writes, and every environment 
 | Config folder | macOS `~/Library/Application Support/zerd`, Linux `~/.config/zerd`, Windows `%APPDATA%\zerd` | The user `config.toml` and user-wide `tools/` |
 | `.zerd/` in a repo | The working directory | Project config, project tools, permission rules and prompt overrides |
 | `.zerd/` in your home | `~/.zerd` | User-wide commands, prompts, skills, agents, permission rules and prompt overrides |
-| Harness folder | Found next to the binary, or `ZERD_HOME` | `profiles/` and `skills/` that ship with zerd, plus an optional `.env` |
+| Install folder | Found next to the binary, or `ZERD_HOME` | `profiles/` and `skills/` that ship with zerd, plus an optional `.env` |
 
 `ZERD_DATA_DIR` replaces the data folder location on every system. On macOS and Windows the data and config folders are the same directory unless you set it.
 
@@ -97,14 +97,14 @@ Set these in your shell or save them with `/connect`. The provider table is in [
 
 `ollama` and `lmstudio` need no key.
 
-zerd loads `.env` from the harness folder, then from the data folder, at every start. A variable already set in your shell is never overridden by either file. The `.env` of the repo you are working in is never read.
+zerd loads `.env` from the install folder, then from the data folder, at every start. A variable already set in your shell is never overridden by either file. The `.env` of the repo you are working in is never read.
 
 ### Locations
 
 | Variable | What it does | Default |
 |---|---|---|
 | `ZERD_DATA_DIR` | Moves the data folder | The per-system path above |
-| `ZERD_HOME` | The harness folder with `profiles/` and `skills/` | Found by looking up from the binary |
+| `ZERD_HOME` | The install folder with `profiles/` and `skills/` | Found by looking up from the binary |
 | `HOME` | Base for `~/.zerd` and the macOS folders | The account's home directory |
 
 ### Behavior

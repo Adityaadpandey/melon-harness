@@ -32,7 +32,7 @@ The header fields are `name` (required), `description`, `triggers` (comma separa
 
 A skill with no `always` is listed by name and description in the system prompt, and the model can load it with the `use_skill` tool. Called with just a `name` it returns the body. Called with `section`, it returns the part of the `canonical` document whose heading contains that text, and `section: "list"` shows the headings. A section is cut at 14,000 characters.
 
-Already-loaded skills are named rather than pasted again later in the same conversation.
+A skill that is already loaded is only named, not pasted again, later in the same conversation.
 
 You can also invoke one yourself: typing `/debugging the flaky upload test` loads that skill for the request, whatever the words say. `/skills` lists what is loaded.
 

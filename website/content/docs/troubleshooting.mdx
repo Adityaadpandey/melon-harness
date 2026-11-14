@@ -44,7 +44,7 @@ With no model usable on a first launch, setup starts by itself. Set `ZERD_NO_SET
 
 ## Provider errors and failover
 
-zerd announces a fallback and never makes one silently.
+zerd always tells you when it falls back to another model.
 
 | What you see | Why | What to do |
 |---|---|---|
@@ -84,7 +84,7 @@ You will see this in the log first:
 Verification failed (python3 -m pytest ...); repair attempt 1/2
 ```
 
-zerd sends the real check output back to the agent for up to 2 repair rounds, then escalates to the strong model. If the checks still fail, the run ends `verification_failed`. The tree is left as the agent last wrote it, so run the failing command yourself to see the error, or `/undo` to put things back. How checks are picked is in [Verification](/docs/verification).
+zerd sends the real check output back to the agent for up to 2 repair rounds, then escalates to the strong model. If the checks still fail, the run ends `verification_failed`. Your files stay as the agent last wrote them, so run the failing command yourself to see the error, or `/undo` to put things back. How checks are picked is in [Verification](/docs/verification).
 
 A run that ran out of budget mid-change still runs the checks. If they fail you get `Stopped on the budget and the tree fails <command>; the change is incomplete`.
 
@@ -100,7 +100,7 @@ A run that ran out of budget mid-change still runs the checks. If they fail you 
 
 ## Checks that fail before the agent touched anything
 
-If every run ends `unverified` and the log shows `was already failing before your change; leaving it alone`, the check is broken on your clean tree. Run the command shown in the message in your terminal and fix it there.
+If every run ends `unverified` and the log shows `was already failing before your change; leaving it alone`, the check is already broken on your untouched files. Run the command shown in the message in your terminal and fix it there.
 
 Two things make this more likely:
 

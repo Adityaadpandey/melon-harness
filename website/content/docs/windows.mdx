@@ -13,7 +13,7 @@ Shell commands run in Git Bash, so the bash a model writes for macOS and Linux w
 
 The OS sandbox is macOS only. On Windows you have the confined file tools and the shell path scan.
 
-That scan looks for Unix-style paths, so a command naming a `C:\...` path outside the project is not caught the way `/etc/passwd` is.
+That scan only looks for Unix-style paths. A command that names a `C:\...` path outside the project slips past it, while `/etc/passwd` would be caught.
 
 <Callout type="warn">
 Read shell commands that touch `C:\...` paths before approving them. The path scan will not flag them.
