@@ -21,6 +21,6 @@ jobs:
     runs-on: ${{ matrix.os }}
     continue-on-error: ${{ matrix.os == 'windows-2025' }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: Swatinem/rust-cache@v2 # reuse compiled dependencies between runs
       - run: cargo test # the release build (fat LTO, slow) only happens in release.yml on a tag
