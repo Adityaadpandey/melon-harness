@@ -2,8 +2,14 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { DocsBody, DocsDescription, DocsPage, DocsTitle } from "fumadocs-ui/layouts/docs/page";
 import { source } from "@/lib/source";
+import { pageMeta } from "@/lib/seo";
 
-export const metadata: Metadata = { title: "Docs" };
+export const metadata: Metadata = pageMeta({
+  path: "/docs",
+  title: "zerd docs: install, models, safety, CLI reference",
+  description: "Learn zerd, the terminal AI coding agent: install in two minutes, see how every run is verified, and read the full CLI, config and tools reference.",
+  keywords: ["zerd docs", "AI coding agent documentation", "coding agent CLI reference"],
+});
 
 // Groups come from the sidebar tree (the separators in meta.json), so this index never drifts from it.
 // One line per sidebar group, saying who it is for. Keyed by the separator names in meta.json.

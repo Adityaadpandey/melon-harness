@@ -5,6 +5,7 @@ import { source } from "@/lib/source";
 import { getMDXComponents } from "@/components/mdx";
 import { JsonLd } from "@/lib/jsonld";
 import { NAME, SITE } from "@/lib/site";
+import { DOC_SEO, pageMeta } from "@/lib/seo";
 
 type Props = { params: Promise<{ slug: string[] }> };
 
@@ -36,6 +37,7 @@ export function generateStaticParams() {
 export async function generateMetadata({ params }: Props): Promise<Metadata> {
   const page = source.getPage((await params).slug);
   if (!page) notFound();
-  const { title, description } = page.data;
-  return { title, description, alternates: { canonical: page.url }, openGraph: { type: "article", url: page.url, title, description }, twitter: { title, description } };
+  // Hand-tuned search copy wins; the frontmatter title and description are the fallback for a new page.
+  const seo = DOC_SEO[page.slugs.join("/")];
+  return pageMeta({ path: page.url, type: "article", title: seo?.title ?? page.data.title, description: seo?.description ?? page.data.description ?? "", keywords: seo?.keywords });
 }

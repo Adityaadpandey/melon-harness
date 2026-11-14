@@ -3,4 +3,6 @@ export const SITE = "https://zerd.si";
 export const NAME = "zerd";
 export const TAGLINE = "the coding agent that proves its work";
 export const DESCRIPTION =
-  "zerd is a terminal coding agent that runs checks on your changes, has a second model review the real diff, and verifies every file path it mentions.";
+  "zerd is a terminal AI coding agent that runs tests on its changes, has a second model review the real diff, and verifies every file path it mentions.";
+// The home page title. Leads with the search phrase, keeps the brand first so it still reads as a name.
+export const HOME_TITLE = `${NAME}: the terminal AI coding agent that verifies its own work`;

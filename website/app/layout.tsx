@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import { Bricolage_Grotesque, Instrument_Serif, JetBrains_Mono } from "next/font/google";
 import { Provider } from "@/components/provider";
 import { JsonLd } from "@/lib/jsonld";
-import { DESCRIPTION, NAME, SITE, TAGLINE } from "@/lib/site";
+import { DESCRIPTION, HOME_TITLE, NAME, SITE } from "@/lib/site";
 import { REPO } from "@/lib/docs";
 import "./globals.css";
 
@@ -12,13 +12,16 @@ const mono = JetBrains_Mono({ subsets: ["latin"], variable: "--font-mono" });
 
 export const metadata: Metadata = {
   metadataBase: new URL(SITE),
-  title: { default: `${NAME}, ${TAGLINE}`, template: `%s · ${NAME}` },
+  title: { default: HOME_TITLE, template: `%s · ${NAME}` },
   description: DESCRIPTION,
   applicationName: NAME,
-  keywords: ["coding agent", "terminal coding agent", "AI coding assistant", "CLI", "Claude Code alternative", "code review", "Rust"],
+  keywords: ["terminal coding agent", "AI coding agent", "AI coding assistant CLI", "Claude Code alternative", "Aider alternative", "Codex CLI alternative", "AI code review", "verify AI generated code", "agentic coding", "Rust CLI"],
+  authors: [{ name: NAME, url: SITE }],
+  creator: NAME,
+  category: "technology",
   alternates: { canonical: "/" },
-  openGraph: { type: "website", siteName: NAME, url: SITE, title: `${NAME}, ${TAGLINE}`, description: DESCRIPTION },
-  twitter: { card: "summary_large_image", title: `${NAME}, ${TAGLINE}`, description: DESCRIPTION },
+  openGraph: { type: "website", siteName: NAME, locale: "en_US", url: SITE, title: HOME_TITLE, description: DESCRIPTION },
+  twitter: { card: "summary_large_image", title: HOME_TITLE, description: DESCRIPTION },
   robots: { index: true, follow: true, googleBot: { "max-snippet": -1, "max-image-preview": "large" } },
 };
 
