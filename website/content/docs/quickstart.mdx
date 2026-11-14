@@ -112,7 +112,7 @@ zerd -m anthropic:claude-haiku-5-5 --approval auto "fix the failing test in test
 zerd --continue          # pick up the last session in this folder
 ```
 
-Checks run automatically after edits, with repair rounds, and nothing is learned into your repo. The exit code is 1 if the run ended `failed` or `verification_failed`, so CI can fail the build on it. More in the [CLI reference](/docs/cli).
+Checks run automatically after edits, with repair rounds, and zerd saves nothing it learns into your repo. The exit code is 1 if the run ended `failed` or `verification_failed`, so CI can fail the build on it. More in the [CLI reference](/docs/cli).
 
 ## Build from source
 

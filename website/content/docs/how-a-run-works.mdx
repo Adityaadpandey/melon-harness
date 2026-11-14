@@ -3,7 +3,7 @@ title: "How a run works"
 description: "What happens between your request and the final status, and the five ways a run can end."
 ---
 
-The harness around the model picks which model to use, runs the checks, and decides whether the work counts as finished. This example run is put together to show the flow. Each status line is a message zerd prints, and the last two lines are a summary rather than the exact format.
+The model writes the code, but zerd’s own code decides the rest: which model to use, which checks to run, and whether the work counts as finished. The run below is an example put together to show the flow. Each status line is a message zerd prints, and the last two lines are a summary, not the exact format.
 
 ```text
 > change unique_by() to take a key function and drop the seen= argument
@@ -89,7 +89,7 @@ Each request is a task with a fixed lifecycle. The code checks every transition,
 
 ## How the pieces fit
 
-Everything the model can do goes through one door, the tool registry, and everything the harness decides is traced.
+Everything the model can do goes through one door, the tool registry, and everything zerd decides is traced.
 
 <Mermaid chart={`flowchart TB
     subgraph UI["Front end"]
