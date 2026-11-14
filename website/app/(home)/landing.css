@@ -227,3 +227,49 @@
   .split { grid-template-columns: minmax(0, 1fr); }
   .split .sec-head { position: static; }
 }
+
+/* ---- bolder pass: same black, same yellow, same type, just turned up ----
+   The page already says "proof" everywhere, but the headlines were all whispering at the same
+   size. Now the hero and the two big moments (the proof table, the install) go to display scale,
+   and the sections in between stay calm so the peaks actually read as peaks. */
+.hero h1 { font-size: clamp(44px, 6.4vw, 96px); line-height: 0.98; letter-spacing: -0.045em; font-weight: 600; margin-bottom: 28px; }
+.hero-copy { width: min(780px, 58vw); }
+.hero .lead { font-size: clamp(18px, 1.5vw, 21px); }
+
+/* how it works: heading gets real weight, step titles read as headlines not labels */
+.story h2 { font-size: clamp(36px, 5vw, 68px); line-height: 1.02; letter-spacing: -0.04em; }
+.story-steps h3 { font-size: clamp(24px, 2.6vw, 36px); letter-spacing: -0.035em; line-height: 1.1; }
+.story-steps p { font-size: 18px; }
+
+/* the proof: the loudest section after the hero. Bigger heading, taller rows, zerd's column lit */
+#proof h2 { font-size: clamp(40px, 6vw, 84px); line-height: 1; letter-spacing: -0.045em; }
+#proof .sec-head { max-width: 40em; margin-bottom: clamp(32px, 4vw, 56px); }
+#proof .sec-head p:not(.eyebrow) { font-size: clamp(18px, 1.6vw, 22px); color: var(--text); opacity: 0.8; }
+.vs-h, .vs-r { padding: clamp(16px, 2vw, 26px) clamp(16px, 2.4vw, 32px); font-size: clamp(16px, 1.5vw, 20px); }
+.vs-h { font-size: 14px; }
+.vs-r .yes { font-size: clamp(18px, 1.8vw, 24px); letter-spacing: -0.02em; }
+.vs-r > span:last-child { color: var(--dim); opacity: 0.75; }
+.vs { border-color: rgba(255, 214, 10, 0.28); }
+
+/* install: the last word on the page. Display-size heading, command at a size you can read from across the desk */
+.install h2 { font-size: clamp(44px, 7vw, 104px); line-height: 0.96; letter-spacing: -0.05em; }
+.install .sec-head p:not(.eyebrow) { margin-inline: auto; font-size: clamp(18px, 1.6vw, 22px); }
+.install .cmd { max-width: 680px; padding: 10px 10px 10px 22px; border-radius: 12px; border-color: rgba(255, 214, 10, 0.35); }
+.install .cmd code { font-size: clamp(14px, 1.5vw, 17px); }
+.install .cmd button { padding: 12px 20px; font-size: 15px; }
+
+/* ---- hero pass ----
+   Copy block: no label above the headline, a solid white headline (the fade made it look dimmer
+   than the video behind it), and the spacing pulled into one tight group: headline, lead, command, links.
+   Visual: the left shade is lighter and ends sooner, so the loop gets more of the screen.
+   CTA: the docs link becomes a real button next to the install command, the second link stays quiet. */
+.hero h1 { background: none; color: #fff; margin-bottom: 20px; }
+.hero .lead { margin-bottom: 24px; color: rgba(255, 255, 255, 0.86); }
+.hero-img::after { background: linear-gradient(90deg, rgba(0, 0, 0, 0.88) 0%, rgba(0, 0, 0, 0.7) 34%, rgba(0, 0, 0, 0.25) 50%, rgba(0, 0, 0, 0) 64%), linear-gradient(0deg, #000 0%, rgba(0, 0, 0, 0.6) 10%, rgba(0, 0, 0, 0) 32%); }
+.hero-img img, .hero-img video { object-position: 66% 50%; -webkit-mask-image: radial-gradient(ellipse 90% 85% at 64% 45%, #000 45%, transparent 100%); mask-image: radial-gradient(ellipse 90% 85% at 64% 45%, #000 45%, transparent 100%); }
+.hero .hero-links { align-items: center; gap: 12px 24px; margin-top: 18px; }
+.hero .hero-links a:first-child { text-decoration: none; font-weight: 600; color: #000; background: var(--accent); padding: 12px 22px; border-radius: 999px; transition: background 0.15s, transform 0.15s; }
+.hero .hero-links a:first-child:hover { background: #fff; transform: translateY(-1px); }
+.hero .hero-links a:last-child { color: var(--dim); }
+.hero .hero-links a:last-child:hover { color: var(--text); }
+.hero .hero-fine { margin-top: 20px; }

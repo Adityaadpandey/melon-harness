@@ -50,9 +50,8 @@ export default async function Home() {
           </video>
         </div>
         <div className="hero-copy">
-          <p className="eyebrow">The coding agent that shows its proof</p>
-          <h1>Ship AI-written code without re-checking it.</h1>
-          <p className="lead">Other agents say “done.” zerd shows what it tested, has a second AI review the real changes, and flags anything it couldn’t verify.</p>
+          <h1>Your agent says “done.” zerd shows the proof.</h1>
+          <p className="lead">It runs tests on what it changed, has a second AI read the real diff, and tells you what it couldn’t verify. You read a short receipt, not the whole change.</p>
           <CopyCmd cmd={INSTALL} />
           <p className="hero-links">
             <Link href="/docs/quickstart">Try it in two minutes</Link>
