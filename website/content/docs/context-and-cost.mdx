@@ -41,7 +41,7 @@ Compaction asks the same model, on the exact prefix it just sent, so the provide
 - The files being worked on are restored from disk.
 - The replaced messages are saved to `transcripts/`, so nothing is lost.
 
-If three compactions in a row refill immediately, a breaker trips and zerd prunes instead.
+If three compactions in a row refill immediately, zerd stops compacting and prunes instead.
 
 <Mermaid chart={`flowchart LR
     T["Tool result"] --> CAP{"Over the<br/>output cap?"}
@@ -80,7 +80,7 @@ Scores are kept in `calibration.jsonl`. The last ten results are shown to the mo
 
 ### When a run goes wrong
 
-A loop, a repeated action, or an edit that keeps being rewritten goes through three steps:
+If zerd sees a loop, a repeated action, or an edit rewritten again and again, it takes three steps:
 
 1. A nudge.
 2. Escalation to the strong model.

@@ -46,7 +46,7 @@ For example, if `unique_by()` stops accepting `seen`, the agent is sent back onc
 
 ## Every edit is checked as it lands
 
-Each edit result comes back with the problems that edit introduced attached. Old and new text are both checked, and anything already there is ignored. The checks are:
+Each edit result lists any problems that edit introduced. Old and new text are both checked, and anything already there is ignored. The checks are:
 
 - Python syntax and `ruff`
 - JSON and TOML parsing
