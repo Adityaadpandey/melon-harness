@@ -3,7 +3,7 @@ title: "Slash commands"
 description: "Every command you can type inside an interactive zerd session, grouped by what it does."
 ---
 
-Type `/help` in a session to see the same list. Tab completes command names, and `/command` with an unknown name falls through to your own prompt templates and skills (see the end of this page).
+Type `/help` in a session to see the same list. Tab completes command names. A `/name` zerd doesn't know is looked up in your own prompt templates and skills (see the end of this page).
 
 ## Session
 
@@ -40,7 +40,7 @@ Costs and compaction are covered in [Context and cost](/docs/context-and-cost). 
 | `/plan` | Toggles plan mode. zerd reads and searches but changes nothing, then presents a plan. Run it again to go back to the previous mode | |
 | `/permissions` | Lists allow, deny and ask rules. `/permissions <allow\|deny\|ask> <rule>` adds one and `/permissions remove <rule>` drops one | `/permissions deny Read(.env*)` |
 
-Rules are saved in `.zerd/permissions.json`. Deny wins over ask, and ask over allow. See [Safety](/docs/safety) and [Permissions](/docs/permissions).
+Rules are saved in `.zerd/permissions.json`. When rules overlap, deny beats ask, and ask beats allow. See [Safety](/docs/safety) and [Permissions](/docs/permissions).
 
 ## Checks, undo and learning
 
@@ -94,4 +94,4 @@ F3 flips the side panel.
 
 ## Your own commands
 
-Any other `/name` is looked up in your prompt templates (`.zerd/commands`, `.claude/commands`) and then in your skills. A template expands with the words you type after it. A skill is loaded for that request, so `/code-review the auth change` runs that playbook on those words. With no words, zerd applies the skill to the project. If nothing matches, you get `Unknown command`. See [Extending](/docs/extending).
+Any other `/name` is looked up in your prompt templates (`.zerd/commands`, `.claude/commands`) first, then in your skills. A template expands with the words you type after it. A skill is loaded for that request, so `/code-review the auth change` runs that playbook on those words. With no words, zerd applies the skill to the whole project. If nothing matches, you get `Unknown command`. See [Extending](/docs/extending).

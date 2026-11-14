@@ -7,7 +7,7 @@ description: "Every flag and subcommand of the zerd command, with exit codes and
 zerd [OPTIONS] [PROMPT]
 ```
 
-With no `PROMPT` you get the interactive session. With a `PROMPT` zerd runs once and exits:
+Run `zerd` alone to start an interactive session. Add a `PROMPT` and zerd does that one task, then exits:
 
 ```bash
 zerd                                   # interactive
@@ -38,30 +38,30 @@ zerd "fix the failing test"            # one shot, then exit
 
 ## What scripted runs change
 
-A run is scripted when you pass a prompt, `--json` or `--rpc`. Then:
+A run counts as scripted when you pass a prompt, `--json` or `--rpc`. In that case:
 
-- With nobody to ask, the default approval becomes `auto-edit`. Commands still need `--approval auto`.
-- Checks run automatically after edits, with repair rounds.
-- The challenger is off unless you pass `--challenge`.
+- Nobody is there to approve things, so the default approval becomes `auto-edit`. Running commands still needs `--approval auto`.
+- Checks run on their own after edits, with repair rounds.
+- The challenger stays off unless you pass `--challenge`.
 - Learning from corrections is off, so CI never writes into your repo.
-- A missing API key is an error instead of a warning.
-- The "last model" is neither read nor saved.
+- A missing API key stops the run with an error instead of a warning.
+- The last-used model is not read or saved.
 
-The exit code is `1` when the run ends `failed` or `verification_failed`, or when it could not run at all. Otherwise it is `0`, so CI can fail the build on it.
+The exit code is `1` when the run ends `failed` or `verification_failed`, or could not run at all. Otherwise it is `0`, so CI can fail the build on it.
 
 ## Subcommands
 
 ### `zerd setup`
 
-The first-run walkthrough: choose where models come from, save and test a key, choose a model, choose an approval mode. Runs by itself when no model is usable. Set `ZERD_NO_SETUP=1` to stop that.
+Walks you through first-run setup: pick where models come from, save and test a key, pick a model and an approval mode. It starts by itself when no model is usable. Set `ZERD_NO_SETUP=1` to stop that.
 
 ### `zerd doctor`
 
-One line per thing that can go wrong, each with its fix. Exits 1 if something blocks. See [Troubleshooting](/docs/troubleshooting).
+Checks your setup and prints one line per problem, each with its fix. Exits 1 if something blocks. See [Troubleshooting](/docs/troubleshooting).
 
 ### `zerd graph <action> [name] [to|direction] [depth]`
 
-Ask the code graph directly, to see what the model would see. The actions are: `trace`, `symbol`, `find`, `callers`, `callees`, `impact`, `importers`, `imports`, `blast`, `tests`, `neighbors`, `path`, `community` and `stats`.
+Query the code graph yourself to see what the model would see. The actions are: `trace`, `symbol`, `find`, `callers`, `callees`, `impact`, `importers`, `imports`, `blast`, `tests`, `neighbors`, `path`, `community` and `stats`.
 
 ```bash
 zerd graph callers parse_invoice
@@ -73,15 +73,13 @@ With no action, `zerd graph` indexes the repo and asks a few questions about fol
 
 ### `zerd learn-import --repo <dir> [--deep] [--reweigh] [--apply]`
 
-Mines your old Claude Code sessions for rules and edit history.
-
-Without `--apply` it is a dry run, so you can try it first.
+Pulls rules and edit history out of your old Claude Code sessions. Without `--apply` it is a dry run, so you can preview first.
 
 See [Memory and undo](/docs/memory-and-undo).
 
 ### `zerd insights [--days N] [--json]`
 
-Reads zerd's own trace files and reports, per model, failed calls, retries, speed, cache hit rate, bad tool calls and how often the loop had to step in. Defaults to the last 7 days.
+Reads zerd's own trace files and reports, per model, failed calls, retries, speed, cache hit rate, bad tool calls and how often the loop had to step in. It covers the last 7 days by default.
 
 ### `zerd probe-models [--json <file>]`
 

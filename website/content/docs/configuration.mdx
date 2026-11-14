@@ -3,7 +3,7 @@ title: "Configuration"
 description: "Where config, keys and data live, which layer wins, and the flags you will actually use."
 ---
 
-When settings disagree, the first of these wins: flags, the project's `.zerd/config.toml`, the user config, then defaults.
+If the same setting appears in more than one place, the first of these wins: flags, the project's `.zerd/config.toml`, the user config, then defaults.
 
 ## Where things live
 
@@ -31,9 +31,9 @@ api_key_env = "WORK_LLM_KEY"
 protocol    = "anthropic"              # default "openai"
 ```
 
-Each role is a fallback chain: zerd tries the first model and moves to the next if it fails. Here `default` uses `claude-sonnet-5-5` and falls back to `deepseek/deepseek-v4-pro`.
+Each role is a fallback chain: zerd tries the first model, and if it fails, moves to the next. Here `default` uses `claude-sonnet-5-5` and falls back to `deepseek/deepseek-v4-pro`.
 
-The `[providers.work]` block adds your own server. Point `api_key_env` at the environment variable that holds its key.
+The `[providers.work]` block adds your own server. Set `api_key_env` to the name of the environment variable that holds its key.
 
 More in [Models and routing](/docs/models).
 
