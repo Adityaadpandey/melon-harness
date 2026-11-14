@@ -28,6 +28,11 @@
     "---Evidence---",
     "benchmarks",
     "limits",
-    "license"
+    "license",
+    "---Compare---",
+    "compare/index",
+    "compare/claude-code",
+    "compare/aider",
+    "compare/codex-cli"
   ]
 }

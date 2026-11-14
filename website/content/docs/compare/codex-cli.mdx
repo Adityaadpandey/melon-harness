@@ -1,0 +1,43 @@
+---
+title: "zerd vs Codex CLI"
+description: "How zerd compares with OpenAI's Codex CLI on verification, model choice, sandboxing and licensing, and how to use your ChatGPT login in zerd."
+---
+
+Codex CLI is OpenAI's open-source terminal coding agent, built to work with OpenAI models. zerd is a terminal agent that works with many providers, including OpenAI. In fact, zerd can use your Codex login directly.
+
+## The short version
+
+| | zerd | Codex CLI |
+|---|---|---|
+| Models | OpenAI via ChatGPT login or key, plus Claude, DeepSeek, Gemini, Groq, local and [more](/docs/models) | OpenAI models |
+| After an edit | Runs checks on the changed files by default | The model decides what to run |
+| Review | A second model reviews the real diff, a verifier disproves weak findings | Review available on request |
+| Claims about files | Paths and lines it mentions are checked on disk | Not checked |
+| Failover between providers | Yes | No |
+| Sandbox | macOS OS sandbox, confined file tools, scanned shell ([details](/docs/safety)) | OS-level sandboxing with approval modes |
+| Extending | MCP, hooks, skills, sub-agents, slash commands | MCP and configuration |
+| Source | Source-available, free to run | Open source |
+
+## Using your Codex login in zerd
+
+zerd accepts a ChatGPT/Codex login as a provider. Use a model id like `codex/gpt-5.6-luna` and zerd talks to it over the Responses API with your existing sign-in. You can start there, and add a second provider later for failover. See [Models and routing](/docs/models).
+
+## Where zerd is different
+
+**Verification is built in.** zerd picks checks for exactly the changed files, runs them, and reports what passed and what is still unverified. If a check already failed before the run, it says so and does not chase it. See [Verification](/docs/verification).
+
+**A second opinion on every change.** One model writes, another reads the real diff, and a verifier tries to prove each finding wrong. See [Reviews and fixes](/docs/reviews).
+
+**No single point of failure.** When a provider's quota or service gives out, zerd moves to the next provider and tells you. A run does not stop at a rate limit.
+
+## Where Codex CLI is ahead
+
+- **It is open source**, and zerd is source-available. See the [license](/docs/license).
+- **First-party OpenAI integration**, with an IDE extension and a polished sign-in flow. zerd has no IDE extension yet.
+- **Sandboxing on more platforms.** zerd's OS sandbox is macOS only for now.
+
+## Which should you use
+
+Choose Codex CLI if you want OpenAI's own open-source agent and plan to stay on OpenAI models. Choose zerd if you want proof on every change, more than one provider, or a second model reviewing the work.
+
+Try zerd on one small change with the [quickstart](/docs/quickstart).

@@ -1,0 +1,42 @@
+---
+title: "zerd vs Aider"
+description: "How zerd compares with Aider on verification, git workflow, model support and licensing, and where Aider is the better fit."
+---
+
+Aider is a well-known open-source AI pair programmer for the terminal. It works closely with git and supports many models. zerd shares the terminal and the any-model approach, and differs on what happens after an edit.
+
+## The short version
+
+| | zerd | Aider |
+|---|---|---|
+| Models | Claude, GPT, Codex login, DeepSeek, Gemini, Groq, local and [more](/docs/models), with failover | Many providers, local included |
+| After an edit | Runs checks on the changed files by default | Runs lint and tests when you configure them |
+| Review | A second model reviews the real diff, a verifier disproves weak findings | None built in |
+| Claims about files | Paths and lines it mentions are checked on disk | Not checked |
+| Git | Works with your tree, `/undo` restores files | Commits each change, so git is the undo |
+| Autonomy | Runs a task end to end, with sub-agents and approval modes | Chat-driven, edit by edit |
+| Extending | MCP, hooks, skills, sub-agents | Configuration and scripting |
+| Source | Source-available, free to run | Open source |
+| Written in | Rust, one binary | Python |
+
+## Where zerd is different
+
+**It ends with a receipt.** Aider can run your test command after edits. zerd decides which checks apply to the files that changed, runs them without being set up, and reports what passed and what stayed unverified. See [Verification](/docs/verification).
+
+**It reviews its own work.** A second model reads the diff, then a verifier tries to disprove each finding. You get the ones that survive. See [Reviews and fixes](/docs/reviews).
+
+**It runs longer tasks on its own.** zerd can hand work to sub-agents, resume a session, and keep going through repair rounds until the checks pass or it tells you why they cannot.
+
+**Safety is enforced in code.** File tools cannot leave the workspace, shell commands are scanned for paths outside it, and on macOS a sandbox blocks writes outside the project. See [Safety](/docs/safety).
+
+## Where Aider is ahead
+
+- **It is open source.** zerd is source-available: you can read and run it, not copy or modify it. If that matters, Aider is the right choice. See the [license](/docs/license).
+- **Git-first workflow.** Every Aider change is a commit with a message, which many people love for review and rollback.
+- **Maturity and community.** Aider has been around longer, with a large user base and plenty of shared recipes.
+
+## Which should you use
+
+Choose Aider if you want an open-source tool and a tight chat-and-commit loop. Choose zerd if you want the agent to verify and review its own changes, run longer tasks unattended, and show you a short receipt instead of the full diff.
+
+Try zerd on one small change with the [quickstart](/docs/quickstart).

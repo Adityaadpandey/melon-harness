@@ -1,0 +1,49 @@
+---
+title: "zerd vs Claude Code"
+description: "How zerd and Claude Code differ on verification, model choice, safety and cost, with the head-to-head benchmark results and where Claude Code is ahead."
+---
+
+Claude Code is Anthropic's terminal coding agent. zerd is an independent one built around a different question: not "can the agent write the change", but "how do you know it worked". If you already use Claude Code, this page shows what zerd adds and what it lacks.
+
+## The short version
+
+| | zerd | Claude Code |
+|---|---|---|
+| Models | Claude, GPT, DeepSeek, Gemini, Groq, local models and [more](/docs/models), with failover | Claude models |
+| After an edit | Runs checks on the changed files, always | Runs what you ask or configure |
+| Review | A second model reads the real diff, a verifier tries to disprove each finding | Review on request |
+| Claims about files | Every path and line it mentions is [looked up on disk](/docs/verification) | Not checked |
+| Failing check not caused by the agent | Detected by re-running on the pre-run files, left alone | Up to the model |
+| Undo | `/undo` restores every file | Checkpoints and git |
+| Safety | Confined file tools, scanned shell, macOS OS sandbox ([details](/docs/safety)) | Permission prompts and sandboxing options |
+| Extending | MCP, hooks, skills, sub-agents, slash commands | MCP, hooks, skills, sub-agents, slash commands |
+| IDE extension | No | Yes |
+| Image input | No | Yes |
+
+## Where zerd is different
+
+**Verification is the default, not a habit you build.** After every edit zerd picks checks for exactly the files that changed (tests that import the module, `cargo check`, `eslint`, `go vet` and so on) and runs them. It ends the run with a receipt: what ran, what passed, what is still unverified. See [Verification](/docs/verification).
+
+**It knows whose failure it is.** When a check fails, zerd runs it again on the pre-run copy of your files. If the same error is already there, it says so and does not send the agent chasing a bug it did not cause.
+
+**A second model reviews, and a third pass objects.** The reviewer reads the real diff, not a summary. A verifier then tries to prove each finding wrong, so you only see the ones that hold. See [Reviews and fixes](/docs/reviews).
+
+**You are not tied to one provider.** If one provider's quota runs out, zerd fails over to the next and tells you. You can also point cheap tasks at a cheap model and hard ones at a strong one.
+
+## What the benchmark showed
+
+In the webhook reliability test, zerd (on MiniMax M3) and Claude Code (on Sonnet 5.5) built the same payment-webhook service and attacked it with 15 scenarios. zerd tested against real PostgreSQL, real Redis and a real killed process, and found 12 bugs. Claude Code tested at the service layer with in-memory pieces, and found 3, including one that zerd missed.
+
+This is one project and one run each, and the two agents did not verify at the same depth. Read it as evidence about verification depth, not a ranking of models. The full write-up, with the caveats, is on the [Benchmarks](/docs/benchmarks) page.
+
+## Where Claude Code is ahead
+
+- It has IDE extensions and image input. zerd has neither yet.
+- It is a mature product from the company that makes the model, with a larger community and ecosystem.
+- Its OS-level sandboxing covers more platforms today. zerd's sandbox is macOS only.
+
+## Which should you use
+
+Use zerd when you review a lot of AI-written changes and want less to read, when you want to choose or mix models, or when you want the tool to prove a fix against real infrastructure. Use Claude Code when your day is in an IDE, or when you want one vendor end to end.
+
+They also work on the same repo. Try zerd on one small change with the [quickstart](/docs/quickstart).
