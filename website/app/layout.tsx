@@ -25,16 +25,31 @@ export const metadata: Metadata = {
   robots: { index: true, follow: true, googleBot: { "max-snippet": -1, "max-image-preview": "large" } },
 };
 
-// Tells search and answer engines what zerd is and who makes it.
+// Tells search and answer engines what zerd is and who makes it. The nodes point at each other by @id,
+// so the app, the site and the publisher read as one connected entity instead of three loose blobs.
 const schema = {
   "@context": "https://schema.org",
   "@graph": [
-    { "@type": "WebSite", "@id": `${SITE}/#site`, url: SITE, name: NAME, description: DESCRIPTION },
     {
-      "@type": "SoftwareApplication", "@id": `${SITE}/#app`, name: NAME, url: SITE, description: DESCRIPTION,
-      applicationCategory: "DeveloperApplication", operatingSystem: "macOS, Linux, Windows",
-      offers: { "@type": "Offer", price: "0", priceCurrency: "USD" },
-      codeRepository: `https://github.com/${REPO}`, downloadUrl: `${SITE}/docs/quickstart`,
+      "@type": "Organization", "@id": `${SITE}/#org`, name: NAME, url: SITE, logo: `${SITE}/icon.svg`,
+      sameAs: [`https://github.com/${REPO}`],
+    },
+    { "@type": "WebSite", "@id": `${SITE}/#site`, url: SITE, name: NAME, description: DESCRIPTION, inLanguage: "en", publisher: { "@id": `${SITE}/#org` } },
+    {
+      "@type": "SoftwareApplication", "@id": `${SITE}/#app`, name: NAME, alternateName: "zerd coding agent", url: SITE, description: DESCRIPTION,
+      applicationCategory: "DeveloperApplication", applicationSubCategory: "AI coding agent", operatingSystem: "macOS, Linux, Windows",
+      offers: { "@type": "Offer", price: "0", priceCurrency: "USD" }, isAccessibleForFree: true,
+      author: { "@id": `${SITE}/#org` }, publisher: { "@id": `${SITE}/#org` },
+      codeRepository: `https://github.com/${REPO}`, downloadUrl: `${SITE}/docs/quickstart`, installUrl: `${SITE}/docs/quickstart`,
+      softwareHelp: { "@type": "WebPage", url: `${SITE}/docs` }, license: `${SITE}/docs/license`,
+      featureList: [
+        "Runs tests and lint on exactly the files it changed",
+        "A second model reviews the real diff",
+        "A verifier tries to disprove each review finding",
+        "Looks up every file path and line it mentions on disk",
+        "Works with Claude, GPT, Codex, DeepSeek and local models, with failover",
+        "OS sandbox and confined file tools",
+      ],
     },
   ],
 };
