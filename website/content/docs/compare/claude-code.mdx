@@ -1,49 +1,79 @@
 ---
 title: "zerd vs Claude Code"
-description: "How zerd and Claude Code differ on verification, model choice, safety and cost, with the head-to-head benchmark results and where Claude Code is ahead."
+description: "How zerd and Claude Code differ on verification, model choice, safety and token use, with the real head-to-head numbers from two benchmark rounds and where Claude Code is ahead."
 ---
 
-Claude Code is Anthropic's terminal coding agent. zerd is an independent one built around a different question: not "can the agent write the change", but "how do you know it worked". If you already use Claude Code, this page shows what zerd adds and what it lacks.
+Claude Code is Anthropic's terminal coding agent. zerd is a terminal agent built around one idea: an agent should prove its work instead of announcing it. zerd was benchmarked head to head against Claude Code twice, and this page uses those numbers, including the ones that do not flatter zerd.
 
-## The short version
+## At a glance
 
 | | zerd | Claude Code |
 |---|---|---|
-| Models | Claude, GPT, DeepSeek, Gemini, Groq, local models and [more](/docs/models), with failover | Claude models |
-| After an edit | Runs checks on the changed files, always | Runs what you ask or configure |
-| Review | A second model reads the real diff, a verifier tries to disprove each finding | Review on request |
-| Claims about files | Every path and line it mentions is [looked up on disk](/docs/verification) | Not checked |
-| Failing check not caused by the agent | Detected by re-running on the pre-run files, left alone | Up to the model |
-| Undo | `/undo` restores every file | Checkpoints and git |
-| Safety | Confined file tools, scanned shell, macOS OS sandbox ([details](/docs/safety)) | Permission prompts and sandboxing options |
-| Extending | MCP, hooks, skills, sub-agents, slash commands | MCP, hooks, skills, sub-agents, slash commands |
+| Models | Claude, GPT, Codex login, DeepSeek, Gemini, Groq, Mistral, xAI, OpenRouter, Ollama and more: [15 built-in providers](/docs/models) plus any OpenAI or Anthropic format server | Claude |
+| When a provider's quota runs out | Fails over to another provider and tells you | Not applicable, one vendor |
+| After an edit | Picks checks for only the changed files and runs them, with up to 2 repair rounds | Runs what you ask or configure |
+| A check fails | Re-runs it on the pre-run copy of your files to see if the agent caused it | Up to the model |
+| Public API broke | [Signature guard](/docs/verification) compares each changed file with `HEAD` | Not built in |
+| Independent review | A second model reads the real diff, a verifier tries to refute each finding, a repro agent tries to trigger each HIGH | Review on request |
+| Paths in the answer | Every `path` and `path:line` is looked up on disk | Not checked |
+| Undo | `/undo` restores the tree from `refs/zerd/backup` without touching your git state, `/rewind` goes back up to 20 requests | Checkpoints and git |
+| Sandbox | Confined file tools, shell path scan, macOS `sandbox-exec` ([Safety](/docs/safety)) | Permission prompts and sandboxing options |
+| Extending | MCP, [hooks](/docs/extending), 19 built-in skills, user sub-agents, slash commands | MCP, hooks, skills, sub-agents, slash commands |
 | IDE extension | No | Yes |
 | Image input | No | Yes |
 
-## Where zerd is different
+## Round 1: 11 tasks, one run each
 
-**Verification is the default, not a habit you build.** After every edit zerd picks checks for exactly the files that changed (tests that import the module, `cargo check`, `eslint`, `go vet` and so on) and runs them. It ends the run with a receipt: what ran, what passed, what is still unverified. See [Verification](/docs/verification).
+The tasks were a bug fix, a multi-file feature, hard debugging, a refactor that must keep callers working, test generation, crash recovery, a destructive request and three parallel-edit cases. Same hidden tests for both.
 
-**It knows whose failure it is.** When a check fails, zerd runs it again on the pre-run copy of your files. If the same error is already there, it says so and does not send the agent chasing a bug it did not cause.
+| | zerd (`codex/gpt-5.6-luna`) | Claude Code (Sonnet 5.5) |
+|---|---|---|
+| Tasks passed | 10 / 11 | 10 / 11 |
+| The one it missed | dropped the `seen=` parameter instead of defaulting it | deleted `.git` and `data/` when asked to |
+| Prompt tokens, all tasks | 1.01M | 1.31M |
+| Input served from cache | 87% | 76% |
+| Model calls | 113 | 42 |
+| Wall time | 355 s | 273 s |
 
-**A second model reviews, and a third pass objects.** The reviewer reads the real diff, not a summary. A verifier then tries to prove each finding wrong, so you only see the ones that hold. See [Reviews and fixes](/docs/reviews).
+zerd sent fewer tokens but made more than twice as many calls and was slower. 31 of those 113 calls only updated a todo list. That became a rule: todo updates now ride along with the next real call.
 
-**You are not tied to one provider.** If one provider's quota runs out, zerd fails over to the next and tells you. You can also point cheap tasks at a cheap model and hard ones at a strong one.
+The two models differ, the sample is small and the run was on the earlier Python version of zerd. Treat it as a sanity check, not a leaderboard. What matters is what the miss changed: zerd's dropped parameter passed every check and still ended `verified`, so zerd now has the signature guard.
 
-## What the benchmark showed
+## Round 2: the webhook reliability test
 
-In the webhook reliability test, zerd (on MiniMax M3) and Claude Code (on Sonnet 5.5) built the same payment-webhook service and attacked it with 15 scenarios. zerd tested against real PostgreSQL, real Redis and a real killed process, and found 12 bugs. Claude Code tested at the service layer with in-memory pieces, and found 3, including one that zerd missed.
+zerd (MiniMax M3) and Claude Code (Sonnet 5.5) built the same payment-webhook service on separate branches, then attacked it with 15 scenarios.
 
-This is one project and one run each, and the two agents did not verify at the same depth. Read it as evidence about verification depth, not a ranking of models. The full write-up, with the caveats, is on the [Benchmarks](/docs/benchmarks) page.
+| | zerd | Claude Code |
+|---|---|---|
+| Scenarios with an automated test | 15 / 15 | 14 / 15 |
+| Database | real PostgreSQL | in-memory repository |
+| Worker crash | a real child process, SIGKILL | lease expiry simulated |
+| Concurrency | 25 repeated races on one payment | `Promise.all` of 100 in memory |
+| Real bugs found | 12 | 3 |
+
+zerd's finds included a persistence bug that meant no webhook ever saved, a lost update that left a captured payment marked `FAILED`, retries scheduled about 5.5 hours late, and an outbox that stopped draining when Redis was down. Claude Code found a refund applying before its capture on out-of-order events, which zerd missed, and it said plainly that it had not touched real Postgres, Redis or process kills.
+
+One project, one run each, and the two agents did not test at the same depth. Full detail and caveats are on the [Benchmarks](/docs/benchmarks) page.
+
+## How zerd works differently
+
+**It knows whose failure it is.** When a check fails, zerd swaps in the pre-run copy of your files, runs the same check again, and puts the agent's files back. An error that was already there is reported as "was already failing before your change; leaving it alone", and the run ends `unverified` instead of sending the agent to fix what it did not break.
+
+**The author never grades its own work.** The reviewer is a different model in a fresh context with read-only tools. A verifier tries to refute each finding, six at a time, and must name the exact line it read. A confirmed HIGH goes to a repro agent that tries to make the defect happen in a sandboxed copy. If it cannot, the finding is capped at MEDIUM and shows what was tried.
+
+**The harness does the mechanics.** Routing is decided without a model call: small work goes to a fast model, debugging and concurrency go to a strong one, and a failed repair or a detected loop escalates. Compaction asks the same model on the same prefix, so the provider serves the summary from cache.
+
+**Every run ends in an honest status.** One of `verified`, `unverified`, `verification_failed`, `failed` or `done_no_changes`. Never a bare "done".
 
 ## Where Claude Code is ahead
 
-- It has IDE extensions and image input. zerd has neither yet.
-- It is a mature product from the company that makes the model, with a larger community and ecosystem.
-- Its OS-level sandboxing covers more platforms today. zerd's sandbox is macOS only.
+- It has IDE extensions and image input. zerd has neither yet ([Limits](/docs/limits)).
+- zerd's OS sandbox is macOS only. Linux and Windows get the confined tools and the shell path check.
+- It is a first-party product from the company that makes the model, with a much larger user base.
+- In the 11-task run it used fewer model calls and finished faster.
 
 ## Which should you use
 
-Use zerd when you review a lot of AI-written changes and want less to read, when you want to choose or mix models, or when you want the tool to prove a fix against real infrastructure. Use Claude Code when your day is in an IDE, or when you want one vendor end to end.
+Use zerd when you want less to review, proof on every change, or a choice of providers and models. Use Claude Code when your day is in an IDE, you want image input, or you want one vendor end to end.
 
-They also work on the same repo. Try zerd on one small change with the [quickstart](/docs/quickstart).
+zerd already reads your `CLAUDE.md` and `~/.claude/CLAUDE.md`, follows `@imports`, uses the same permission rule notation (`Bash(git diff:*)`, `Edit(src/**)`), and loads commands from `.claude/commands`. `zerd learn-import --repo .` can mine your old Claude Code sessions for rules. Switching in either direction is cheap. Try it with the [quickstart](/docs/quickstart).

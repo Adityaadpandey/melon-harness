@@ -33,6 +33,7 @@
     "compare/index",
     "compare/claude-code",
     "compare/aider",
-    "compare/codex-cli"
+    "compare/codex-cli",
+    "compare/opencode"
   ]
 }

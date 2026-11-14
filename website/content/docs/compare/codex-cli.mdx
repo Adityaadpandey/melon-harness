@@ -1,43 +1,59 @@
 ---
 title: "zerd vs Codex CLI"
-description: "How zerd compares with OpenAI's Codex CLI on verification, model choice, sandboxing and licensing, and how to use your ChatGPT login in zerd."
+description: "How zerd compares with OpenAI's Codex CLI on verification, model choice, sandboxing and licensing, and how zerd reuses your Codex login over the Responses API."
 ---
 
-Codex CLI is OpenAI's open-source terminal coding agent, built to work with OpenAI models. zerd is a terminal agent that works with many providers, including OpenAI. In fact, zerd can use your Codex login directly.
+Codex CLI is OpenAI's terminal coding agent. zerd is a terminal agent that works with many providers, OpenAI among them. zerd can sign in with your ChatGPT/Codex login, so you can try it without a new key.
 
-## The short version
+Details about Codex CLI on this page are limited to its well-known design. For its exact current options, see OpenAI's docs.
+
+## At a glance
 
 | | zerd | Codex CLI |
 |---|---|---|
-| Models | OpenAI via ChatGPT login or key, plus Claude, DeepSeek, Gemini, Groq, local and [more](/docs/models) | OpenAI models |
-| After an edit | Runs checks on the changed files by default | The model decides what to run |
-| Review | A second model reviews the real diff, a verifier disproves weak findings | Review available on request |
-| Claims about files | Paths and lines it mentions are checked on disk | Not checked |
-| Failover between providers | Yes | No |
-| Sandbox | macOS OS sandbox, confined file tools, scanned shell ([details](/docs/safety)) | OS-level sandboxing with approval modes |
-| Extending | MCP, hooks, skills, sub-agents, slash commands | MCP and configuration |
+| Models | Codex login over the Responses API, plus [15 built-in providers](/docs/models) and any OpenAI or Anthropic format server | OpenAI models |
+| Provider fails | Fails over to another provider, blocks the failing one for the session and tells you | One vendor |
+| After an edit | Picks checks for only the changed files and runs them, with up to 2 repair rounds, then escalates to a strong model | The model decides what to run |
+| Failure not caused by the agent | Detected by re-running on the pre-run files, left alone, run ends `unverified` | Up to the model |
+| Review | A second model reviews the real diff, a verifier refutes weak findings | Review on request |
+| Paths in the answer | Every `path` and `path:line` is checked on disk | Not checked |
+| Sandbox | Confined file tools, shell path scan, macOS `sandbox-exec` | OS sandboxing with approval modes |
+| Approval modes | `on-request`, `auto-edit`, `auto`, `plan`, `never`, `on-failure`, `yolo` | Approval modes |
+| Written in | Rust, one binary | Rust |
 | Source | Source-available, free to run | Open source |
 
 ## Using your Codex login in zerd
 
-zerd accepts a ChatGPT/Codex login as a provider. Use a model id like `codex/gpt-5.6-luna` and zerd talks to it over the Responses API with your existing sign-in. You can start there, and add a second provider later for failover. See [Models and routing](/docs/models).
+Pick where models come from during first-run setup: a ChatGPT/Codex login, an Anthropic, OpenAI, OpenRouter or Gemini key, a local Ollama or LM Studio, or a gateway. A model id such as `codex/gpt-5.6-luna` goes through your Codex login. The 11-task benchmark against Claude Code ran zerd on exactly that model. See [Models and routing](/docs/models).
 
-## Where zerd is different
+You can then add more providers per role in `config.toml`, for example a cheap model for `fast` and a different family for `review`:
 
-**Verification is built in.** zerd picks checks for exactly the changed files, runs them, and reports what passed and what is still unverified. If a check already failed before the run, it says so and does not chase it. See [Verification](/docs/verification).
+```toml
+[routing]
+default = ["claude-sonnet-5-5", "deepseek/deepseek-v4-pro"]
+fast    = ["deepseek/deepseek-v4.1-flash"]
+strong  = ["claude-opus-5-5"]
+review  = ["gpt-5.6-sol"]
+```
 
-**A second opinion on every change.** One model writes, another reads the real diff, and a verifier tries to prove each finding wrong. See [Reviews and fixes](/docs/reviews).
+## What zerd adds
 
-**No single point of failure.** When a provider's quota or service gives out, zerd moves to the next provider and tells you. A run does not stop at a rate limit.
+**Verification is the default in scripts.** One-shot, `--json` and `--rpc` runs check changed files automatically after edits, with repair rounds, because nobody is there to ask. Interactive runs check when you run `/verify` or ask for a review.
+
+**A second family reviews.** The advisor and challenger default to a different model family than the author, so they do not share blind spots.
+
+**Failure always has a next step.** Checks fail, then repair. Repair fails, then the strong model. A loop is detected, then escalate, then stop. Budget low, then one last tool-free call turns what was learned into an answer.
+
+**Rounds are estimated and scored.** The model names how many tool rounds a task needs, zerd scores the guess and prints it, and the hard stop is 3 times the guess, never below 25 rounds.
 
 ## Where Codex CLI is ahead
 
-- **It is open source**, and zerd is source-available. See the [license](/docs/license).
-- **First-party OpenAI integration**, with an IDE extension and a polished sign-in flow. zerd has no IDE extension yet.
-- **Sandboxing on more platforms.** zerd's OS sandbox is macOS only for now.
+- **It is open source.** zerd is source-available. See the [license](/docs/license).
+- **First-party OpenAI integration**, built by the team that makes the models.
+- zerd's OS sandbox is macOS only, and zerd has no IDE extension or image input yet ([Limits](/docs/limits)).
 
 ## Which should you use
 
-Choose Codex CLI if you want OpenAI's own open-source agent and plan to stay on OpenAI models. Choose zerd if you want proof on every change, more than one provider, or a second model reviewing the work.
+Choose Codex CLI if you want OpenAI's own agent and plan to stay on OpenAI models. Choose zerd if you want proof on every change, more than one provider with failover, or a second model reviewing the work.
 
-Try zerd on one small change with the [quickstart](/docs/quickstart).
+Start with the [quickstart](/docs/quickstart).

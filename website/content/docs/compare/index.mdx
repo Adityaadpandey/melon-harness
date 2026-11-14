@@ -1,30 +1,30 @@
 ---
 title: "Compare coding agents"
-description: "zerd next to Claude Code, Aider and Codex CLI: what each one is good at, how they differ on verification, models and safety, and which to pick."
+description: "zerd next to Claude Code, Aider, Codex CLI and OpenCode: what each one is good at, how they differ on verification, models and safety, and which to pick."
 ---
 
-All four tools below put an AI coding agent in your terminal. They differ in what happens after the model edits your files, which models you can use, and how much the tool does to stop a bad change from reaching you.
+All five tools below put an AI coding agent in your terminal. They differ in what happens after the model edits your files, which models you can use, and how much the tool does to stop a bad change from reaching you.
 
 This page is the short version. Each tool has its own page with a longer comparison.
 
 <Callout title="How to read these pages">
-Details about other tools come from their public docs and are written without hype, but they change fast. If something is out of date, check the tool's own docs, and [open an issue](https://github.com/Adityaadpandey/zerd.si/issues) so we can fix ours.
+Everything about zerd comes from its source and its measured benchmarks. Details about other tools are kept to what is well known or in their own repos, and they change fast. If something is out of date, check the tool's own docs, and [open an issue](https://github.com/Adityaadpandey/zerd.si/issues) so we can fix ours.
 </Callout>
 
 ## At a glance
 
-| | zerd | [Claude Code](/docs/compare/claude-code) | [Aider](/docs/compare/aider) | [Codex CLI](/docs/compare/codex-cli) |
-|---|---|---|---|---|
-| Made by | Independent | Anthropic | Open-source project | OpenAI |
-| Models | Claude, GPT, Codex login, DeepSeek, Gemini, Groq, local and more | Claude | Many providers, local included | OpenAI models |
-| Runs checks on what it changed | Yes, by default, on the changed files only | When you set it up or ask | When you set a test or lint command | When the model decides to run them |
-| Second model reviews the diff | Yes, then a verifier tries to disprove each finding | Separate review command | No | Separate review command |
-| Checks the paths it mentions exist | Yes | No | No | No |
-| IDE extension | No | Yes | Editor integrations by the community | Yes |
-| Source | Source-available | Proprietary | Open source | Open source |
-| Price of the tool | Free to run | Needs a Claude plan or API key | Free | Needs a ChatGPT plan or API key |
+| | zerd | [Claude Code](/docs/compare/claude-code) | [Aider](/docs/compare/aider) | [Codex CLI](/docs/compare/codex-cli) | [OpenCode](/docs/compare/opencode) |
+|---|---|---|---|---|---|
+| Made by | Independent | Anthropic | Open-source project | OpenAI | Open-source project |
+| Models | 15 built-in providers, Codex login, any OpenAI or Anthropic format server | Claude | Many providers | OpenAI | Many providers |
+| Failover between providers | Yes | No | No | No | See its docs |
+| Runs checks on the changed files by default | Yes | No | When configured | No | No |
+| Second model reviews the diff | Yes, plus a verifier and a repro | On request | No | On request | No |
+| Looks up every path it mentions | Yes | No | No | No | No |
+| IDE extension | No | Yes | Community | Yes | Desktop app (beta) |
+| Source | Source-available | Proprietary | Open source | Open source | Open source (MIT) |
 
-zerd's own gaps are listed on the [Limits](/docs/limits) page.
+Where the table says "No" for another tool, it means not built in as a default step. Each comparison page explains what that means. zerd's own gaps are listed on the [Limits](/docs/limits) page.
 
 ## What to pick
 
@@ -32,5 +32,6 @@ zerd's own gaps are listed on the [Limits](/docs/limits) page.
 - **You live in an IDE and use Claude:** Claude Code.
 - **You want open source and git commits for every edit:** Aider.
 - **You are already on a ChatGPT plan and want OpenAI's own tool:** Codex CLI.
+- **You want a permissive license and a desktop app:** OpenCode.
 
 You can also try zerd next to any of them. It installs as one binary and `/undo` reverts what it changed. Start with the [quickstart](/docs/quickstart).

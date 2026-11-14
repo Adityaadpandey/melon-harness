@@ -1,0 +1,42 @@
+---
+title: "zerd vs OpenCode"
+description: "How zerd compares with OpenCode, the open-source AI coding agent, on verification, review, safety and licensing, with where OpenCode is ahead."
+---
+
+OpenCode describes itself as "the open source AI coding agent". It has a terminal UI, a desktop app in beta, and is MIT licensed. zerd's author read the OpenCode source while building zerd, and ported ideas for the unglamorous parts, such as how a weak model fails at tool calls. This page compares them where the two actually differ.
+
+## At a glance
+
+| | zerd | OpenCode |
+|---|---|---|
+| Source | Source-available, free to run | Open source, MIT |
+| Interface | Full-screen terminal UI, one-shot, `--json`, `--rpc` | Terminal UI and a desktop app (beta) |
+| Built-in agents | Main agent, read-only sub-agents, user-defined sub-agents, parallel workers in git worktrees | `build` (full access), `plan` (read-only), and a `general` subagent |
+| Plan mode | `plan` approval mode, read-only, ends in a plan | `plan` agent, switch with Tab |
+| Models | [15 built-in providers](/docs/models), Codex login, any OpenAI or Anthropic format server, failover | Many providers |
+| After an edit | Runs checks on the changed files, tells agent-caused failures from pre-existing ones | Not a built-in step |
+| Independent review | Reviewers, verifier and sandboxed repro | Not a built-in step |
+| Paths in the answer | Checked against the tree | Not checked |
+| Written in | Rust, one binary | TypeScript |
+
+## What zerd adds
+
+**A verification gate with a state machine.** Each request is a task with an explicit lifecycle, and transitions are validated in code, so a run cannot jump from `failed` to `verified`. Every move is written to a JSONL trace you can replay.
+
+**Safety at one door.** Every tool call goes through one registry function, whether it comes from the main agent, a sub-agent or a parallel worker. Guard rules, workspace confinement, hooks, approvals and the macOS sandbox all hang off it. See [Safety](/docs/safety).
+
+**Trust per exact file.** A cloned repo's `.zerd/config.toml` cannot turn on hooks, MCP servers or verify commands until you trust that exact file, and editing the file revokes the trust.
+
+**Learning from corrections.** zerd writes rules from your corrections into `AGENTS.md` under `## Learned by zerd`, so you can read, edit and commit them.
+
+## Where OpenCode is ahead
+
+- **MIT license.** You can copy, modify and redistribute it. zerd's source is available to read, not to reuse. See the [license](/docs/license).
+- **A desktop app** in addition to the terminal UI. zerd has no desktop app or IDE extension.
+- **A large community and many install routes**: package managers, Homebrew, Arch, Nix and mise.
+
+## Which should you use
+
+Choose OpenCode if you want a permissively licensed open-source agent with a desktop option. Choose zerd if you want every change to come with checks, a second-model review and a receipt of what stayed unverified.
+
+Try zerd with the [quickstart](/docs/quickstart).
