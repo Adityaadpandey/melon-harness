@@ -108,7 +108,7 @@ export default async function Home() {
         <p className="hero-fine">Windows: <code>irm https://zerd.si/install.ps1 | iex</code></p>
         <p className="hero-links">
           <Link href="/docs/quickstart">Get started</Link>
-          <Link href="/docs/what-zerd-does-that-others-leave-to-the-model">Why zerd</Link>
+          <Link href="/docs/verification">Why zerd</Link>
           {rel && <span>v{rel.version}</span>}
         </p>
       </section>

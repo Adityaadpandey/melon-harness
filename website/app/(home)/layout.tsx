@@ -31,7 +31,7 @@ export default async function HomeLayout({ children }: { children: React.ReactNo
               <a href={`https://github.com/${REPO}/releases`}>Releases</a>
               <Link href="/docs/license">License</Link>
               <a href="/llms.txt">llms.txt</a>
-              <Link href="/docs/what-zerd-does-that-others-leave-to-the-model">Why zerd</Link>
+              <Link href="/docs/verification">Why zerd</Link>
             </nav>
           </div>
         </div>
