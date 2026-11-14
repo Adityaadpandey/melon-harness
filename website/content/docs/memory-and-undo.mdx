@@ -5,9 +5,9 @@ description: "How zerd picks up your preferences from corrections, and how to un
 
 ## Memory
 
-In an interactive session, zerd learns from what you say and from runs that verified. You don't run a command or write a rule.
+In an interactive session, zerd learns from what you say and from runs that verified. You don't have to run a command or write a rule.
 
-After each message you send, zerd asks a model in the background, so your reply isn't held up. The model reads your new message next to the request and answer it follows, and writes one rule if you:
+After each message you send, zerd asks a model in the background, so your reply isn't held up. The model reads your new message alongside the request and answer it follows. It writes one rule if you:
 
 - redirected it ("no, not that", "I meant the header")
 - confirmed an approach ("yes, exactly like that")
@@ -23,7 +23,7 @@ Learned: use pnpm, never npm, in this repo (saved to AGENTS.md; /forget removes 
 
 ### Where lessons live
 
-The rule lands in your own `AGENTS.md` under `## Learned by zerd`. You can read it, edit it and commit it, and your team gets it too. It is loaded at the next session as an ordinary instruction, newest first, capped to 30 per repo.
+The rule is saved in your own `AGENTS.md` under `## Learned by zerd`. You can read it, edit it and commit it, so your team gets it too. The next session loads it as an ordinary instruction, newest first, capped at 30 per repo.
 
 <Mermaid chart={`flowchart LR
     S1["/learn rule"] --> L
@@ -46,7 +46,7 @@ Scripted runs (`zerd "..."`, `--json` and `--rpc`) never write lessons, so CI an
 
 ### Edit history
 
-A run that ends `verified` records its request words and the files it changed. Next time, `search` ranks files that fixed similar requests higher. A failed run adds nothing to it.
+A run that ends `verified` records the words of your request and the files it changed. Later, `search` ranks files that fixed similar requests higher. A failed run adds nothing.
 
 ### Importing old sessions
 
@@ -54,11 +54,11 @@ A run that ends `verified` records its request words and the files it changed. N
 zerd learn-import --repo .
 ```
 
-This mines your old Claude Code sessions for rules. Each one is weighed against what `AGENTS.md` already says, so only new ones are added.
+This mines your old Claude Code sessions for rules. Each one is checked against what `AGENTS.md` already says, so only new ones are added.
 
 ## Undo
 
-Before each request, zerd records the working tree as a commit object under `refs/zerd/backup`. That uses no stash and changes no index.
+Before each request, zerd saves a snapshot of the working tree as a commit object under `refs/zerd/backup`. It uses no stash and changes no index.
 
 - `/undo` restores what the last request changed and removes the files it created. Files that were untracked before are never deleted.
 - `/rewind` goes back up to 20 requests.

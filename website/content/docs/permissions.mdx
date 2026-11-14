@@ -3,7 +3,7 @@ title: "Permissions"
 description: "The approval modes, the allow, deny and ask rules, and how a single tool call ends up approved or refused."
 ---
 
-Two things decide whether a tool call runs without asking: the approval mode and your permission rules. The mode is the default. Rules override it for the calls they match.
+Two things decide whether a tool call runs without asking: the approval mode and your permission rules. The mode sets the default, and rules override it for the calls they match.
 
 ## Approval modes
 
@@ -26,13 +26,13 @@ Some rules hold in every mode except `yolo`:
 - Moving or deleting build output such as `node_modules`, `dist`, `.next`, `target` or `.venv` asks every time. In `never` it is refused. A past "always" does not cover it.
 - `gh`, `curl`, `git push`, `git pull` and `git fetch` run outside the OS sandbox, so they ask every time, one plain command at a time. A past "always" does not cover them either.
 
-"Safe read-only" means things like `ls`, `cat`, `grep`, `git status`, `git diff` and `git log`, joined with pipes or `&&`. Anything with a redirect into a file, `$(...)`, backticks or a background `&` is not safe. The list is in [Safety](/docs/safety), and [Everyday use](/docs/everyday-use) covers switching modes with Shift+Tab.
+"Safe read-only" means commands like `ls`, `cat`, `grep`, `git status`, `git diff` and `git log`, optionally joined with pipes or `&&`. A redirect into a file, `$(...)`, backticks or a background `&` makes a command not safe. The list is in [Safety](/docs/safety), and [Everyday use](/docs/everyday-use) covers switching modes with Shift+Tab.
 
-A one-shot run (`zerd "..."`) has nobody to ask. With no `--approval` given, it starts in `auto-edit`, so edits go through and commands need `--approval auto`. If a call needs approval and nobody can answer, it is refused with a message saying so.
+A one-shot run (`zerd "..."`) has nobody to ask. If you don't pass `--approval`, it starts in `auto-edit`: edits go through, and commands need `--approval auto`. When a call needs approval and nobody can answer, it is refused with a message saying so.
 
 ## Rules
 
-Rules use Claude Code's notation: `Tool(specifier)`. Three kinds exist: `deny`, `ask` and `allow`.
+Rules use Claude Code's notation, `Tool(specifier)`, and come in three kinds: `deny`, `ask` and `allow`.
 
 | Rule | Matches |
 |---|---|
@@ -44,9 +44,9 @@ Rules use Claude Code's notation: `Tool(specifier)`. Three kinds exist: `deny`, 
 | `Read(.env*)` | Reading, grepping, globbing or listing anything named `.env...` |
 | `WebFetch(domain:docs.python.org)` | That host and its subdomains |
 
-Tool names map to zerd's tools: `Bash` is the shell tool, `Edit` and `Write` cover file writes, `Read` covers reading, grep, glob, listing, search and outline, `WebFetch` and `WebSearch` cover the web tools.
+Tool names map onto zerd's tools. `Bash` is the shell tool, `Edit` and `Write` cover file writes, and `Read` covers reading, grep, glob, listing, search and outline. `WebFetch` and `WebSearch` cover the web tools.
 
-File patterns are relative to the working directory and gitignore-like. `src/**` is everything under `src`. `*.key` matches that name at any depth. `docs/*.md` matches one level only.
+File patterns are relative to the working directory and work like `.gitignore` patterns. `src/**` is everything under `src`. `*.key` matches that name at any depth. `docs/*.md` matches one level only.
 
 For a command with several parts, such as `ls && rm x`, a `deny` or `ask` rule fires if any part matches. An `allow` rule needs every part to match, so `Bash(ls)` does not allow `ls && rm x`.
 
@@ -71,11 +71,11 @@ zerd reads these files, loosest first:
 
 The Claude Code files can hold the same lists under a `permissions` key. Claude Code's global settings are not read.
 
-Inside a session, `/permissions` lists the active rules and the mode. `/permissions allow Bash(git diff:*)`, `/permissions deny Read(.env*)` and `/permissions ask Bash(git push:*)` save a rule to the project's `.zerd/permissions.json`, and `/permissions remove <rule>` deletes one from it.
+In a session, `/permissions` lists the active rules and the mode. `/permissions allow Bash(git diff:*)`, `/permissions deny Read(.env*)` and `/permissions ask Bash(git push:*)` save a rule to the project's `.zerd/permissions.json`, and `/permissions remove <rule>` deletes one from it.
 
 ## Precedence
 
-Rules are matched by kind, not by file: a matching `deny` beats a matching `ask`, which beats a matching `allow`, whichever file each came from.
+When several rules match, the kind decides, not the file: a matching `deny` beats a matching `ask`, which beats a matching `allow`, whichever file each came from.
 
 | Rule that matched | Effect |
 |---|---|
@@ -83,13 +83,13 @@ Rules are matched by kind, not by file: a matching `deny` beats a matching `ask`
 | `ask` | A call the mode would approve now asks you first |
 | `allow` | A call the mode would ask about is approved |
 
-An `allow` never lifts a refusal. Plan mode, dangerous commands and `never` stay refused. So `allow` is for stopping prompts, not for unlocking blocked commands.
+An `allow` never lifts a refusal. Plan mode, dangerous commands and `never` stay refused. Use `allow` to stop prompts, not to unlock blocked commands.
 
 ## What happens to a call
 
 In order:
 
-1. The name and arguments are checked. Bad ones are sent back to the model to fix.
+1. The tool name and arguments are checked. If they are bad, they go back to the model to fix.
 2. Built-in guards run: protected paths, forbidden commands and workspace confinement. A hit is reported as blocked by repository rules.
 3. `before_tool` hooks can veto the call.
 4. A matching `deny` rule refuses it.
@@ -100,13 +100,13 @@ The same path is shown as a diagram in [Safety](/docs/safety).
 
 ## On refusal
 
-The model gets a message telling it not to retry or find another route, and the run continues.
+The model gets a message telling it not to retry or look for another route, and the run continues.
 
 - Denied by a rule: it is told which rule fired and to explain to you what it needed.
-- Refused by the mode: in `plan`, it is told nothing may change and to finish with a plan. Otherwise it gets "Operation rejected by safety policy".
+- Refused by the mode: in `plan`, it is told nothing may change and to finish with a plan. In other modes it gets "Operation rejected by safety policy".
 - You answered no at a prompt: it is told the action did not run and not to get the same effect another way. If you typed a reason, that reason goes back with it, and zerd keeps it as a lesson (see [Memory and undo](/docs/memory-and-undo)).
 
-Answering "always" at a prompt stops asking for that kind of command for the rest of the session. For a file edit it switches the mode to `auto-edit`.
+Answering "always" at a prompt stops the questions for that kind of command for the rest of the session. For a file edit, it switches the mode to `auto-edit`.
 
 ## Project config and trust
 

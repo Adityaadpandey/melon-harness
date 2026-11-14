@@ -3,21 +3,21 @@ title: "Tools"
 description: "The tools the model can call, and which of them are available in pi mode and in full mode."
 ---
 
-Run `/tools` in a session to see what is loaded right now. The two modes are explained in [Pi mode and full mode](/docs/modes). MCP tools you configure are always available in both.
+Run `/tools` in a session to see which tools are loaded right now. [Pi mode and full mode](/docs/modes) explains the two modes. MCP tools you configure are available in both.
 
 ## Files and search
 
 | Tool | Mode | What it does |
 |---|---|---|
-| `read_file` | both | Reads a text file. In pi mode output stops at 2,000 lines or 50 KB and you continue with `offset`. In full mode files up to 400 lines come whole, and `symbol` reads one function or class |
+| `read_file` | both | Reads a text file. In pi mode output stops at 2,000 lines or 50 KB, and you continue with `offset`. In full mode, files up to 400 lines come back whole, and `symbol` reads a single function or class |
 | `write_file` | both | Creates a file or overwrites one. Parent folders are created. An existing file must be read first |
-| `edit` | both | Exact text replacement. `edits` takes several changes in one call, `replace_all` renames across a file. The file must have been read first |
-| `grep` | both | Searches file contents. Respects `.gitignore`, finds dotfiles, never reads secrets. `files_only` just locates |
+| `edit` | both | Replaces exact text. `edits` takes several changes in one call, and `replace_all` renames across a file. The file must have been read first |
+| `grep` | both | Searches file contents. Respects `.gitignore`, finds dotfiles, never reads secrets. `files_only` returns just the file names |
 | `glob` | both | Finds files by name pattern such as `src/**/*.ts`. Never lists secrets |
 | `list_dir` | both | Lists a directory |
-| `search` | full | Ranks files by relevance to a plain-words query. Use it when you do not know where something lives |
+| `search` | full | Ranks files by relevance to a plain-words query. Use it when you don't know where something lives |
 | `outline` | full | Lists the functions, classes and types of a file with line ranges, so you can then read one with `read_file(path, symbol='name')` |
-| `graph` | both | Code connections computed live from the working tree: find a symbol, trace callers or callees, impact, importers, tests. `path`, `community`, `neighbors` and `stats` need a graphify snapshot. See [Code graph](/docs/code-graph) |
+| `graph` | both | Code connections computed live from the working tree: find a symbol, trace callers or callees, impact, importers and tests. `path`, `community`, `neighbors` and `stats` need a graphify snapshot. See [Code graph](/docs/code-graph) |
 | `git` | full | Read-only history: `status`, `diff`, `log`, `show`, `blame`, `find_change`, plus `scope` and `patch`. Needs no approval. To commit or push, the model uses `shell` |
 
 ## Running things
@@ -25,7 +25,7 @@ Run `/tools` in a session to see what is loaded right now. The two modes are exp
 | Tool | Mode | What it does |
 |---|---|---|
 | `shell` | both | Runs a shell command. Every call starts fresh in the workspace root (or `cwd`), so `cd` does not carry over. Background commands show up in `/jobs` |
-| `parallel_tasks` | full | Runs two or more independent coding tasks at once, each in its own git worktree, then merges them in dependency order and runs the project checks. Conflicts are reported, never resolved silently. Only inside a git repo |
+| `parallel_tasks` | full | Runs two or more independent coding tasks at once, each in its own git worktree (a separate checkout of the repo). It then merges them in dependency order and runs the project checks. Conflicts are reported, never resolved silently. Only works inside a git repo |
 
 ## Web
 
@@ -39,15 +39,15 @@ Run `/tools` in a session to see what is loaded right now. The two modes are exp
 | Tool | Mode | What it does |
 |---|---|---|
 | `todos` | both | A live checklist for long work. Each step is `pending`, `in_progress` or `done` |
-| `ask_user` | both | Asks you to choose between 2 to 4 options when an unknown changes the result and the repo cannot answer it |
+| `ask_user` | both | Asks you to pick from 2 to 4 options when something unknown changes the result and the repo can't answer it |
 | `advisor` | both | Asks a stronger reviewer model for advice. It takes no parameters, forwards the conversation, and refuses small tasks |
 | `memory` | full | Stores and retrieves persistent notes for this workspace |
 | `notes` | full | A durable notebook for a long task that survives compaction, `/resume` and new sessions |
 | `use_skill` | full | Loads a project playbook, or one `section` of it. See [Skills and agents](/docs/skills-and-agents) |
-| `recall_result` | full | Gets back the exact text of an earlier tool result that was cleared or cut short, by its id such as `r7`. Use `offset` and `limit` for long ones |
+| `recall_result` | full | Fetches the exact text of an earlier tool result that was cleared or cut short, by its id such as `r7`. Use `offset` and `limit` for long ones |
 
 ## Sub-agents
 
-The read-only `codebase_investigator` sub-agent is available in both modes. It answers questions that need many files and returns file and line evidence. `/agents` lists the built-in sub-agents (`codebase_investigator`, `planner`, `code_reviewer`, `general`) and any agent files of yours. See [Skills and agents](/docs/skills-and-agents).
+The read-only `codebase_investigator` sub-agent is available in both modes. Use it for questions that span many files. It returns file and line evidence. `/agents` lists the built-in sub-agents (`codebase_investigator`, `planner`, `code_reviewer`, `general`) and any agent files of yours. See [Skills and agents](/docs/skills-and-agents).
 
 Related pages: [Safety](/docs/safety) for which calls need approval, [Permissions](/docs/permissions) for allow and deny rules.

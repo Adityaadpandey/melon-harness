@@ -3,12 +3,12 @@ title: "Safety"
 description: "The rules the model can't talk its way past: confined files, scanned shell commands, an OS sandbox, and trusted-only project config."
 ---
 
-Every tool call passes through one tool registry, whether it comes from the main agent, a sub-agent or a parallel worker. The limits below are enforced in code there, so the model can't talk its way past them.
+Every tool call goes through one tool registry, whether it comes from the main agent, a sub-agent or a parallel worker. The limits below are enforced in code at that point, so the model can't talk its way past them.
 
 ## Three layers
 
 1. File tools resolve the path first. `..` and symlinks that lead out of the workspace are refused.
-2. Shell commands are scanned for paths in your home, `/etc`, other users' folders or `..` escapes, and refused before they run. History-destroying git commands are blocked.
+2. Shell commands are scanned before they run. Any that touch paths in your home, `/etc`, other users' folders or `..` escapes are refused. Git commands that destroy history are blocked.
 3. The OS sandbox (macOS `sandbox-exec`, on by default). A command can't write outside the workspace, temp and package caches. It also can't read `~/.ssh`, `~/.aws`, `~/.gnupg`, keychains, or the workspace's own `.env`, however the command reaches them.
 
 <Callout type="warn" title="Platform differences">
@@ -37,4 +37,4 @@ The OS sandbox is macOS only. Linux and Windows get the confined file tools and 
 
 ## Approvals
 
-Approvals show a diff, and what you approve is exactly what gets written. For the approval modes, see [Everyday use](/docs/everyday-use).
+An approval shows you a diff, and what you approve is exactly what gets written. For the approval modes, see [Everyday use](/docs/everyday-use).
